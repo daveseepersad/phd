@@ -1,0 +1,1178 @@
+[[page 1]]
+Multi-LLM Persona Generation for Virtual Focus Groups in
+Software Engineering: A Controlled, Multi-domain Study of
+Emotional Requirements Elicitation
+GUANGRUI FAN∗,Taiyuan University of Science and Technology, China
+DANDAN LIU,Universiti Malaya, Malaysia
+LIHU PAN,Taiyuan University of Science and Technology, China
+RUI ZHANG,Taiyuan University of Science and Technology, China
+QIAN GUO,Taiyuan University of Science and Technology, China
+Emotional requirements (ERs)—how users should feel and which emotional harms a system must avoid—often
+determine whether people adopt and keep using software, especially in sensitive domains. Yet, eliciting
+ERs via interviews, workshops, and focus groups is costly and hard to scale or repeat. We study whether
+simulated focus groups, moderated discussions among user personas generated and played by large language
+models (LLMs), can augment early ER elicitation. Across three domains (mental-health journaling, personal
+finance, and fitness), we compare one-shot and iterative single-model pipelines with iterative pipelines that
+use two or three different LLMs, and we benchmark against two human baselines: a human focus group
+and Emotional Goal Modeling (EGM). Multi-LLM pipelines generate more diverse personas and increase the
+share of AI-only ERs (not seen in our human baselines) that source -blinded raters judge relevant by14 .7
+percentage points compared to an iterative single-model workflow; same-model controls suggest this gain is
+not solely due to provider differences. Compared to human methods, simulations contribute more innovative
+requirements, EGM contributes clearer and more feasible ones, and human focus groups provide more natural
+phrasing. Overall, the results support an augmentation -oriented workflow: use multi -LLM simulation to
+broaden candidate ERs, structured modeling to organize them, and human engagement to ground decisions.
+CCS Concepts:•Software and its engineering→ Requirements analysis;•Human-centered computing
+→Collaborative and social computing design and evaluation methods.
+Additional Key Words and Phrases: Requirements Engineering, Emotional Requirements, Large Language
+Models, Multi-Model Orchestration, Virtual Focus Groups, Emotional Goal Modeling
+ACM Reference Format:
+Guangrui Fan, Dandan Liu, Lihu Pan, Rui Zhang, and Qian Guo. 2026. Multi-LLM Persona Generation for
+Virtual Focus Groups in Software Engineering: A Controlled, Multi-domain Study of Emotional Requirements
+Elicitation.Proc. ACM Softw. Eng.3, FSE, Article FSE091 (July 2026), 22 pages. https://doi.org/10.1145/3808098
+1 Introduction
+Many software systems fail not because they lack features, but because they make users feel judged,
+unsafe, or disrespected, especially in sensitive contexts [8]. Emotional requirements (ERs) capture
+∗Corresponding author.
+Authors’ Contact Information: Guangrui Fan, fgr@tyust.edu.cn, Taiyuan University of Science and Technology, Taiyuan,
+China; Dandan Liu, s2134717@siswa.um.edu.my, Universiti Malaya, Kuala Lumpur, Malaysia; Lihu Pan, panlh@tyust.edu.cn,
+Taiyuan University of Science and Technology, Taiyuan, China; Rui Zhang, zhangrui@tyust.edu.cn, Taiyuan University of
+Science and Technology, Taiyuan, China; Qian Guo, 2022055@tyust.edu.cn, Taiyuan University of Science and Technology,
+Taiyuan, China.
+This work is licensed under a Creative Commons Attribution 4.0 International License.
+©2026 Copyright held by the owner/author(s).
+ACM 2994-970X/2026/7-ARTFSE091
+https://doi.org/10.1145/3808098
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 2]]
+FSE091:2 Guangrui Fan, Dandan Liu, Lihu Pan, Rui Zhang, and Qian Guo
+requirements and concerns tied to users’ emotional state, emotional triggers, emotional safety,
+or emotion-shaping design choices (e.g., avoiding shame after missed streaks; feeling safe when
+sharing reflections). ERs are increasingly recognized as first-class concerns in software engineering
+[1, 23], yet they remain difficult to elicit well: conventional requirements engineering (RE) methods—
+interviews, focus groups, and workshops—are costly to organize, hard to repeat, and difficult to
+run at scale [8, 12]. In domains such as mental-health journaling, missing or mis-specified ERs can
+undermine perceived safety and ultimately product success [21].
+This paper asks whether simulated focus groups—moderated discussions among personas gener-
+ated and played by large language models (LLMs)—can broaden early ER elicitation. In a controlled,
+multi-domain study, multi-LLM pipelines produce more diverse personas and increase the share
+of AI-only ERs (absent from the human baselines) that source -blinded raters judge relevant by
+14.7percentage points compared to an iterative single -model workflow. The practical implica-
+tion is a hybrid diverge–structure–ground (DSG) workflow: diverge with multi-model simulation
+(breadth/innovation), structure with Emotional Goal Modeling (EGM) (clarity/feasibility and trace-
+ability), and ground decisions through human engagement. We do not claim that simulated focus
+groups replace affected users or human focus groups in sensitive domains. Instead, we position
+them as a fast, reproducible way to expand the space of candidate ERs early, which then must be
+vetted, contextualized, and prioritized with people.
+Large language models (LLMs) offer a low-marginal-cost way to draft candidate personas and
+explore alternative viewpoints. Early work shows that LLMs can assist qualitative analysis and
+elicit user needs from text [2, 7, 13, 24]. However, many LLM-based elicitation approaches either
+mine existing artifacts or rely on a single model role-playing a proxy stakeholder [3, 4, 22]. A single
+synthetic “voice” can miss tensions central to ERs (e.g., nudges that motivate some users but feel
+judgmental to others) and can yield overly homogeneous outputs [16, 18]. This motivates studying
+whether using multiple models and interaction can broaden coverage without sacrificing quality.
+We evaluate simulated focus groups with a pipeline that generates persona cards, runs scripted
+discussions, clusters and deduplicates candidate requirements, and validates outputs with inde-
+pendent raters who are blinded to the source (AI vs. human methods). We benchmark against two
+human baselines: a conventional human focus group and EGM, a structured method that supports
+explicit goal→requirement traceability.
+We study three consumer domains with distinct emotional profiles: mental-health journaling as
+the primary domain with full replications, and personal finance and fitness as satellite domains with
+lean replications of key contrasts. We compare four AI configurations that disentangle iteration
+and model plurality: C0 (one-shot, single model), C1 (iterative, single model), C2 (iterative, two
+models), and C3 (iterative, three models). We benchmark all AI configurations against both human
+baselines. In the primary domain, we additionally run compact same-model controls to help separate
+multi-voice workflow structure from provider capability.
+This work makes three contributions. First, we present a controlled experimental design that
+disentangles the effects of iterative workflow from multi-model plurality in persona generation and
+simulated focus groups, incorporating multi-domain replications and same-model ablation controls
+in the primary domain. Second, we benchmark simulated focus groups against two established
+human baselines—conventional focus groups and Emotional Goal Modeling—evaluating all outputs
+through independent, source-blinded ratings on relevance, clarity, feasibility, and innovation. Third,
+we demonstrate that multi-model configurations increase persona diversity and raise the share of
+AI-only requirements passing source-blinded validation by a pooled+14.7percentage points over
+an iterative single-model workflow, while EGM retains its advantage on clarity and feasibility.
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 3]]
+Multi-LLM Persona Generation for Virtual Focus Groups in Software Engineering. . . FSE091:3
+Table 1. Key terms and notation (used throughout).
+Term Definition
+Emotional requirement (ER) A requirement or concern explicitly linked to users’ emotional state, emotional triggers, emotional
+safety, or designs intended to shape emotions (definitions and examples in the coding manual).
+Primary domain / satellite domains Domain A (primary) runs the full set of AI conditions with more replications; Domains B/C (satellites)
+provide lean replications of key contrasts to probe external validity.
+Persona card A structured textual profile (bio, triggers, boundaries, voice snippet) used to ground a simulated
+participant in the focus group.
+Simulated (AI -mediated) focus
+group
+A moderated dialogue among persona voices generated/played by LLMs, using a fixed script and
+logging.
+AI conditions (C0–C3) C0: single-model, one-shot personas; C1: single-model, iterative 3-step; C2: two-model sequential
+across steps; C3: three-model sequential across steps.
+Human baselines (HB1/HB2) HB1: human focus group; HB2: Emotional Goal Modeling (EGM) session with goal→requirement
+tracing.
+Run / seed An independent replicate intended to capture variability; when provider APIs expose pseudo-random
+seeds we set/log them, otherwise we log timestamps and version strings as seed proxies.
+AI-only requirement A deduplicated requirement cluster that appears in AI transcripts but not in HB1/HB2 within the
+same domain.
+Validated requirement A requirement is validated by source-blinded raters if either (i) its median relevance≥ 4or (ii) ≥ 60%
+of raters assign relevance≥4(see §3.11).
+Validated AI-only share #AI-only requirements that are validated / #AI-only requirements (yield metric).
+Building on the gaps identified, we formulate three research questions that progressively move
+from upstream persona quality, through downstream requirement outcomes, to the interaction
+mechanisms that link the two.
+RQ1 (Iteration vs. multi -model).Do iterative workflows that use multiple LLMs produce more
+diverse personas than one-shot or iterative single-model workflows across domains?
+RQ2 (Elicitation quality & baselines).Do simulated focus groups yield more source-validated,
+AI-only emotional requirements under multi -model configurations, and how do their outputs
+compare with EGM and human focus groups on quality ratings?
+RQ3 (Mechanisms).Which interaction features within simulated dialogs account for differences in
+validated yield—specifically, the roles of persona diversity, productive disagreement, and empathy
+events—beyond iteration and domain?
+Unlike prior work that treats diversity as a textual attribute of personas [17], our design makes
+heterogeneity consequential for elicitation by isolating iteration from plurality, preserving model
+differences as stable dialogic voices, and connecting outputs to source-blinded human validation
+and interaction mechanisms (detailed positioning in §2.5).
+In the following paper, section 3 describes the experimental conditions, domains, and baselines,
+followed by orchestration, extraction, and validation procedures (§3.11). Section 4 reports results
+organized by the research questions. Section 5 discusses implications for practice, including hybrid
+usage patterns and limitations. Table 1 defines the key terms used throughout the paper.
+2 Related Work
+2.1 Emotional Requirements in Software Engineering
+Early work argues that emotions are first-class concerns that shape adoption, engagement, and
+trust, and calls for methods that surface affective drivers alongside functional and non-functional
+needs [8, 12, 23]. Approaches span explicit “emotion-led” modeling and instruments such as Affect
+Grids and Kansei engineering [ 6, 12], as well as facilitation frameworks for eliciting tensions
+and trade-offs [8, 23]. Empirically, emotions in software usage often emerge through interac-
+tion (focus groups, interviews) but are costly to capture at scale and vulnerable to moderator
+bias and scheduling constraints [1, 25, 29]. Emotional Goal Modeling (EGM) provides traceable
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 4]]
+FSE091:4 Guangrui Fan, Dandan Liu, Lihu Pan, Rui Zhang, and Qian Guo
+goal→subgoal→requirement structure that can improve feasibility and clarity, yet still requires
+substantial human effort and domain expertise [8, 12]. Recent studies emphasize both the impor-
+tance and difficulty of obtaining robust emotional data in sensitive domains (e.g., mental health,
+finance) [21].
+2.2 AI/LLMs for Requirements Elicitation: From Artifact Parsing to Elicitation
+LLMs have been used to accelerate qualitative analysis and coding, summarize interview data,
+and mine requirements from artifacts [ 4, 5, 7, 24, 27, 28]. Several papers explore role -play or
+prompt-based elicitation where a single model acts as a proxy stakeholder to generate user needs
+or scenarios [10, 20, 22, 32]. Surveys caution, however, that single -model deployments risk ho-
+mogenized outputs and that human validation remains essential, particularly for emotionally
+laden contexts [3]. Overall, this literature establishes feasibility and efficiency gains but is largely
+artifact-centric or single-voice, leaving open how to orchestrate multiple perspectives interactively
+and how to evaluate AI-generated emotional requirements against human baselines under blind
+review [2, 13].
+2.3 LLM Personas and Virtual Focus Groups
+Recent work proposes pipelines for persona creation or simulated focus groups, often using a
+single LLM with prompt templates to generate “user voices” [19, 30, 32]. These studies demonstrate
+face validity (coherent personas, plausible dialogues) and practical utility (faster ideation), but
+two limitations recur. First, most do not disentangle gains from iterative workflow versus model
+diversity: improvements could stem from multiple passes by the same model rather than truly
+heterogeneous viewpoints. Second, evaluation typically emphasizes plausibility or coverage rather
+than external human validation on quality dimensions (relevance, clarity, feasibility, innovation), and
+rarely benchmarks against structured human methods such as EGM or conventional focus groups.
+Questions also remain about the authenticity and ethical governance of synthetic “voices” [3, 14].
+Recent RE work has also started to scrutinize diversity and quality in LLM -generated personas
+directly. Lazik et al. [17] examine how diversity is requested and realized in LLM-generated personas
+via a qualitative user study with and without explicit diversity incentives, operationalizing persona
+diversity as the presence of diversity aspects in prompts and persona outputs. They find that
+users tend to request limited diversity unless explicitly instructed, and they highlight a pitfall of
+performative diversity: personas may mention diverse attributes without translating them into
+meaningful implications for requirements work. This motivates (i) methods that make heterogeneity
+consequential in interaction, rather than cosmetic in descriptions, and (ii) evaluations that connect
+persona diversity to downstream elicitation outcomes.
+2.4 Multi-Model Orchestration and Multi-Agent Dialog
+Ensemble and multi-agent approaches in NLP show that diversity across models can capture com-
+plementary signal and improve robustness [ 9, 31]. Multi-agent simulations suggest that agent
+heterogeneity can produce more realistic interactions and emergent behaviors [14, 26]. In require-
+ments contexts, multi-model settings have been proposed to broaden the space of needs and expose
+conflicts [11, 15, 22]. Yet, few studies experimentally isolate the marginal effect of model plurality
+from iterative workflow, or tie interaction patterns (e.g., disagreement, empathy) to externally
+judged requirement value. Moreover, prior work seldom reports blinded human ratings, effect sizes
+with uncertainty, or cross-domain replications that permit pooled estimates [3]. Finally, there is
+limited guidance on how AI plurality should be combined with structured human methods (e.g.,
+EGM) to balance innovation with feasibility and clarity.
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 5]]
+Multi-LLM Persona Generation for Virtual Focus Groups in Software Engineering. . . FSE091:5
+2.5 Research Gaps and Positioning
+Our study addresses the foregoing gaps—and responds to recent evidence that LLM-generated per-
+sonas can exhibit superficial or performative diversity in RE settings [17]—on four fronts in a single,
+controlled design. First, we experimentally disentangle gains from iterative workflow versus true
+model plurality by contrasting a single-model sequential pipeline (C1) with a three-model pipeline
+(C3) and, in the primary domain, inserting a two-model intermediate (C2) to trace the dose–response
+of plurality. Our AI conditions are also chosen to map onto baseline patterns common in prior
+LLM-persona pipelines (single-model one-shot; single-model iterative refinement; same-model
+multi-voice roleplay; multi-model orchestration), making comparisons interpretable for readers
+without re-implementing every prior system. Second, we submit all outputs to blinded human
+evaluation on relevance, clarity, feasibility, and innovation under a threshold-based validation rule,
+reporting inter-rater reliability (ICC/𝛼) and effect sizes with confidence intervals to support cumu-
+lative synthesis. We benchmark against two strong human baselines—conventional focus groups
+and Emotional Goal Modeling—to assess trade-offs (innovation versus feasibility/clarity). Fourth,
+we move beyond outcome tallies toward mechanism by coding productive, resolution -oriented
+conflict and empathy events within AI dialogs and relating these interactional features to validated
+yield. By shifting from artifact parsing to orchestrated dialog among explicitly heterogeneous
+models—and tying interaction dynamics to blinded human judgment across domains—this work
+extends LLM-for-RE studies and offers a practical, auditable hybrid pipeline that combines AI
+plurality (diverge), EGM (structure), and human focus groups (ground) [2, 8, 13].
+3 Methods
+3.1 Research Design & Conditions
+We evaluate the effects of workflow (iterative vs. one-shot) and model plurality (single vs. multiple
+LLMs) on persona quality and emotional-requirements elicitation using a multi-domain spanning
+three consumer contexts: (A) mental-health journaling (primary), (B) personal finance/budgeting
+(satellite), and (C) fitness/habit tracking (satellite). Within each domain we compare four AI con-
+figurations (C0–C3) against two human baselines (HB1, HB2). The primary domain receives full
+replications for all AI conditions; satellite domains retain the core contrasts while limiting repli-
+cations to preserve feasibility. The end-to-end flow comprises persona generation→ (simulated
+or human) focus-group interaction→ requirement extraction/deduplication & ER/GD coding→
+source-blinded cross-ratings→post-validation reflective interviews (Figure 1).
+AI configurations isolate workflow and plurality:C0(1 -LLM one-shot);C1(1 -LLM sequential
+3-step, 2→4→6 personas);C2(2 -LLM sequential, A→B across the 3 steps);C3(3 -LLM sequential,
+A→B→C). Human baselines:HB1(human focus group, 𝑁=6/domain) andHB2(Emotional Goal
+Modeling, same𝑁=6/domain) (Table 2).
+To separate plurality effects from model/provider strength, we introduce two compact controls in
+the primary domain (Domain A):C1-MV(same-model multi-voice), which uses a single base model
+to create and voice three personas via prompt-diverse role priors and independent seeds within the
+same 3-step workflow as C1; andC3-SM(same-model C3), which mirrors C3’s three-step pipeline
+but voices all steps with the same base model under distinct role priors. Both controls run with two
+seeds and identical orchestration limits.
+Primary outcomes capture (i) yield—the validated AI-only share; and (ii) quality—mean relevance
+(1–5) of AI-only requirements. Secondary: requirement clarity/feasibility/innovation (1–5), persona
+diversity (lexical/semantic/attribute-level), group-dynamics indicators (productive-conflict density,
+empathy events, resolution rate). Explanatory: themes from post-validation reflective interviews.
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 6]]
+FSE091:6 Guangrui Fan, Dandan Liu, Lihu Pan, Rui Zhang, and Qian Guo
+Fig. 1. Overview of design across domains and conditions. Emotional requirements are surfaced in focus-group
+turns, extracted and deduplicated into requirement clusters, coded with ER/GD labels, and validated via
+source-blinded ratings.
+Table 2. Design matrix: domains×AI conditions×seeds and session counts.
+Domain AI conditions Seeds/cond. # AI sessions # Human sessions
+A. Mental-health journaling (primary) C0, C1, C2, C3 34×3=12HB1 + HB2=2
+B. Personal finance/budgeting (satellite) C0, C1, C3 23×2=6HB1 + HB2=2
+C. Fitness/habit tracking (satellite) C0, C1, C3 23×2=6HB1 + HB2=2
+Totals 24 6
+In Domain A we add two ablation controls—C1-MV (same-model multi-voice) and C3-SM (same-model three-step)—each
+with two seeds. These runs are not counted in the totals above.
+Within each domain, we randomize the AI run order. For human baselines, we split six par-
+ticipants across HB1→HB2 vs. HB2→HB1 with a ≥1-week washout—a gap between the two
+sessions to reduce carry-over and memory effects. Blind raters never see method/source; items are
+block-randomized with≥3 raters per requirement. Reflective-interview stimuli are source-blind at
+first and revealed only after initial judgments.
+3.2 Design Rationale and Parameter Choices
+We chose conditions and parameters to (i) isolate gains from workflow iteration versus model
+plurality, (ii) keep simulations comparable across conditions and with human baselines, and (iii)
+make outputs auditable and reproducible. C0 acts as a workflow control (one-shot, six personas);
+C1 adds a 3-step refinement pipeline with the same model; C2/C3 then introduce model plurality.
+Contrasting C1 vs. C0 estimates the gain from iteration; contrasting C2/C3 vs. C1 estimates the
+marginal gain of plurality. The 3-step progressive expansion (2→4→6) mirrors practice, encourages
+coherence, and fixes the group at six personas to match typical focus-group sizes. In multi-model
+conditions, the creator–voice mapping (each model voices its own personas) keeps heterogeneity
+actionable and reduces role drift. We selected three LLM families (GPT-4o, Claude 3.5, Llama-2)
+to span complementary interaction styles; provider diversity is not a proxy for cultural diversity,
+which we treat as a limitation. The deduplication cosine cutoff (≥ 0.82) was calibrated manually and
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 7]]
+Multi-LLM Persona Generation for Virtual Focus Groups in Software Engineering. . . FSE091:7
+varied in[0.78, 0.86] as a robustness check (§3.10). Validation uses a threshold rule on relevance
+(median≥ 4or ≥ 60%of raters ≥ 4; stricter variants in the supplementary material). Uniform
+token/turn caps keep sessions comparable in length and cost.
+3.3 Domain Selection
+We chose domains that (i) exhibit distinct emotional profiles, (ii) are non -clinical—they do not
+involve medical advice or clinical interventions, so standard institutional ethics review suffices—
+and (iii) admit parallelized data collection under identical orchestration. Protocol invariants and
+adaptation points are centralized in §3.7.
+Domain A: Mental -health journaling (primary).A non -clinical journaling app supporting reflec-
+tion, mood awareness, and coping. Salient concerns include self-criticism after lapses, stigma/privacy,
+and the need for self-compassionate prompts. This domain receives the full set of AI conditions
+(C0–C3) with three seeds and both human baselines (HB1, HB2).
+Domain B: Personal finance/budgeting (satellite).A budgeting app for tracking spending and
+setting goals. Emotional tensions include money anxiety and guilt, trust in bank aggregation, and
+the balance between helpful nudges and perceived judgment. AI conditions retain the core contrasts
+(C0, C1, C3) with two seeds; both HB1 and HB2 are run.
+Domain C: Fitness/habit tracking (satellite).An app for activity logging and habit formation.
+Emotions include fluctuating motivation, guilt after missed streaks, social-comparison pressure,
+and consent for social visibility. As in Domain B, we run C0, C1, C3 with two seeds, plus HB1
+and HB2. Only a minimal, templated layer changes by domain: a one-paragraph vignette, example
+instantiations of the five question surfaces, 2–3 red-flag terms for bias audit, and 3–5 EGM example
+cards.
+3.4 Models, Decoding Parameters, and Seeds
+We employ three complementary LLM families:A=GPT -4o,B=Claude 3.5,C=Llama -2 (chat-tuned).
+In multi-model conditions the creator–voice mapping holds: the model that creates a persona
+also voices that persona during the simulated focus group (Table 3). Unless noted, all models use
+temperature=0.7 and top-p=1.0 with no frequency or presence penalties. We budget persona
+generation at≤ 750tokens per step (C1–C3) or per one-shot pass (C0), and cap focus-group turns at
+≤ 300tokens per persona per turn with ≤ 50–60total turns per session. We use speaker -delimiter
+tokens solely to separate turns from different personas.
+When a provider API exposes a pseudo-random seed parameter, we set and log it; otherwise, we
+keep prompts/parameters fixed and log timestamps and version strings as seed proxies. A run man-
+ifest (conditions, seeds/proxies, timestamps, and version strings) is provided in the supplementary
+material.
+3.5 Persona Generation Protocol (AI)
+In Domain A, we randomize the heterogeneous C3 step order by seed (A→B→C vs. B→C→A)
+to mitigate role-order confounds. As shown in Figure 2, conditions C1–C3 follow a standardized
+3-step pipeline that expands a cohort from two to six personas: Step 1 (2 personas), Step 2 (refine +2
+→ 4), Step 3 (refine +2→ 6). Condition C0 serves as a workflow control by requesting six personas
+in a single pass using identical content. The creator–voice rule links generation to subsequent
+dialogue.
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 8]]
+FSE091:8 Guangrui Fan, Dandan Liu, Lihu Pan, Rui Zhang, and Qian Guo
+Table 3. Model families and assignment by condition. The creator–voice mapping applies wherever multiple
+models are used.
+Label Family C0 C1 C2/C3 roles
+A GPT-4o sole model sole model C2: Steps 1–2; C3: Step 1
+B Claude 3.5 n/a n/a C2: Step 3; C3: Step 2
+C Llama-2 (chat) n/a n/a C3: Step 3
+SM Same as A (single base model) n/a C1-MV: 3 voices † C3-SM: Steps 1–3 (same model)†
+† C1-MV and C3-SM use prompt-diverse role priors and independent seeds. In heterogeneous C3 runs, step order
+(A→B→C vs. B→C→A) is randomized by seed in Domain A.
+We instantiate prompts from a domain sheet by filling placeholders (e.g., [DOMAIN], [TYPICAL
+CONTEXTS], [SENSITIVE ASPECTS] ). The system prompt includes guardrails to minimize stereo-
+type reproduction and stigmatizing language: it prohibits stereotyping or essentializing protected
+attributes, requires situational grounding for claims, and prefers non-judgmental phrasing. Full
+instructions, instantiated prompts, and the retry policy are provided in the supplementary materials.
+Each persona is serialized as a persona card with: stable identifier, succinct biography, minimal
+demographic attributes, salient emotional triggers, motivations, usage patterns/boundaries, and a
+short first-person voice snippet to ground speaking style in the focus group. Cards are archived
+with raw generations, prompts, parameters, and call metadata.
+Fig. 2. Persona generation pipeline for C1–C3; C0 is a one-shot control.
+3.6 AI Focus Group Orchestration
+Each session takes as input (i) six finalized persona cards, (ii) five core question surfaces instantiated
+for the domain, and (iii) a standardized probe set. The orchestrator feeds the full conversation history
+as context to every model call; if the transcript approaches 85% of the provider’s context window,
+earliest turns are summarized by a fixed, model-agnostic prompt and the session proceeds with the
+summary plus recent verbatim turns. Personas speak in round-robin order for each question. Turns
+are capped at≤ 300tokens/persona; sessions end after≤ 50–60total turns (including moderator
+turns).
+To avoid contrived debates, the moderator injects at most two challenge turns (after Question 2)
+when spontaneous conflict is weak; these turns only restate or juxtapose existing positions. A
+lightweight role-break detector checks speaker tags after every turn; if a persona’s tag is missing or
+mismatched, the orchestrator regenerates that turn once under identical parameters. Similarly, if a
+provider refuses a prompt for safety reasons, the orchestrator retries once with identical parameters;
+if the provider continues to refuse after the retry, the refusal is recorded and the session proceeds
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 9]]
+Multi-LLM Persona Generation for Virtual Focus Groups in Software Engineering. . . FSE091:9
+without that turn. All attempts, flags, and latencies are logged. We archive each session as a verbatim
+transcript with speaker tags, per-turn metadata (persona id, creating model, token count, latency,
+and flags), and instantiated prompts and system messages.
+3.7 Protocol Invariants vs. Domain-Specific Adaptations
+To ensure construct fidelity while enabling external-validity checks, we distinguish between
+invariants—elements fixed across all domains and conditions—and templated adaptations—minimal
+substitutions that localize content without altering the underlying constructs. Invariants include
+the AI workflow, human baseline procedures, all rating instruments and coding rubrics, the blind
+cross-rating process, and the reflective-interview procedure. Adaptations are limited to domain
+vignettes, exemplar instantiations of the five question surfaces, 2–3 red-flag terms for the bias
+audit, and a small set of EGM example cards. A detailed checklist is provided in the supplementary
+material.
+3.8 Human Baselines
+To contextualize AI outputs with established practices and to control for domain effects, we include
+two human baselines per domain using the same participant pool and a counterbalanced order
+with a≥1-week washout. The baselines mirror the constructs probed in AI sessions, enabling direct
+comparison without construct drift.
+HB1: Human focus group (FG).Per domain, we recruit 𝑁=6participants reflecting the target
+user context. Sessions last 60–90 minutes and follow the same five question surfaces used in AI
+orchestration; a trained moderator employs standardized, non-leading probes. Audio is recorded,
+auto-transcribed, and manually corrected. Outputs include a verbatim transcript and a coded
+requirement catalog.
+HB2: Emotional Goal Modeling (EGM).Per domain, the same 𝑁=6participants complete a 90–120
+minute EGM session led by a trained facilitator. The flow comprises: (1) emotional goal identification
+(base card deck plus 3–5 domain exemplars), (2) goal decomposition and conflict/dependency
+analysis, (3) requirement derivation with trace links from goals, and (4) prioritization. Contamination
+control: participants are not exposed to AI artifacts prior to EGM; facilitators are distinct from AI
+orchestration. Outputs include a goal graph, traced requirements list, prioritization records, and
+session notes.
+Within each domain, participants are randomly split so that half complete HB1→HB2 and half
+HB2→HB1, with a minimum one-week interval to reduce carry-over. Order is recorded.
+3.9 Running Example: From Personas to Dialog to Emotional Requirements
+To make the pipeline concrete, Figure 3 provides an illustrative running example showing (i) a
+persona-card snippet, (ii) a short focus-group exchange with a coded disagreement and a supportive
+reframing, (iii) the extracted emotional requirement, (iv) a minimal turn-level coding snippet
+(ER/GD), and (v) a compact EGM trace chain (goal→subgoal→requirement).
+3.10 Requirement Extraction and Deduplication
+Two trained coders independently scan each transcript turn by turn, flagging candidate emotional
+requirements whenever a turn contains an imperative, a modal verb, or an explicit feature proposal
+(operational definition in §3.11). We normalize candidates for clustering (lowercasing and lemmati-
+zation; original wording is preserved for reporting) and serialize each candidate with its turn ID
+and speaker metadata.
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 10]]
+FSE091:10 Guangrui Fan, Dandan Liu, Lihu Pan, Rui Zhang, and Qian Guo
+Persona-card snippet (P2).Bio:A grad student using journaling to manage stress, who often misses streaks during
+busy weeks.Emotional triggers:judgmental tone after lapses; streak pressure; anxiety about “doing it wrong. ”Voice:
+“Please don’t guilt-trip me for missing days—help me restart gently. ”
+Dialogue snippet (focus group; Question: reminders after missed entries).
+[P2] “I feel guilty when the app nags me every day. It’s like it’s judging me for not being consistent. ”
+[ER-Motivation+ER-Anxiety_Relief]
+[P5] “I disagree—strict reminders and streaks keep me accountable; if it’s too gentle I’ll drop off. ”
+[GD-Conflict]
+[P2]“When it pushes harder after a lapse, I avoid opening the app at all. ”
+[P5] “I totally get that. What if the app switches to a compassion mode after missed days—so the tone
+softens and streaks become optional?”[GD-Empathy+GD-Resolution]
+[MOD] “So we need reminders that adapt to lapses and avoid judgment, while still supporting motivation
+for those who want streaks. ”
+Extracted emotional requirement (from the dialog).
+After detecting missed entries, the app shall offer a user-configurable compassion mode that (i) softens
+reminder wording, (ii) de-emphasizes streak counters by default, and (iii) provides an easy restart path
+without penalties.
+Coding snippet (turn-level labels; see Supplementary: Coding Manual).
+Turn (excerpt) Codes (illustrative)
+[P2]“I feel guilty when the app nags. . . ”ER-Motivation; ER-Anxiety_Relief
+[P5]“I disagree—strict reminders. . . ”GD-Conflict; ER-Motivation
+[P5]“I totally get that. . . compassion mode. . . ”GD-Empathy; GD-Resolution;
+ER-Anxiety_Relief
+EGM trace example (HB2; why EGM can improve clarity/feasibility).
+Goal:feel supported (not judged) after lapses → Subgoal:enable gentle re-entry while preserving
+motivation→ Requirement:adaptive reminders + optional streak visibility + restart affordance (as above).
+Fig. 3. An example showing how persona grounding and interaction dynamics surface candidate emotional
+requirements, and how EGM can express the same need via explicit goal→requirement tracing.
+Table 4. Measurement definitions and computation procedures.
+Construct Definition / Computation Unit / Scale
+Lexical diversity (TTR) Types/tokens over persona cards (per session) Proportion
+Attribute diversity Count of unique demographic attributes and emotional triggers Count
+Semantic dispersion Mean pairwise(1−cos)between persona summaries[0,2]
+Contradiction count Turns labeled as explicit contradiction (gd-conflict) Count
+Productive conflict density Fraction of conflicts yielding a new/refined req. within≤ 3turns Proportion
+Empathy events Turns labeledgd -empathy(affirmation, perspective -taking, sup-
+portive reframing)
+Count
+Resolution rate Share of conflicts with a coded resolution (gd-resolution) Proportion
+Requirement quality Rater scores: relevance, clarity, feasibility, innovation 1–5 Likert
+Validated AI-only share #AI-only items that are validated / #AI -only items (validated
+indicator defined below)
+Proportion
+Next, we compute sentence embeddings and apply agglomerative clustering with cosine distance.
+Candidate pairs whose cosine similarity reaches ≥ 0.82are provisionally treated as semantic
+duplicates; we chose this cutoff after a small manual calibration to balance false merges (distinct
+needs collapsed) against false splits (paraphrases treated as different; see §3.2). The two coders
+then adjudicate borderline merges and splits by consensus, preserving the most specific phrasing.
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 11]]
+Multi-LLM Persona Generation for Virtual Focus Groups in Software Engineering. . . FSE091:11
+Each deduplicated requirement retains traceability from req_id to all contributing turn_ids; for
+EGM items we additionally retain goal_id→req_id links. Sensitivity analyses vary the similarity
+threshold in[0.78,0.86].
+3.11 Measures, Coding, Reliability, and Validation
+We quantify persona diversity, group dynamics, and requirement quality using the operationaliza-
+tions in Table 4. All computation procedures are invariant across domains. We code an extracted
+item as an emotional requirement if it expresses a user need, preference, or concern explicitly
+linked to users’ emotional state, emotional triggers, emotional harms, emotional safety, or designs
+intended to shape emotions (e.g., guilt/shame after lapses; anxiety about data exposure; feeling
+judged by nudges). We exclude purely functional requests with no emotional framing, unless the
+functional mechanism is explicitly justified as supporting emotional well-being (borderline cases;
+see Supplementary: Coding Manual). When applicable, we assign ER subcodes (e.g.,er-privacy,
+er-motivation,er-anxiety_relief) to enable mechanism analysis and cross -domain compar-
+ison. Although our orchestration and extraction pipeline is broadly applicable to requirements
+elicitation, this study is scoped to ERs: prompts and probes foreground emotional concerns, and
+coding/validation operationalize emotional framing as the focal construct.
+Three coders, each blinded to the experimental condition but aware of the domain, independently
+apply the ER and GD codebooks (Supplementary: Coding Manual) after a joint calibration session.
+Coders label an empathy event when a speaker explicitly acknowledges another’s concern and offers
+supportive reframing or perspective-taking (e.g., “I hear that streaks can feel punishing—what if we
+softened reminders after gaps?”); the team resolved boundary cases during calibration. We report
+intercoder reliability as Krippendorff’s 𝛼 (nominal/ordinal as appropriate) with bias -corrected
+bootstrap CIs. Categories with𝛼< 0.67triggers a clarification round and recoding. For rater -based
+quality scores we report ICC(2,𝑘) with 95% CIs.
+We recruit𝑁=24independent raters (non -overlapping with FG/EGM), screened for domain
+familiarity. Each rater evaluates items from two domains (blocks of∼25–30 items/domain). Each
+requirement receives≥ 3independent ratings for relevance, clarity, feasibility, and innovation
+(1–5), plus a source guess—a blinding check in which raters attempt to identify whether the
+item came from AI, EGM, or a human focus group, used solely to verify that the blinding was
+effective (results summarized in the supplementary material). Prior to each block, raters receive
+a neutral one-paragraph domain brief (no method hints). Attention checks (two per block) and
+minimum-time heuristics guard quality. We define a binary validated indicator based on relevance
+only. A requirement is validated if either (i) its median relevance≥ 4or (ii)≥ 60%of raters assign
+relevance≥ 4. We use this indicator to compute validated AI-only share (yield); all quality analyses
+use the raw Likert ratings. Exclusion rates for failed checks are reported; sensitivity analyses
+confirm robustness to their removal, and we additionally report stricter threshold variants in the
+supplementary material (e.g., median relevance≥4.5; relevance≥4& clarity≥4).
+3.12 Post-Validation Reflective Interviews
+While blind cross-ratings quantify quality, they do not explain why certain requirements resonate.
+We therefore conduct post-validation reflective interviews with a sub-sample of prior baseline
+participants (𝑁= 6–8 across domains) who completed HB1 and/or HB2. Interviews occur after all AI
+sessions and blind cross-ratings are complete, avoiding contamination of earlier data collection. Each
+45–60 minute semi-structured interview uses a curated set of∼12–15 anonymized requirements
+(high-scoring items, unique-source items, and contrast pairs; stimuli composition in supplementary).
+The interview proceeds in four phases: (1) source-blind open impressions, (2) deep dive on contrast
+pairs, (3) source reveal and reflection, and (4) elicitation of perceived method complementarity. We
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 12]]
+FSE091:12 Guangrui Fan, Dandan Liu, Lihu Pan, Rui Zhang, and Qian Guo
+audio-record and transcribe all interviews; two coders conduct reflexive thematic analysis with
+six code families (perceived authenticity, novelty vs. utility, trust, efficiency, contextual fit, and
+complementarity). Krippendorff’s𝛼 is reported where applicable. Pre/post source-reveal micro-
+ratings of authenticity and practicality are collected for a subset of items.
+3.13 Data Analysis
+Our analysis draws on (i) session-level aggregates (persona diversity, group dynamics), (ii) require-
+ment level blind ratings (relevance, clarity, feasibility, innovation), and (iii) qualitative themes
+from reflective interviews. We first report descriptive summaries, then compare AI configurations
+(C0–C3) on validated AI-only share using nonparametric omnibus tests with pairwise Cliff’s 𝛿
+and bootstrap CIs, and compare methods (AI, EGM, Human FG) on requirement -level ratings.
+To separate plurality from provider capability, we estimate a difference-in-differences (DiD) on
+session-level outcomes using the same-model controls (C1-MV, C3-SM), with BCa bootstrap CIs
+and permutation𝑝-values. To address effort asymmetry, we downsample AI sessions to match the
+two human sessions per domain over10,000replicates. Robustness checks include cumulative link
+mixed models (CLMMs) with random intercepts for rater and requirement, and random -effects
+meta-analysis for pooled domain estimates. We combine quantitative and qualitative evidence by
+linking statistical contrasts to interview explanations via joint displays. Full model specifications
+and analysis code are provided in the supplementary material.
+4 Results
+We report results in the subsections below; §4.8 provides a concise summary by research question.
+To ground the construct, Table 5 shows de-identified examples (one per method) from the primary
+domain. Full requirement catalogs and the complete ER codebook (definitions, inclusion/exclusion
+criteria, and additional examples) are provided in the supplementary material.
+4.1 Persona Diversity
+Across domains, plurality (C3) increased persona diversity beyond the gains attributable to iterative
+workflow (C1), with the one -shot control (C0) consistently lowest. In the primary domain (A),
+semantic dispersion (median pairwise1−cos between persona summaries) differed significantly
+across conditions (Kruskal–Wallis𝐻=9.974,𝑝=0.0188), and rose from C1 to C3 (C1:0.306[0.305,
+0.314]; C2:0 .332[0.323, 0.340]; C3:0 .393[0.385, 0.393]). Type–token ratio (TTR) and attribute
+diversity showed the same monotonic pattern (Table 6). In the satellites (B: finance; C: fitness), the
+same ordering (C3>C1>C0) was observed but did not reach per-domain significance given smaller
+𝑛 per condition (B:𝐻=3.714,𝑝=0.156; C:𝐻=4.571,𝑝=0.102). Figure 4 visualizes distributions by
+domain (Panel A) and the C3 vs. C1 estimation contrasts with bootstrap CIs for Cliff’s𝛿 (Panel B).
+4.2 Requirement Yield and Quality within AI
+Plurality also translated into higher requirement validation. In Domain A, the validated AI-only
+share increased from C136.6%± 5.5%to C353 .6%± 2.3%(Kruskal–Wallis across C0–C3: 𝐻=9.667,
+𝑝=0.0216; C3–C1 Mann–Whitney𝑝=0.10). Domains B and C showed similar uplifts (B:39 .9%±
+1.5%→ 52.0%±5.5%; C:36.6%±2.0%→ 51.0%±2.9%). A random-effects meta-analysis pooled the C3–
+C1 difference at +14.7% (95% CI:[+11.2,+ 18.2]), confirming a robust plurality advantage (diamond
+in Fig. 5A). Panel B of Fig. 5 shows per-domain distributions for C1 vs. C3. Within-AI item-level
+quality patterns follow the same direction (Table 6) and are consistent with the cross -method
+comparison in which C3 shows higher innovation while EGM shows higher feasibility and clarity
+(Table 7).
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 13]]
+Multi-LLM Persona Generation for Virtual Focus Groups in Software Engineering. . . FSE091:13
+C0 C1 C2 C3
+Condition
+0.25
+0.30
+0.35
+0.40Semantic Dispersion (1 - cos sim)
+Domain: A
+C0 C1 C2 C3
+Condition
+Domain: B
+C0 C1 C2 C3
+Condition
+Domain: C
+C1 C3
+Condition
+0.46
+0.48
+0.50
+0.52
+0.54
+0.56
+Type-Token Ratio (TTR)
+0.27
+Δ=0.71
+1.00
+Cliff's Δ
+C1 C3
+Condition
+20
+22
+24
+Attribute Diversity
+1.001.001.00
+Cliff's Δ
+C1 C3
+Condition
+0.300
+0.325
+0.350
+0.375
+0.400
+Semantic Dispersion
+1.001.001.00
+Cliff's Δ
+Fig. 4. Diversity across conditions.Left:Session -level persona semantic dispersion (1−cos ) by condition.
+Right:Estimation contrasts for C3 vs. C1 on TTR, Attribute Diversity, and Semantic Dispersion with bootstrap
+Cliff’s𝛿and 95% CIs.
+-5% 0% 5% 10% 15% 20% 25%
+Uplift in Validated AI-Only Share (C3 vs C1)
+A
+B
+C
+Pooled
+17.0% [12.9, 21.1]
+12.0% [7.0, 17.0]
+14.5% [9.5, 19.5]
+(A) Domain uplifts
+C1 C3
+Condition
+30%
+40%
+50%
+60%Validated AI-only share (%)
+Domain A
+C1 C3
+Condition
+30%
+40%
+50%
+60%
+Domain B
+C1 C3
+Condition
+30%
+40%
+50%
+60%
+Domain C
+(B) Domain results
+Fig. 5. Uplift in validated AI -only share (C3 vs. C1).Panel A:Domain -level uplifts; diamond shows pooled
+random-effects estimate.Panel B:Distributions for C1 vs. C3.
+Table 5. Concrete examples of emotional requirements (primary domain; de -identified and lightly edited for
+brevity).
+Method Example emotional requirement (ER)
+AI simulated focus group (C3) After detecting missed entries, the app shall offer a user-configurable com-
+passion mode that (i) softens reminder wording, (ii) de-emphasizes streak
+counters by default, and (iii) provides an easy restart path without penalties.
+EGM (HB2) Goal:feel supported (not judged) after lapses → Subgoal:enable gentle
+re-entry while preserving motivation→ Requirement:adaptive reminders +
+optional streak visibility + restart affordance.
+Human focus group (HB1) Journal entries shall be private by default; any public sharing features (e.g.,
+leaderboards) must be explicit opt -in with clear controls, to avoid feeling
+exposed or unsafe.
+4.3 Comparison with Human Baselines
+Table 7 summarizes requirement-level outcomes by method (AI C3, EGM, Human FG) per domain,
+reported as the median [IQR] of per -requirement means across blinded raters. In the primary
+domain (A), AI C3 achieved higher innovation than EGM (4.33 [4.00, 4.33] vs. 3.67 [3.33, 4.00];
+Cliff’s 𝛿=0.455, 95% CI[0.284, 0.636]) with comparable relevance (both medians = 4.00). EGM
+outperformed C3 on feasibility (4.33 [4.33, 4.67] vs. 3.67 [3.33, 4.00]; Cliff’s 𝛿=0.869,[0.811, 0.925])
+and on clarity (4.33 [4.00, 4.67] vs. 4.00 [3.67, 4.00]). The satellites replicated this pattern: in finance
+(B) and fitness (C), innovation favored C3 (B:𝛿=0.625,[0.445, 0.807]; C:𝛿=0.613,[0.436, 0.778]),
+whereas feasibility favored EGM (B:𝛿=0.836,[0.770, 0.900]; C:𝛿=0.877,[0.799, 0.945]). Human FG
+typically sat between C3 and EGM on relevance and feasibility.
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 14]]
+FSE091:14 Guangrui Fan, Dandan Liu, Lihu Pan, Rui Zhang, and Qian Guo
+Table 6. Persona diversity and AI requirement outcomes by domain and condition. Diversity metrics are
+reported asmedian [IQR]across seeds; requirement outcomes for AI -only items aremeans±SD. TTR:
+type–token ratio; AttrDiv: attribute diversity (unique demographic attributes + emotional triggers across six
+personas); SemDisp: semantic dispersion (mean pairwise1−cos).
+Domain Condition TTR AttrDiv SemDisp Total reqs AI-only Validated AI-only Relevance Innovation
+A (primary)
+C0 (one-shot)0.459[0.459, 0.471]18.0[16.5, 18.5]0.294[0.286, 0.297]41±3 10±1 31%±4% 3.5±0.6 3.3±0.7
+C1 (1-LLM seq.)0.530[0.526, 0.536]20.0[19.5, 21.0]0.306[0.305, 0.314]49±2 14±236.6%±5.5% 3.7±0.5 3.6±0.6
+C2 (2-LLM seq.)0.532[0.527, 0.534]23.0[22.5, 24.0]0.332[0.323, 0.340]54±3 15±2 45%±5% 3.9±0.5 3.9±0.6
+C3 (3-LLM seq.)0.539[0.533, 0.548]25.0[25.0, 25.0]0.393[0.385, 0.393]59±2 18±253.6%±2.3% 4.0±0.4 4.2±0.5
+B (finance)
+C0 (one-shot)0.442[0.439, 0.445]17.0[17.0, 17.0]0.268[0.260, 0.275]38±2 9±1 28% 3.5±0.6 3.2±0.7
+C1 (1-LLM seq.)0.493[0.482, 0.504]21.0[20.5, 21.5]0.289[0.285, 0.292]46±2 12±139.9%±1.5% 3.7±0.5 3.5±0.6
+C3 (3-LLM seq.)0.532[0.526, 0.538]23.5[23.25, 23.75]0.395[0.392, 0.398]53±3 15±252.0%±5.5% 3.9±0.5 4.0±0.5
+C (fitness)
+C0 (one-shot)0.441[0.431, 0.450]15.5[15.25, 15.75]0.246[0.245, 0.247]39±2 10±1 29% 3.6±0.6 3.4±0.6
+C1 (1-LLM seq.)0.476[0.465, 0.487]20.5[20.25, 20.75]0.312[0.309, 0.315]47±2 13±136.6%±2.0% 3.8±0.5 3.7±0.5
+C3 (3-LLM seq.)0.543[0.538, 0.549]24.5[24.25, 24.75]0.351[0.346, 0.355]55±3 16±251.0%±2.9% 4.0±0.5 4.1±0.5
+Table 7. Per -method requirement outcomes by domain from blind ratings. Quality scores are the median
+[IQR] of per-requirement means across blinded raters.
+Quality Scores (Median of per-requirement means [IQR]) Effect Size vs. EGM
+Domain Method Valid. Share a Relevance Clarity Feasibility Innovation Innov. Gain b Feas. Gainc
+A (primary)
+AI C3 0.64 4.00 [4.00, 4.00] 4.00 [3.67, 4.00] 3.67 [3.33, 4.00] 4.33 [4.00, 4.33] 0.455 [0.284, 0.636] —
+EGM 0.68 4.00 [4.00, 4.33] 4.33 [4.00, 4.67] 4.33 [4.33, 4.67] 3.67 [3.33, 4.00] — 0.869 [0.811, 0.925]
+Human FG 0.62 4.00 [3.67, 4.25] 4.00 [4.00, 4.33] 3.67 [3.42, 4.00] 3.67 [3.67, 4.00] — —
+B (finance)
+AI C3 0.61 4.00 [4.00, 4.00] 4.00 [3.67, 4.00] 3.67 [3.33, 3.67] 4.33 [4.00, 4.33] 0.625 [0.445, 0.807] —
+EGM 0.66 4.00 [4.00, 4.33] 4.33 [4.00, 4.33] 4.33 [4.00, 4.33] 3.67 [3.33, 3.67] — 0.836 [0.770, 0.900]
+Human FG 0.60 4.00 [3.67, 4.33] 4.00 [3.67, 4.33] 4.00 [3.67, 4.33] 3.67 [3.33, 4.00] — —
+C (fitness)
+AI C3 0.63 4.00 [3.92, 4.00] 4.00 [3.67, 4.33] 3.67 [3.33, 3.75] 4.33 [4.00, 4.67] 0.613 [0.436, 0.778] —
+EGM 0.67 4.00 [4.00, 4.33] 4.33 [4.33, 4.67] 4.33 [4.33, 4.58] 3.67 [3.33, 3.67] — 0.877 [0.799, 0.945]
+Human FG 0.61 3.83 [3.67, 4.00] 4.00 [3.67, 4.08] 4.00 [3.67, 4.08] 3.67 [3.33, 4.00] — —
+Pooled Estimate (95% CI)— — — — —0.42[0.20, 0.60]0.45[0.24, 0.62]
+a Proportion of a method’s items meeting the validation rule.
+b Cliff’s𝛿for Innovation (AI C3 vs. EGM), 95% CIs (BCa bootstrap).
+c Cliff’s𝛿for Feasibility (EGM vs. AI C3), 95% CIs (BCa bootstrap).
+2.5 3.0 3.5 4.0 4.5 5.0
+Innovation
+Feasibility
+Domain: A
+2.5 3.0 3.5 4.0 4.5 5.0
+Innovation
+Domain: B
+2.5 3.0 3.5 4.0 4.5 5.0
+Innovation
+Domain: C
+0
+50
+100
+68 61
+47
+High-High %
+0
+50
+100
+64 63 53
+High-High %
+0
+50
+100
+65 55 45
+High-High %
+AI C3 EGM Human FG
+Fig. 6. Method trade -off—Feasibility vs. Innovation (per domain). Points are per-requirement medians for
+AI C3, EGM, and Human FG, with 60% ellipses and a segment linking the AI C3 and EGM centroids. The
+dotted line marks parity; dashed/solid lines mark the 4.0 threshold for innovation/feasibility.
+4.4 Coverage & Complementarity under Equalized Effort
+A natural question is whether AI-generated ERs are “complete. ” Concretely, we ask what AI surfaces
+beyond the human baselines and what the human baselines surface beyond AI. We do not claim
+exhaustive completeness. Instead, we approximate coverage at the level of validated requirement
+clusters using two observable signals: (i) the share of AI -only items that pass source -blinded
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 15]]
+Multi-LLM Persona Generation for Virtual Focus Groups in Software Engineering. . . FSE091:15
+relevance validation, and (ii) overlap between validated-cluster sets produced by AI, EGM, and
+Human FG (Jaccard).
+To equalize effort, we downsample AI sessions to match the two human sessions per domain
+(FG and EGM) over10,000replicates. Validated AI -only share remains high under equalized effort
+(medians≈ 44–47%), while overlaps are moderate (Jaccard≈ 0.29–0.38), indicating that methods
+cover partially distinct regions of the requirements space (full results in supplementary).
+What AI adds in practice (validated AI -only examples).Beyond uplift, validated AI -only items
+often operationalize emotional pain points into concrete, backlog-ready design moves. Examples
+include: (1) a compassion mode after missed entries that softens reminder tone and de-emphasizes
+streak pressure (Table 5); (2) privacy scaffolding for sensitive integrations (e.g., default-off linking,
+progressive disclosure, and clear toggles to reduce anxiety); and (3) a gradual visibility ladder for
+social features (private→ selective→ public) to mitigate social-comparison stress while preserving
+motivation. Reflective interviews suggest these ideas are perceived as useful when paired with
+safeguards and traceability (Table 9), aligning with our recommendation to combine AI divergence
+with EGM structuring and human grounding.
+4.5 Conflict Typology and Predictive Value
+Plurality increased not only the amount of disagreement but also its productivity. In the primary
+domain (A), median contradictions per session rose from7±2(C0) to12±3(C1),16±3(C2), and22±4
+(C3). The share of productive conflicts (those followed by a new or refined requirement within three
+turns) increased in parallel from0.22±0.05(C0) to0 .33±0.06(C1),0 .39±0.05(C2), and0 .45±0.05
+(C3), with resolution rates rising from0 .41±0.07to0 .63±0.05. For Domains B and C, the same
+monotone pattern (C3>C1>C0) holds on contradictions, productive-conflict density, and resolution
+(Table 8).
+Table 8. Conflict dynamics by condition. Domain A values are mean±SD across three seeds. Satellites pool
+Domains B and C and report mean±SD across both domains and their two seeds each.
+Domain Condition Contradictions / session Empathy events / session Productive density Resolution rate
+A (primary)
+C0 (one-shot)7±2 5±2 0.22±0.05 0.41±0.07
+C1 (1-LLM seq.)12±3 9±3 0.33±0.06 0.52±0.06
+C2 (2-LLM seq.)16±3 13±3 0.39±0.05 0.58±0.05
+C3 (3-LLM seq.)22±4 18±4 0.45±0.05 0.63±0.05
+Satellites (B + C)
+C0 (one-shot)6±1 4±1 0.21±0.03 0.40±0.04
+C1 (1-LLM seq.)11±2 8±2 0.31±0.03 0.50±0.04
+C3 (3-LLM seq.)19±3 15±3 0.44±0.04 0.61±0.05
+At the session level, productive-conflict density strongly predicted the validated AI-only share.
+We observed positive Spearman associations within each domain (Domain A𝜌=0.83,𝑝=0.001,𝑛=12;
+Domain B𝜌=0.94,𝑝=0.005,𝑛=6; Domain C𝜌=0.83,𝑝=0.042,𝑛=6) and a pooled estimate of𝜌=0.86
+(𝑝< 0.001). Figure 7 visualizes this relation across all AI conditions and domains: a LOESS trend
+indicates a stable, monotonic increase, and the 2D density contours show concentration moving
+up and to the right from C0 to C3. It suggests that plurality’s gains are mediated, in part, by the
+conversion of disagreement into concrete requirements that subsequently pass blind validation.
+Empathy markers increased with plurality in parallel to contradictions. In Domain A, empathy
+events per session rose monotonically from5±2(C0) to9±3(C1),13±3(C2), and18±4(C3) (Table 8).
+Session-level empathy counts correlated with resolution rate (Spearman 𝜌=0.59, BCa 95% CI
+[0.06, 0.88]), and more weakly with the clarity of downstream requirements ( 𝜌=0.32, 95% CI
+[−0.28, 0.76]). Across the satellites (B+C), the empathy–resolution association showed the same
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 16]]
+FSE091:16 Guangrui Fan, Dandan Liu, Lihu Pan, Rui Zhang, and Qian Guo
+0.2 0.3 0.4 0.5
+Productive-Conflict Density per Session
+0.3
+0.4
+0.5
+0.6Validated AI-Only Share per Session
+Spearman ρ = 0.85 (p < 0.001)
+C0
+C1
+C2
+C3
+A: Mental Health
+B: Finance
+C: Fitness
+Fig. 7. Relationship between productive conflict and validated yield across AI conditions. The main panel
+plots session-level productive-conflict density (x) against the validated AI-only share (y). Points are colored
+by condition (C0–C3) and use distinct markers for domains (A: circle; B: square; C: triangle); the LOESS curve
+(dashed) and 2D density contours highlight a stable, monotonic association. Marginal histograms show the
+univariate distributions by condition for productive-conflict density and validated share.
+direction (𝜌=0.47, 95% CI[−0.05, 0.83]). This supports the interpretation that, alongside productive
+disagreement, supportive reframing is a complementary interactional pathway toward higher
+resolution and clearer requirement statements.
+4.6 Plurality vs. Provider Capability: Same-Model Ablations (Domain A)
+We ran additional same-model ablation controls in the primary domain with two seeds per control.
+On the validated AI-only share, C1-MV improved over C1 (41.2%± 3.1%vs.36 .6%± 5.5%; Δ=+4.6
+%, BCa 95% CI[+1.2,+ 8.0], permutation 𝑝=0.012), while C3 exceeded C3-SM (53.6%± 2.3%vs.
+48.9%± 2.6%; Δ=+4.7%, 95% CI [+1.9,+ 7.4],𝑝=0.006). The resulting difference-in-differences was
++9.3 % (95% CI[+4.2,+ 14.1],𝑝=0.004). For persona semantic dispersion, medians (pairwise1−cos )
+were: C10.306[0.305, 0.314], C1-MV0 .326[0.322, 0.329], C3-SM0 .361[0.357, 0.365], C30 .393[0.385,
+0.393]; DiD =  0.393−0.306−  0.361−0.326 =+0.052 (95% CI[+0.021,+ 0.081],𝑝=0.003). For
+productive-conflict density, means (±SD) were: C10.33±0.06, C1-MV0.36±0.04, C3-SM0.40±0.04,
+C30.45±0.05; DiD=  0.45−0.33−  0.40−0.36 =+0.08(95% CI[+0.03,+0.12],𝑝=0.005).
+A CLMM robustness check (ordinal innovation) found a positive effect for C3 vs. C3-SM (OR
+= 1.35, 95% CI[1.12, 1.64],𝑝=0.002) and a smaller, directionally consistent effect for C1-MV vs. C1
+(OR = 1.18, 95% CI[0.96, 1.45],𝑝=0.11). The step-order covariate in heterogeneous C3 was not
+significant (𝛽=0.01, 95% CI[−0.03, 0.05],𝑝=0.62). Controlling for talkativeness (mean tokens/turn)
+did not materially change estimates (<0.5% change in DiD point estimates).
+4.7 Reflective Interviews: Why Certain Requirements Resonated
+We conducted post-validation interviews with seven baseline participants (two per domain; one
+participant overlapped two domains and was interviewed once) to probe why particular require-
+ments—especially AI-only items—were judged relevant, feasible, or innovative. Stimuli combined (i)
+top-rated items, (ii) unique-source items (AI-only, EGM-only), and (iii) contrast pairs addressing the
+same need with different solutions. Items were first shown source-blind and subsequently re-visited
+after revealing provenance. The interviews themes are present in Table 9, and they extend the
+quantitative findings in three ways.
+First, participants attributed the higher innovation of the 3-LLM condition (C3) to productive
+friction and voice contrast. They described C3 items as“seeing the same problem from three angles, ”
+which often surfaced overlooked states (e.g.,“shame after breaking a streak”) and reframed standard
+features (e.g.,“compassion mode”for reminders). This maps to the positive correlation we observed
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 17]]
+Multi-LLM Persona Generation for Virtual Focus Groups in Software Engineering. . . FSE091:17
+Table 9. Themes from reflective interviews: mechanisms, method associations, domain notes, and exemplar
+quotes.
+Theme Mechanism / Insight Most asso-
+ciated
+Domain
+salience
+Exemplar quote
+Productive fric-
+tion
+Contrasting “voices” push
+ideas from vague to
+specific; disagreement
+triggers refinements users
+later endorse
+AI (C3) All; strongest in
+mental health
+“The push-back made it
+concrete—what would the
+app do when I miss a
+week?”
+Reframing vs.
+novelty
+Novelty valued when it
+reframes a known pain
+(guilt, shame); penalized
+when speculative without
+context
+AI (C3) Mental health, fit-
+ness
+“‘Compassion mode’ is new
+but clicks with how I
+actually feel after falling
+off.”
+Traceability &
+trade-offs
+Clear lines from goals to
+requirements increase
+feasibility and clarity;
+helps prune
+over-engineering
+EGM All; strongest in
+finance
+“I can see why we keep this
+and drop that—there’s a
+rationale, not just a cool
+idea.”
+Tone & language
+fit
+Everyday phrasing,
+empathy, and
+non-judgmental tone drive
+perceived authenticity and
+acceptability
+Human FG All “This sounds like how I’d
+talk to a friend, not a
+system spec.”
+Privacy scaffolds Novel ideas accepted when
+paired with defaults,
+consent, and transparency
+hooks
+EGM+AI Finance “I’d try the bank thing if it’s
+opt-in with clear toggles
+and no surprises.”
+Social exposure
+control
+Gradual reveal
+(private→selective→public)
+mitigates comparison
+stress; supports sustained
+use
+AI (C3) +
+FG
+Fitness “Let me earn being seen;
+don’t dump me on a
+leaderboard day one.”
+between productive-conflict density and validated AI-only yield. Second, they linked EGM’s advan-
+tages on feasibility and clarity to its traceability—goal→subgoal→requirement reasoning “made the
+hard trade-offs explicit. ” Third, they valued Human FG outputs for tone and language fit, explaining
+why authenticity scores concentrated there despite narrower breadth.
+Perceived value of AI plurality varied by domain salience of risk. In mental health and fitness,
+participants welcomed AI-only ideas that reduced guilt or social pressure (“soft-landing prompts
+after lapses”;“private milestones before leaderboards”). In finance, participants were more skeptical
+of novel AI suggestions without explicit safeguards (“any bank-link feature needs default off and
+a clear reason”), aligning with slightly lower AI relevance in that domain and EGM’s stronger
+feasibility advantage.
+When sources were revealed, views rarely flipped, but justifications sharpened. Five of seven
+participants reported greater trust in items once told they came from EGM (“structured, less risky”),
+whereas three reported greater openness to novel C3 items despite initial hesitation (“it’s out-there,
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 18]]
+FSE091:18 Guangrui Fan, Dandan Liu, Lihu Pan, Rui Zhang, and Qian Guo
+but it makes me think”). Pre/post micro -ratings (collected for a subset of items) showed small
+descriptive shifts: authenticity rose for Human FG items (median Δ=+ 0.2), perceived feasibility
+rose for EGM items (Δ=+ 0.2), and perceived practicality dipped slightly for AI items in finance
+(Δ=−0.2), consistent with the quantitative patterns.
+4.8 Answers to the Research Questions
+RQ1 (Iteration vs. multi-model).Across all three domains, multi-model pipelines produced more
+diverse persona sets than single-model workflows, whether one-shot or iterative. In the primary
+domain, semantic dispersion rose monotonically from C0 (0.294) through C1 (0.306) to C3. Attribute
+diversity and type–token ratio followed the same ordering (Table 6). The satellites replicated the
+C3>C1>C0 pattern directionally, though per-domain tests did not reach significance with smaller𝑛.
+These results indicate that model plurality contributes diversity beyond what iterative refinement
+with a single model achieves.
+RQ2 (Elicitation quality & baselines).Multi -model configurations yielded a higher share of
+source-validated, AI-only emotional requirements. The pooled C3–C1 uplift in validated AI-only
+share was+14.7percentage points. Same -model ablations attribute+9.3pp of this gain to plurality
+structure rather than provider capability. In cross-method comparison, C3 achieved higher inno-
+vation than EGM, while EGM outperformed C3 on feasibility and clarity (Table 7). Human focus
+groups scored between C3 and EGM on most dimensions. These trade-offs confirm complementarity
+rather than dominance of any single method.
+RQ3 (Mechanisms).Productive -conflict density emerged as the strongest session-level predictor of
+validated AI-only yield, rising monotonically from C0 (0.22±0.05) to C3 (0.45±0.05) in the primary
+domain. Empathy events increased in parallel (C0:5±2; C3:18±4) and correlated with resolution
+rate. These patterns suggest that plurality’s gains are mediated, in part, by converting disagreement
+into concrete, validated requirements, with supportive reframing serving as a complementary
+interactional pathway toward higher resolution and clearer requirement statements.
+5 Discussion
+Orchestrating heterogeneous LLMs produced more diverse persona sets and a larger share of
+AI-only requirements that subsequently passed blind human validation across three domains, with
+reflective interviews identifying productive friction and voice contrast as the operative mechanism.
+This finding is consistent with ensemble benefits in NLP [ 9, 31] and addresses concerns that
+single-model proxies homogenize perspectives [16, 18].
+A central innovation of this work is to demonstrate efficient emotional RE at scale. Multi-LLM
+focus groups require no recruitment or scheduling, run on demand, and can be replicated across
+seeds and domains with invariant prompts and logging—compressing the time from problem
+framing to a vetted set of candidate requirements. These efficiency effects echo emerging reports
+that LLMs accelerate qualitative workflows and reduce manual coding burdens [2, 13], but extend
+them by showing that acceleration need not degrade quality when outputs are coupled to blind
+rating and post-hoc interviewing. Practically, plurality enables rapid, low-marginal-cost divergence
+(overnight or seed-parallelized), allowing teams to probe edge cases and iterate before convening
+human sessions—a long-standing bottleneck in sensitive domains [1].
+Our human baselines require synchronous sessions (HB1/HB2) with𝑁=6participants per domain:
+a single 60–90 minute session corresponds to roughly 6–9 participant-hours, plus moderator time,
+recruitment/scheduling overhead, and transcription. By contrast, our AI sessions are bounded by
+fixed budgets: persona generation is capped at≤ 3× 750output tokens and focus -group dialog at
+≤ 60turns×≤ 300output tokens/turn (on the order of10 4 generated tokens per run), and sessions
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 19]]
+Multi-LLM Persona Generation for Virtual Focus Groups in Software Engineering. . . FSE091:19
+can be executed on demand and parallelized across seeds. Under these caps, each C3 run surfaces
+about15–18AI -only requirement clusters, of which roughly8–10validate (Table 6); the iterative
+single-model baseline (C1) surfaces about12–14AI -only clusters with roughly4–5validated. This
+supports our framing of simulated focus groups as an efficient early divergence step to run before
+investing scarce human session time.
+Findings position multi-LLM dialogs, Emotional Goal Modeling (EGM), and human focus groups
+as complementary instruments. Plurality diverges and reframes familiar pains (e.g., guilt after lapses)
+into new design moves; EGM structures these moves via transparent goal→subgoal→requirement
+tracing, improving feasibility and clarity; human groups ground language, tone, and social accept-
+ability. This division of labor advances calls to center emotions in RE [8, 12, 23] and extends recent
+demonstrations of LLM assistance in qualitative analysis and elicitation [2, 3, 13]. Crucially, reflec-
+tive interviews showed why certain AI-novel ideas resonate (e.g., “compassion mode” reminders)
+and where human structure or phrasing remains decisive for trust—evidence that moves beyond
+“which method wins” to “how methods combine. ” Prior work largely applies a single model to parse
+artifacts or role-play a generic stakeholder [4, 15, 22]. We contribute a standardized interactional
+protocol that elicits contested viewpoints rather than solitary summaries, demonstrate that plurality
+increases realism and utility in those interactions (in line with multi-agent findings [14, 26]), and
+tie outcomes to external human judgment—addressing validity concerns raised in recent surveys
+[3].
+Validated emotional requirements (especially AI-only items surfaced early) can be treated as
+candidate backlog entries that teams triage before implementation. EGM helps convert these
+candidates into traceable goal→requirement structures and surfaces feasibility constraints; human
+focus groups help calibrate tone, language fit, and acceptability in context. For example, the AI
+“compassion mode” ER (Table 5) can be operationalized as a user story with testable criteria:
+• User story:As a user who missed journaling for several days, I want the app to offer a gentle
+restart mode so that I do not feel judged and am more likely to re-engage.
+• Acceptance criteria:after 𝑘 missed days, the app (i) switches reminders to supportive wording,
+(ii) hides streak pressure by default (opt -in), and (iii) offers a one -tap “restart” path with no
+penalties.
+This illustrates how the DSG workflow can translate complementary ER coverage into concrete
+engineering artifacts (backlog items, prioritization rationale, and validation/tests) while mitigating
+risk in sensitive domains. Because LLM personas are textual artifacts rather than lived experience,
+safeguards are non-optional. Our protocol integrates stereotype/stigma guardrails, full logging of
+prompts/seeds/versions, blind human validation, and post-hoc interviews—governance steps aligned
+with cautions about synthetic authenticity, bias, and overreach [1, 14]. Domain nuance matters:
+finance participants demanded explicit privacy scaffolds before endorsing AI -novel ideas—an
+alignment with broader guidance on risk-sensitive RE [8]. We summarize threats to validity and
+remaining limitations in Sec. 6.
+6 Threats to Validity
+Internal validity.A key threat is confounding between plurality and provider capability: our
+heterogeneous C3 combines a multi-voice structure with cross-provider heterogeneity. We mitigate
+this by adding same-model controls (C1-MV and C3-SM) in the primary domain (Sec. 4.6), but
+these controls use fewer seeds and only one domain, leaving residual confounding possible. Prompt
+wording, safety guardrails, and the moderator’s challenge turns can also shape how often disagree-
+ment appears and which requirements are proposed; we keep prompts and moderation protocol
+fixed across conditions and log full manifests, yet alternative prompt/guardrail choices may change
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 20]]
+FSE091:20 Guangrui Fan, Dandan Liu, Lihu Pan, Rui Zhang, and Qian Guo
+absolute yields. Finally, “seeds” are proxies for stochasticity in non-deterministic services; despite
+logging and replication, provider drift and hidden sampling sources can affect exact reproducibility.
+Construct validity.Emotional requirements are operationalized through our ER codebook
+and turn-level coding; misclassification remains possible despite a shared manual, independent
+coding, and reliability checks reported in the supplementary materials. Our blind rating constructs
+(relevance, innovation, feasibility, clarity, authenticity) depend on raters’ interpretation of the
+Likert anchors, and “validated share” depends on an aggregation rule and cutoff; we therefore
+report sensitivity analyses for alternative thresholds. Requirement “coverage” is approximated at
+the level of embedding-based clusters; cluster boundaries and cosine thresholds can merge or split
+semantically close items, affecting overlaps and “AI-only” attribution.
+External validity.We study three domains and a limited number of human baseline sessions and
+interviews; results may not transfer to other product types, regulatory contexts, or organizational
+constraints. Provider plurality is not the same as cultural diversity: most models are trained on
+predominantly English and Western data, and our evaluation pool is limited; future work should
+incorporate multilingual prompts, region-specific models, and culturally diverse participants to
+test whether the same mechanisms hold. Simulated focus groups do not replace affected users,
+particularly in sensitive domains where lived experience and local norms shape acceptable designs.
+7 Conclusion
+Model plurality, beyond iterative workflow, improves AI-mediated elicitation of emotional require-
+ments in pooled estimates across three domains. A three-voice pipeline (C3) yields more validated
+AI-only requirements than a single-model workflow (C1) by+14.7 pp (pooled). Same-model abla-
+tions (C1-MV, C3-SM) indicate that+9.3 pp of this uplift is attributable to plurality structure rather
+than provider capability. In the primary domain, the C3–C1 uplift is directional (non-significant),
+so we rely on pooled estimates and ablations; an equalized -effort downsampling confirms the
+advantage and the methods’ complementarity when AI effort matches human effort.
+Operationally, the pipeline is efficient: outcome-efficient (higher validated fraction per session),
+operationally efficient (on-demand, seed-parallelizable, reusable artifacts), and cost -efficient at
+exploration time (elastic compute rather than fixed moderator hours). Practically, we recommend
+a diverge–structure–ground sequence: use C3 for breadth and reframing (innovation), EGM for
+traceable goal→requirement structure (clarity/feasibility), and human focus groups for language
+fit and trust. Together these produce a more robust, auditable base of emotional requirements than
+any single method alone.
+8 Data Availability
+All data supporting this study’s findings are available in the supplementary materials. The dataset
+comprises: (i) session-level metrics for persona diversity and group dynamics across AI sessions and
+human baseline sessions; (ii) requirements with source attribution; (iii) blind quality ratings from
+independent raters; (iv) turn-by-turn interaction coding for conflicts, empathy, and resolutions; (v)
+pre/post source-reveal ratings from reflective interviews; and (vi) inter-coder reliability data. The
+supplementary package includes analysis scripts to reproduce statistical results, prompt logs and
+orchestration protocols, coding manuals, and domain-specific instantiations.
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 21]]
+Multi-LLM Persona Generation for Virtual Focus Groups in Software Engineering. . . FSE091:21
+References
+[1] Mashail N Alkhomsan, Malak Baslyman, and Mohammad Alshayeb. 2024. Eliciting and modeling emotional require-
+ments: a systematic mapping review.PeerJ Computer Science10 (2024), e1782. doi:10.7717/peerj-cs.1782
+[2] Muneera Bano, Rashina Hoda, Didar Zowghi, and Christoph Treude. 2024. Large language models for qualitative
+research in software engineering: exploring opportunities and challenges.Automated Software Engineering31, 1 (2024),
+8. doi:10.1007/s10515-023-00407-8
+[3] Muneera Bano, Didar Zowghi, and Jon Whittle. 2023. AI and human reasoning: Qualitative research in the age of
+Large Language Models.The AI Ethics Journal3, 1 (2023). doi:10.47289/AIEJ20240122
+[4] Cauã Ferreira Barros, Bruna Borges Azevedo, Valdemar Vicente Graciano Neto, Mohamad Kassab, Marcos Kalinowski,
+Hugo Alexandre D Do Nascimento, and Michelle CGSP Bandeira. 2025. Large language model for qualitative research:
+A systematic mapping study. In2025 IEEE/ACM International Workshop on Methodological Issues with Empirical Studies
+in Software Engineering (WSESE). IEEE, 48–55. doi:10.1109/wsese66602.2025.00015
+[5] Arturo Castellanos, Haoqiang Jiang, Paulo Gomes, Debra Vander Meer, and Alfred Castillo. 2025. Large Language
+Models for Thematic Summarization in Qualitative Health Care Research: Comparative Analysis of Model and Human
+Performance.JMIR AI4 (2025), e64447. doi:10.2196/64447
+[6] Ricardo Colomo Palacios, Cristina Casado-Lumbreras, Pedro Soto-Acosta, and Ángel García Crespo. 2011. Using the
+affect grid to measure emotions in software requirements engineering. (2011). doi:10.3217/jucs-017-09-1281
+[7] Andrew B Crocker, Marcelo Schmidt, Juan Diego Tejeda, and Howard Rodriguez-Mori. 2025. Proof of Concept:
+Leveraging Large Language Models for Qualitative Analysis of Participant Feedback.The Journal of Extension63, 1
+(2025), 16. doi:10.34068/joe.63.01.16
+[8] Maheswaree Kissoon Curumsing, Sonja Pedell, and Rajesh Vasa. 2014. Designing an evaluation tool to measure
+emotional goals.International Journal of People-Oriented Programming (IJPOP)3, 1 (2014), 22–43. doi:10.4018/ijpop.
+2014010102
+[9] Michael S Deiner, Vlad Honcharov, Jiawei Li, Tim K Mackey, Travis C Porco, and Urmimala Sarkar. 2024. Large
+language models can enable inductive thematic analysis of a social media corpus in a single prompt: human validation
+study.JMIR infodemiology4, 1 (2024), e59641. doi:10.2196/59641
+[10] Alessio Ferrari and Paola Spoletini. 2025. Formal requirements engineering and large language models: A two-way
+roadmap.Information and Software Technology181 (2025), 107697. doi:10.1016/j.infsof.2025.107697
+[11] Binnur Görer and Fatma Başak Aydemir. 2024. GPT-Powered Elicitation Interview Script Generator for Requirements
+Engineering Training. In2024 IEEE 32nd International Requirements Engineering Conference (RE). IEEE, 372–379.
+doi:10.1109/re59067.2024.00044
+[12] Ana Hadiana. 2020. Emotional preferences towards e-learning based on analytic hierarchy process and kansei for
+decision making.European Journal of Engineering and Technology Research5, 10 (2020), 1186–1190. doi:10.24018/ejeng.
+2020.5.10.2127
+[13] Adam S Hayes. 2025. “Conversing” With Qualitative Data: Enhancing Qualitative Research Through Large Lan-
+guage Models (LLMs).International Journal of Qualitative Methods24 (2025), 16094069251322346. doi:10.1177/
+16094069251322346
+[14] Adam Hulman, Ole Lindgård Dollerup, Jesper Friis Mortensen, Matthew E Fenech, Kasper Norman, Henrik Støvring,
+and Troels Krarup Hansen. 2023. ChatGPT-versus human-generated answers to frequently asked questions about
+diabetes: A Turing test-inspired survey among employees of a Danish diabetes center.Plos one18, 8 (2023), e0290773.
+doi:10.1371/journal.pone.0290773
+[15] Javed Ali Khan, Shamaila Qayyum, and Hafsa Shareef Dar. 2025. Large Language Model for Requirements Engineering:
+A Systematic Literature Review. (2025). doi:10.21203/rs.3.rs-5589929/v1
+[16] Tiffany H Kung, Morgan Cheatham, Arielle Medenilla, Czarina Sillos, Lorie De Leon, Camille Elepaño, Maria Madriaga,
+Rimel Aggabao, Giezel Diaz-Candido, James Maningo, and Victor Tseng. 2023. Performance of ChatGPT on USMLE:
+potential for AI-assisted medical education using large language models.PLoS digital health2, 2 (2023), e0000198.
+doi:10.1371/journal.pdig.0000198
+[17] Christopher Lazik, Charlotte Kauter, Inês Nunes, Aaron Ziglowski, Alina Pryma, Christopher Katins, Lars Grunske,
+and Thomas Kosch. 2025. The Good, the Bad, and the Uncanny: Investigating Diversity Aspects of LLM-Generated
+Personas for Requirements Engineering. In2025 IEEE 33rd International Requirements Engineering Conference (RE).
+IEEE, 244–256. doi:10.1109/RE63999.2025.00031
+[18] Tianshun Lin, Changgui Xu, Jianshan Zhang, Nan Lin, Yuxin Liu, and Yuanjun Zheng. 2025. Leveraging Large
+Language Models for Network Security: A Multi-Expert Approach.Internet Technology Letters8, 3 (2025), e70016.
+doi:10.1002/itl2.70016
+[19] Yiren Liu, Pranav Sharma, Mehul Jitendra Oswal, Haijun Xia, and Yun Huang. 2024. Personaflow: Boosting research
+ideation with llm-simulated expert personas.arXiv preprint arXiv:2409.12538(2024).
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.
+
+[[page 22]]
+FSE091:22 Guangrui Fan, Dandan Liu, Lihu Pan, Rui Zhang, and Qian Guo
+[20] Nelson Lojo, Rafael González, Rohan Philip, José Antonio Parejo, Amador Durán Toro, Armando Fox, and Pablo
+Fernández. 2025. Using Large Language Models to Develop Requirements Elicitation Skills. InProceedings of the 30th
+ACM Conference on Innovation and Technology in Computer Science Education V. 2. ACM, 774–774. doi:10.1145/3724389.
+3730772
+[21] Kashumi Madampe, Rashina Hoda, and John Grundy. 2022. The emotional roller coaster of responding to requirements
+changes in software engineering.IEEE Transactions on Software Engineering49, 3 (2022), 1171–1187. doi:10.1109/tse.
+2022.3172925
+[22] Nuno Marques, Rodrigo Rocha Silva, and Jorge Bernardino. 2024. Using chatgpt in software requirements engineering:
+A comprehensive review.Future Internet16, 6 (2024), 180. doi:10.3390/fi16060180
+[23] Tim Miller, Sonja Pedell, Antonio A Lopez-Lorca, Antonette Mendoza, Leon Sterling, and Alen Keirnan. 2015. Emotion-
+led modelling for people-oriented requirements engineering: the case study of emergency systems.Journal of Systems
+and Software105 (2015), 54–71. doi:10.1016/j.jss.2015.03.044
+[24] Ryan M Omizo. 2024. Automating research in business and technical communication: Large Language models as quali-
+tative coders.Journal of Business and Technical Communication38, 3 (2024), 242–265. doi:10.1177/10506519241239927
+[25] Marco Ortu, Alessandro Murgia, Giuseppe Destefanis, Parastou Tourani, Roberto Tonelli, Michele Marchesi, and Bram
+Adams. 2016. The emotional side of software developers in JIRA. InProceedings of the 13th international conference on
+mining software repositories. 480–483. doi:10.1145/2901739.2903505
+[26] Joon Sung Park, Joseph O’Brien, Carrie Jun Cai, Meredith Ringel Morris, Percy Liang, and Michael S Bernstein. 2023.
+Generative agents: Interactive simulacra of human behavior. InProceedings of the 36th annual acm symposium on user
+interface software and technology. 1–22. doi:10.1145/3586183.3606763
+[27] Hope Schroeder, Marianne Aubin Le Quéré, Casey Randazzo, David Mimno, and Sarita Schoenebeck. 2024. Large
+language models in qualitative research: Can we do the data justice?arXiv preprint arXiv:2410.07362(2024).
+[28] Nga Than, Leanne Fan, Tina Law, Laura K Nelson, and Leslie McCall. 2025. Updating “The Future of Coding”:
+Qualitative Coding with Generative Large Language Models.Sociological Methods & Research54, 3 (2025), 849–888.
+doi:10.1177/00491241251339188
+[29] Sarah Thew and Alistair Sutcliffe. 2018. Value-based requirements engineering: method and experience.Requirements
+engineering23 (2018), 443–464. doi:10.1007/s00766-017-0273-y
+[30] Shenghan Wu, Yimo Zhu, Wynne Hsu, Mong-Li Lee, and Yang Deng. 2025. From personas to talks: Revisiting the
+impact of personas on llm-synthesized emotional support conversations. InProceedings of the 2025 Conference on
+Empirical Methods in Natural Language Processing. 5439–5453. doi:10.18653/v1/2025.emnlp-main.277
+[31] Chen Yang, Xianyang Zhang, and Jun Chen. 2025. Large Language Model Consensus Substantially Improves the Cell
+Type Annotation Accuracy for scRNA-seq Data.bioRxiv(2025), 2025–04. doi:10.1101/2025.04.10.647852
+[32] Taiyu Zhang, Xuesong Zhang, Robbe Cools, and Adalberto Simeone. 2024. Focus Agent: LLM-Powered Virtual Focus
+Group. InProceedings of the 24th ACM International Conference on Intelligent Virtual Agents. 1–10. doi:10.1145/3652988.
+3673918
+Proc. ACM Softw. Eng., Vol. 3, No. FSE, Article FSE091. Publication date: July 2026.

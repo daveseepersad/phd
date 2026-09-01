@@ -1,0 +1,652 @@
+{
+	"records": [
+		{
+			"order": 23,
+			"status": "read",
+			"concepts": [
+				"comparative-single-vs-multi",
+				"role-specialization",
+				"orchestration",
+				"communication",
+				"memory-context",
+				"verification-testing",
+				"security",
+				"reliability-nondeterminism",
+				"cost-latency",
+				"benchmarks-evaluation",
+				"code-generation-repair"
+			],
+			"evidence_notes": {
+				"hypothesis_role": "Supporting evidence for a specialized generation-checking pipeline and for combining LLM agents with deterministic verification. It is not evidence that a multi-agent system outperforms a matched single agent: the measured runtime gains are primarily attributable to GraphQL+ unified computation, not to agent multiplicity.",
+				"research_design": "The study uses nine open-source Java and Go microservice systems, grouped by service count and deployed on cloud infrastructure. Claude 4.5 Sonnet powers four generation roles (labeling, modularizing, packaging, and GraphQL+ generation), Gemini 2.5 Pro performs independent functionality checking, and a PEG parser performs syntax checking in an iterative repair loop. Generated models are checked with 606 functional tests. Runtime experiments vary request data from 0.5 MB to 6 MB and compare iRUC with a conventional microservice system, excessive-transfer removal, dynamic deployment, and serverless computing under sustained loads.",
+				"comparison_controls": [
+					"Within each project, all approaches use the same RPC and serialization stack: REST/JSON for Java and gRPC/Protobuf for Go.",
+					"There is no single-agent GraphQL+ generation baseline, same-model multi-agent control, role ablation, or matched prompt/tool/call-budget comparison, so RQ1 establishes feasibility rather than a multi-agent advantage.",
+					"The performance baselines evaluate different runtime architectures. Their results cannot identify the causal contribution of the LLM pipeline, which runs before deployment.",
+					"The serverless baseline runs on Alibaba Function Compute while iRUC and most other infrastructure is described on Huawei Cloud, leaving a platform confound.",
+					"Agent-generation latency is reported per round, but token use, API cost, total end-to-end generation cost, and a manual or single-model construction baseline are missing."
+				],
+				"headline_results": [
+					"All 606 normal, boundary, and exceptional tests passed for the generated GraphQL+ documents. Functionality checking took at most four iterations and syntax checking at most three, with averages of 2.0 and 2.3 iterations.",
+					"Per-round LLM-agent time ranged from 157.0 to 365.7 seconds across projects; modularizing, packaging, and generating dominated latency, while PEG syntax checking averaged under 1 ms.",
+					"Across the runtime experiments, iRUC averaged 5.57x the throughput of excessive-transfer removal, 1.52x dynamic deployment, and 1.87x serverless computing; its latency was 7.7%, 40.7%, and 37.4% of those baselines, respectively.",
+					"The paper attributes those gains to central execution near databases and elimination of inter-service transfer. This is a systems-architecture result, not a controlled single-agent-versus-multi-agent result.",
+					"Production claim versus evidence: the systems were popular open-source projects deployed on public cloud to emulate realistic conditions; the paper does not report live production traffic, incidents, users, or operational longitudinal evidence."
+				],
+				"limitations": [
+					"Only Java and Go projects were tested, and the selected data-intensive GitHub projects may not generalize to other languages, workloads, or production architectures.",
+					"LLM response variability remains despite iterative tests; default API configurations were used and no repeated-run generation reliability distribution is reported.",
+					"Throughput and latency do not capture total system quality, maintainability, deployment effort, model-generation cost, or correctness beyond the authored tests.",
+					"Centralized cross-database access introduces a larger security boundary; authentication, authorization, and policy enforcement were explicitly outside scope.",
+					"Repeated runtime experiments are mentioned, but repetition counts, variance, and statistical tests are not reported in the extracted text."
+				],
+				"future_work": [
+					"Combine GraphQL+ with design-time decomposition, deployment placement, and resource optimization rather than treating the methods as substitutes.",
+					"Add authentication, authorization middleware, and unified policy enforcement for the database gateway.",
+					"Evaluate more implementation languages and LLM versions, and improve generation efficiency through fine-tuning or more efficient coordination protocols.",
+					"Add a matched single-agent construction baseline and role/component ablations to isolate whether specialization and independent checking improve correctness per unit cost."
+				],
+				"combinable_methods": [
+					"Heterogeneous generator and checker models to reduce self-checking bias.",
+					"Deterministic PEG parsing and type/reference checks after semantic LLM review.",
+					"Functional equivalence tests that feed failures back to the earliest responsible generation role.",
+					"Unified computation combined with service placement, resource scheduling, and gateway security policy."
+				],
+				"quotes": [
+					{
+						"text": "For the LLM-based multi-agent systems, we employ Claude 4.5 Sonnet API to automatically generate GraphQL+ models and use Gemini 2.5 Pro for functionality checking",
+						"page": 2,
+						"use": "Identifies the heterogeneous generator-checker design."
+					},
+					{
+						"text": "Table II reports the per-round time consumption of LLM agents across projects; the average per-round total time ranges from 157s to 365.7s.",
+						"page": 11,
+						"use": "Direct cost-latency evidence for the agent pipeline."
+					},
+					{
+						"text": "On average, functionality checking completes in 2 iterations, while syntax checking requires 2.3 iterations.",
+						"page": 11,
+						"use": "Quantifies convergence of the semantic and deterministic checks."
+					},
+					{
+						"text": "Additionally, although security is beyond the scope of this study, our approach unifies security management across multiple datasets previously handled by individual microservices.",
+						"page": 16,
+						"use": "Bounds the security claim and identifies the new centralized trust boundary."
+					}
+				]
+			}
+		},
+		{
+			"order": 24,
+			"status": "read",
+			"concepts": [
+				"comparative-single-vs-multi",
+				"orchestration",
+				"communication",
+				"topology",
+				"memory-context",
+				"verification-testing",
+				"reliability-nondeterminism",
+				"cost-latency",
+				"benchmarks-evaluation",
+				"code-generation-repair"
+			],
+			"evidence_notes": {
+				"hypothesis_role": "Core comparative evidence. CMCS directly tests when heterogeneous collaboration adds value beyond single-model correction, same-model collaboration, and a naive two-model ensemble. Its strongest support is for difficult code-generation tasks where models have complementary failure sets and execution feedback can trigger selective handover.",
+				"research_design": "CMCS partitions tasks between two models, performs stateless execution-guided self-correction, and hands unresolved tasks to the peer model for a fresh generation and repair cycle. Experiments span eight Python, C++, and Java benchmarks, multiple 7B and 14B open models, and proprietary models. Decoding is greedy at temperature 0. The study includes direct, prompting, self-debugging, INTERVENOR, MapCoder, naive-ensemble, same-model, component-ablation, model-count, correction-round, partial-test, and resource-cost comparisons.",
+				"comparison_controls": [
+					"All methods reimplemented in the authors' pipeline use the same problem descriptions, public tests, runtime sandbox, and nominal maximum of ten correction/refinement rounds.",
+					"Same-model CMCS controls separate heterogeneous model complementarity from merely duplicating a model; a naive ensemble separates collaborative repair from the union of independent attempts.",
+					"The full CMCS path can receive initial generations plus a fresh generation after handover in addition to correction rounds, so the number of model calls is not strictly equal to iterative baselines even when correction limits match.",
+					"Some Direct and larger-model results come from official reports or leaderboards and may use FP32, while local CMCS and reimplemented baselines use FP16. These comparisons are benchmark-aligned but not fully execution-matched.",
+					"The work evaluates function and competitive-programming benchmarks, not repository-level development or production SDLC operation."
+				],
+				"headline_results": [
+					"CodeQwen plus DeepSeek CMCS achieved 93.29% HumanEval and 91.83% MBPP Pass@1. On MBPP it exceeded same-model CMCS with CodeQwen (75.09%) and DeepSeek (80.93%), giving the clearest evidence that complementary model errors matter.",
+					"Component ablation on HumanEval/MBPP yielded 93.29/91.83 for full CMCS, 80.49/76.65 without diagnostic correction, 84.76/80.93 without cross-model handover, and 89.63/89.00 for a single CodeQwen CoT plus diagnostic-correction variant.",
+					"On APPS, proprietary CMCS with Gemini 2.0 Flash and Qwen Plus reached 36.00% versus 11.33% and 8.00% for the individual models. A 14B plus 14B pair reached 22.67% versus 6.00% and 7.33% direct.",
+					"With only 20% of HumanEval+ tests exposed for repair feedback, CMCS retained 86.59% Pass@1 against the complete hidden suite, versus 70.12% for the zero-feedback naive ensemble.",
+					"CMCS had a favorable tradeoff against heavier multi-stage methods but not against direct generation: on HumanEval it used 39.55 s, 38.76 GB peak GPU memory, and 1,660 tokens, versus 18.15-25.33 s, 13.06-14.08 GB, and 430 tokens for direct single-model generation.",
+					"Production claim versus evidence: no production deployment is evaluated; the paper reports controlled benchmark and hardware measurements only."
+				],
+				"limitations": [
+					"The method depends on executable tests and test oracles; partial-test experiments reduce but do not remove this dependency.",
+					"Dual-model concurrency raises peak memory substantially, and additional models show diminishing gains beyond the first heterogeneous pair.",
+					"Benchmark contamination cannot be ruled out, and asymmetric training-data exposure could contribute to apparent complementarity.",
+					"No industrial, repository-level, maintenance, security, or long-horizon evaluation is included.",
+					"Random uniform handover ignores model specialization history, and the reported deterministic setting does not characterize sampling-induced reliability."
+				],
+				"future_work": [
+					"Learn dynamic routing across larger model pools using historical specialization and marginal contribution.",
+					"Optimize performance versus memory and interaction cost under constrained deployment.",
+					"Replace complete test suites with static analysis, generated tests, weaker execution signals, or calibrated programmatic judges.",
+					"Evaluate frontier models and real repository-level engineering tasks under matched wall-clock, token, and model-call budgets."
+				],
+				"combinable_methods": [
+					"Selective failure-triggered handover rather than always-on multi-agent discussion.",
+					"Stateless repair prompts carrying current code and concrete compiler/runtime/test diagnostics to avoid context drift.",
+					"Sandboxed execution with partial tests, static analysis, or generated-test feedback.",
+					"Cost-aware routing that invokes a second specialist only after measured failure of the first."
+				],
+				"quotes": [
+					{
+						"text": "All methods evaluated within our experimental pipeline used the same problem descriptions and the same set of public test cases, ensuring a consistent evaluation setting.",
+						"page": 14,
+						"use": "States the strongest matched-input control."
+					},
+					{
+						"text": "These findings support our core hypothesis that model diversity is a key driver of CMCS’s effectiveness.",
+						"page": 20,
+						"use": "Directly supports heterogeneous complementarity over duplicated-model collaboration."
+					},
+					{
+						"text": "Adding DCM to this single-model baseline (Row 2) improves HumanEval performance from 76.22% to 89.63%, but it still underperforms the full CMCS framework (93.29%).",
+						"page": 20,
+						"use": "Quantifies the matched single-model repair ablation."
+					},
+					{
+						"text": "The primary trade-off lies in peak GPU memory usage: CMCS requires concurrently loading two models (e.g., 38.76GB on HumanEval), whereas single-model baselines generally require lower peak memory.",
+						"page": 24,
+						"use": "Captures the principal resource cost of parallel specialization."
+					},
+					{
+						"text": "Nevertheless, we acknowledge that performance may vary on additional benchmarks or in real-world industrial scenarios, which remain directions for future investigation.",
+						"page": 26,
+						"use": "Bounds benchmark generalization and production readiness."
+					}
+				]
+			}
+		},
+		{
+			"order": 25,
+			"status": "read",
+			"concepts": [
+				"comparative-single-vs-multi",
+				"role-specialization",
+				"orchestration",
+				"communication",
+				"memory-context",
+				"security",
+				"reliability-nondeterminism",
+				"cost-latency",
+				"benchmarks-evaluation",
+				"observability-fault-injection"
+			],
+			"evidence_notes": {
+				"hypothesis_role": "Supporting evidence that domain decomposition, structured JSON handoffs, and local medium-size models can produce accurate log parsing. It does not isolate a multi-agent advantage because it lacks a matched single-agent baseline and complete role ablations.",
+				"research_design": "LogExpertSolver defines six roles across domain extraction, domain-list filtering, log classification, preprocessing, and textual/numeric standardization, coordinated sequentially through CrewAI and JSON messages. Most processing uses Qwen3-14B locally; Claude 3.5 Sonnet is used for codebase-intensive domain extraction and is also described in the domain-list selection example. Evaluation covers 14 LogHub2.0 systems with 2,000 real-system log messages each, compares seven parser baselines, contrasts the full workflow with a clustering-based variant, and swaps three 14B base models.",
+				"comparison_controls": [
+					"All methods use the same LogHub2.0 ground truth, but baseline models, prompts, retrieval, fine-tuning, caching, and compute differ substantially.",
+					"There is no direct single-agent version given the same project metadata, prompts, local model, messages, and inference budget.",
+					"The clustering variant changes the parsing algorithm and workflow, so it is not a clean agent-count or role-specialization ablation.",
+					"The paper varies the local 14B model but does not remove individual domain roles or compare structured handoffs with an equivalent monolithic prompt.",
+					"Claims of lower time, token cost, and improved privacy are not accompanied by runtime, token, energy, monetary, or data-exposure measurements; use of Claude for project analysis also means the pipeline is not wholly local."
+				],
+				"headline_results": [
+					"Average parsing accuracy was 0.915, versus 0.853 for LibreLog and 0.842 for LILAC, corresponding to 6.2% and 7.3% absolute-relative wording used by the paper.",
+					"Performance was not uniformly best: LogExpertSolver scored 0.783 on HDFS, 0.536 on OpenStack, and 0.667 on Linux, below several baselines.",
+					"The full fine-grained workflow averaged 0.915 versus 0.866 for the clustering variant and was better or comparable on 11 of 14 systems; clustering was better on HDFS, OpenStack, and Linux.",
+					"Qwen3-14B averaged 0.915, Qwen2.5-14B 0.888, and DeepSeek-R1-14B 0.718, showing strong backbone sensitivity.",
+					"Production claim versus evidence: the logs originate from real systems such as Hadoop, HDFS, and Spark, but the study is an offline benchmark and reports no deployed production parser, incidents, or operational cost."
+				],
+				"limitations": [
+					"LogHub2.0 contains acknowledged annotation defects, and semantically reasonable templates can disagree with its exact ground truth.",
+					"Domain extraction depends on README and repository metadata that may be incomplete or inaccurate and may exceed model context limits.",
+					"Results cover fixed samples of 14 systems rather than streaming production scale, concept drift, novel domains, or downstream incident outcomes.",
+					"Temperature 0 reduces sampling variance but no repeated-run reliability, framework-failure, malformed-message, latency, or throughput analysis is reported.",
+					"The mechanism responsible for gains remains unidentified because agent specialization, domain knowledge, model choice, and workflow decomposition are confounded."
+				],
+				"future_work": [
+					"Increase log diversity during pretraining, add specialized fine-tuning, and explore attention mechanisms for structured logs.",
+					"Develop adaptive strategies that tolerate missing or inaccurate project metadata.",
+					"Measure throughput, memory, energy, privacy exposure, and accuracy under production-volume streaming logs.",
+					"Add a same-model monolithic baseline and role-removal ablations under equal calls and tokens."
+				],
+				"combinable_methods": [
+					"Local specialist models for sensitive log content plus tightly scoped remote use for nonsensitive repository metadata.",
+					"Structured JSON contracts between roles and deterministic schema validation at every handoff.",
+					"Domain extraction combined with retrieval, adaptive caching, and human feedback for ambiguous templates.",
+					"Ground-truth audits and downstream anomaly/incident metrics to complement exact parsing accuracy."
+				],
+				"quotes": [
+					{
+						"text": "local deployment also enhances data privacy protection capabilities and reduces token consumption costs.",
+						"page": 2,
+						"use": "States the paper's local-deployment cost and privacy rationale, which is asserted rather than measured."
+					},
+					{
+						"text": "As shown in Table I, LogExpertSolver achieves the highest PA on most systems. It achieves an average PA of 0.915, outperforming other parsers.",
+						"page": 6,
+						"use": "Reports the principal benchmark result."
+					},
+					{
+						"text": "Among the 14 systems, LogExpertSolver demonstrates better or comparable performance in 11 systems, indicating that this framework has certain applicability in most systems.",
+						"page": 7,
+						"use": "Shows that the workflow comparison is favorable but not uniformly dominant."
+					},
+					{
+						"text": "Specifically, we set LogExpertSolver’s model generation temperature to 0 to eliminate randomness, ensuring consistent parsing results under identical input conditions.",
+						"page": 9,
+						"use": "Documents the study's nondeterminism control."
+					},
+					{
+						"text": "As LogExpertSolver relies on project metadata (e.g., GitHub README files) for domain knowledge extraction, inaccuracies or incompleteness in such metadata may affect domain classification and parsing accuracy.",
+						"page": 9,
+						"use": "Identifies the main knowledge-grounding dependency."
+					}
+				]
+			}
+		},
+		{
+			"order": 26,
+			"status": "read",
+			"concepts": [
+				"comparative-single-vs-multi",
+				"role-specialization",
+				"orchestration",
+				"memory-context",
+				"verification-testing",
+				"security",
+				"reliability-nondeterminism",
+				"cost-latency",
+				"benchmarks-evaluation",
+				"code-generation-repair"
+			],
+			"evidence_notes": {
+				"hypothesis_role": "Core mechanism and ablation evidence for role-specialized, same-backbone code generation. MapCoder supports the value of staged retrieval, planning, coding, and debugging, especially on difficult programming tasks, but its comparison with direct prompting is not inference-budget matched.",
+				"research_design": "MapCoder uses four prompted roles over one selected backbone: self-retrieval generates analogous solved examples, planning produces and confidence-ranks candidate plans, coding implements the best plan, and debugging iterates against sample I/O before trying the next plan. It evaluates ChatGPT, GPT-4, Gemini Pro, and Mistral-7B on eight basic and competitive-programming benchmarks. HumanEval uses k=t=5; most others use k=t=3. Studies include prompt baselines, role removal, k/t variation, extra sample tests, language/difficulty slices, and call/token accounting.",
+				"comparison_controls": [
+					"Direct and multi-role runs use the same underlying model within each reported block and the same task descriptions, but their prompts, test feedback, number of attempts, and context are intentionally different.",
+					"The main comparison is not compute matched: MapCoder averages 16.7 API calls and 21.25k tokens versus one call and 0.64k tokens for direct prompting.",
+					"Several baseline numbers are taken from prior papers rather than reproduced, and Self-collaboration is absent for the difficult benchmarks, reducing comparability.",
+					"MapCoder uses sample I/O for iterative debugging and, for MBPP variants, exposes one carefully removed test as sample I/O; direct and noniterative baselines do not receive equivalent feedback loops.",
+					"Role-removal ablations are informative, but they do not compare the full transcript and token budget with a single monolithic agent prompt."
+				],
+				"headline_results": [
+					"With GPT-4, MapCoder reached 93.9% HumanEval, 83.1% MBPP, 22.0% APPS, 45.3% xCodeEval, and 28.5% CodeContests Pass@1. Relative gains over direct prompting were largest on APPS and CodeContests.",
+					"On ChatGPT/HumanEval, the full pipeline scored 80.0%. Removing only debugging reduced it to 66.0%, removing only retrieval to 76.0%, and retaining debugging without retrieval or planning yielded 68.0%; debugging had the largest average ablation impact.",
+					"Increasing retrieved plans and debug attempts improved accuracy but with diminishing and sometimes flat returns; adding five HumanEval-ET sample tests improved HumanEval by only 1.5 percentage points.",
+					"The resource tradeoff is large: averaged across reported datasets/models, MapCoder used 16.7 calls and 21.25k tokens per problem versus one call and 0.64k tokens for direct prompting.",
+					"Failure analysis found persistent difficulty with harder combinatorics, constructive, number theory, divide-and-conquer, and dynamic-programming tasks because of problem misinterpretation and incorrect plans.",
+					"Production claim versus evidence: this is benchmark evidence for standalone programming problems, not repository-level or production SDLC evidence."
+				],
+				"limitations": [
+					"Performance gains are confounded with far greater inference, context, and execution-feedback budgets than direct prompting.",
+					"Debugging depends on sparse sample I/O, which may pass while private tests fail and does not cover requirements without executable examples.",
+					"The approach generates many tokens and calls; it reports no monetary cost, energy, wall-clock latency table, or cost-normalized accuracy.",
+					"Self-generated examples and plans can be irrelevant or wrong, and model confidence is used for traversal without calibration evidence.",
+					"Generated code must be sandboxed; the paper does not evaluate malicious code, dependency risks, vulnerability rates, or production integration."
+				],
+				"future_work": [
+					"Minimize tokens and API calls through adaptive stopping, plan pruning, and selective retrieval/debugging.",
+					"Generate higher-quality tests to reduce reliance on limited sample I/O while guarding against incorrect generated oracles.",
+					"Evaluate more open-source code models and extend the staged method to question answering and mathematical reasoning.",
+					"Compare against a single-agent iterative controller with the same retrieved context, tests, calls, and token budget."
+				],
+				"combinable_methods": [
+					"Self-retrieved analogies feeding multiple independently scored plans.",
+					"Confidence-guided traversal with calibrated confidence and early stopping.",
+					"Plan-conditioned debugging grounded in compiler output and trusted tests.",
+					"Sandbox execution plus generated-test validation and cost-aware call limits."
+				],
+				"quotes": [
+					{
+						"text": "We observe that 8% of failures in HumanEval and 15% in MBPP is caused by their AI generates incorrect test cases while our approach is independent of AI test cases, and consistently improves code generations in general.",
+						"page": 6,
+						"use": "Supports using trusted sample tests and highlights generated-oracle risk."
+					},
+					{
+						"text": "Furthermore, we observe that the Debugging Agent has the most significant impact on the pipeline, as evidenced by a performance drop of 17.5% when excluding this agent exclusively, and an avg performance drop of 24.83% in all cases.",
+						"page": 8,
+						"use": "Reports the central role-ablation result."
+					},
+					{
+						"text": "Our findings (Table 7) reveal that higher k, t is proportionate performance gain at the expense of time.",
+						"page": 8,
+						"use": "States the plan/debug-depth tradeoff."
+					},
+					{
+						"text": "MapCoder generates a large number of tokens, which may pose challenges in resource-constrained environments.",
+						"page": 9,
+						"use": "Directly acknowledges the principal cost limitation."
+					},
+					{
+						"text": "Secondly, our method currently relies on sample input-output (I/O) pairs for bug fixing.",
+						"page": 9,
+						"use": "Identifies the required external verification signal."
+					}
+				]
+			}
+		},
+		{
+			"order": 27,
+			"status": "read",
+			"concepts": [
+				"comparative-single-vs-multi",
+				"role-specialization",
+				"orchestration",
+				"verification-testing",
+				"security",
+				"reliability-nondeterminism",
+				"cost-latency",
+				"benchmarks-evaluation",
+				"code-generation-repair",
+				"human-in-loop"
+			],
+			"evidence_notes": {
+				"hypothesis_role": "Core production-adjacent evidence for combining specialized generation, deterministic post-processing, and validation in automated testing. It demonstrates real maintainer-confirmed defects, but it does not provide a matched single-agent-versus-multi-agent comparison.",
+				"research_design": "JsonATG starts from 681 maintained historical bug-triggering tests in fastjson2. A DeepSeek-Coder-6.7B Rule Generator grounds mutation rules in JSON-P/JSON-B documentation; a configurable Test Programmer summarizes intent and mutates tests; deterministic Java post-processing repairs packaging/import/wrapping; and a GPT-4o Test Validator uses three independent classifications and majority vote. Coverage is compared with ChatTester and ChatUniTest on six core classes. Ablations test free versus agent-written mutation, intent summarization, programmer backbones, and validator classification. A $25 campaign submits generated failures to maintainers.",
+				"comparison_controls": [
+					"For RQ1, JsonATG's Test Programmer and both baseline tools use GPT-3.5, receive the same 681 seed-test set, and generate three tests per seed; baseline repair is capped at three rounds.",
+					"Inputs and total systems are not matched: JsonATG receives historical tests, standards documentation, a DeepSeek rule agent, GPT-4o validation, and deterministic repair, while baselines receive extracted focal methods and their own default contexts.",
+					"There is no monolithic GPT-3.5 or GPT-4o agent given the same tests, documentation, post-processing, calls, and token budget, nor a full pipeline ablation removing the validator.",
+					"Coverage is measured only for six selected fastjson classes; JsonATG wins four but loses on JSONArray and JSONObject.",
+					"The $25 bug-finding campaign has no equal-budget baseline, so confirmed bug yield cannot be causally attributed to multi-agent coordination."
+				],
+				"headline_results": [
+					"JsonATG achieved substantially higher instruction coverage on JSON, JSONPath, JSONReader, and JSONWriter, but ChatTester/ChatUniTest were higher on JSONArray and JSONObject.",
+					"Agent-written mutation had lower coverage than free mutation on four of six classes and produced more compile failures, but found four unique bugs versus five unique to free mutation, with three shared; it broadens rather than uniformly improves generation.",
+					"Intent summarization reduced compilation errors from 25.7% to 13.9% and increased passing tests from 54.2% to 56.3%, giving the cleanest component-level evidence.",
+					"The $25, roughly 40-CPU-hour campaign reported 59 fastjson bugs; maintainers confirmed 47 and 28 had been fixed. This is strong real-project defect evidence, though not evidence of production incidents or deployed autonomy.",
+					"Validator accuracy on 43 balanced good/bad samples was 72.1% with few-shot prompting and 69.8% with few-shot CoT. Exception cases were near random, showing that an LLM judge is not a reliable standalone oracle.",
+					"Production claim versus evidence: the target is a widely depended-on open-source library and maintainers confirmed defects, but JsonATG was an offline campaign on version 2.0.49; no live production execution or incident reduction is measured."
+				],
+				"limitations": [
+					"Generated tests frequently do not compile or contain contradictory assertions, invalid inputs, API misuse, null dereferences, and type errors.",
+					"The GPT-4o validator produces false positives and cannot reliably distinguish invalid tests from library bugs when library-defined exceptions occur.",
+					"The differential oracle between fastjson2 and fastjson requires multiple implementations and may confuse intended behavioral differences with defects.",
+					"Results cover one Java JSON library and assume JSON-P/JSON-B concepts transfer to third-party APIs.",
+					"Sampling is nondeterministic (temperature 0.8 and top-p 0.95 in programmer-model experiments), and no repeated-run confidence intervals or end-to-end token/latency breakdown is reported."
+				],
+				"future_work": [
+					"Ground prompts in finer-grained valid API examples to reduce uncompilable tests.",
+					"Repair discarded bad tests through LLM self-debugging rather than dropping them.",
+					"Use test migration and semantically equivalent differential tests across multiple JSON libraries.",
+					"Combine the Test Programmer with a reasoning model or stronger executable oracle and evaluate more libraries.",
+					"Run equal-budget comparisons against a single-agent pipeline and conventional fuzzers, measuring confirmed defects per dollar and hour."
+				],
+				"combinable_methods": [
+					"Historical regression seeds plus standards/documentation retrieval for domain grounding.",
+					"LLM mutation and intent summarization followed by static import/package/class repair.",
+					"Sandbox execution, differential testing, and maintainer review rather than trusting an LLM validator alone.",
+					"Diverse programmer models to increase defect diversity, with deduplication and cost-aware scheduling.",
+					"Human confirmation and regression-test preservation for governance and long-term quality."
+				],
+				"quotes": [
+					{
+						"text": "with both tools configured to use GPT-3.5 as the underlying LLM.",
+						"page": 6,
+						"use": "Documents the partial same-programmer-model baseline control."
+					},
+					{
+						"text": "We observed higher coverage for tests generated by free mutation in four core fastjson classes.",
+						"page": 7,
+						"use": "Shows that the rule-agent ablation is a diversity tradeoff, not a uniform gain."
+					},
+					{
+						"text": "Notably, removing the summarization step leads to a significant increase in compilation errors, rising from 13.9% to 25.7%.",
+						"page": 7,
+						"use": "Provides clean evidence for intent summarization."
+					},
+					{
+						"text": "Among the reported bugs, 47 were confirmed by fastjson’s developers, and 28 had already been fixed in the latest release.",
+						"page": 8,
+						"use": "Real-project maintainer confirmation of generated defect reports."
+					},
+					{
+						"text": "its performance appears closer to random guessing.",
+						"page": 9,
+						"use": "Bounds the reliability of the validator agent."
+					}
+				]
+			}
+		},
+		{
+			"order": 28,
+			"status": "read",
+			"concepts": [
+				"comparative-single-vs-multi",
+				"role-specialization",
+				"orchestration",
+				"communication",
+				"memory-context",
+				"reliability-nondeterminism",
+				"cost-latency",
+				"benchmarks-evaluation"
+			],
+			"evidence_notes": {
+				"hypothesis_role": "Comparative but weakly controlled evidence that a teacher-student prompt-optimization pipeline can outperform a one-shot LLM on software-document summarization. The design changes model mix, context filtering, and prompt training together, so it does not isolate specialization or agent count.",
+				"research_design": "Metagente has four roles: a GPT-4o-mini Extractor and Summarizer, plus GPT-4o Teacher and Prompt Creator roles used to optimize a reusable summarizer prompt during training. ROUGE-L feedback drives up to 15 iterations per training item; successful item-specific prompts are consolidated. From 925 README/About pairs, the study forms random training sets of 10 and 50 and a disjoint 865-item test set. It compares GitSum, LLaMA-2, a single GPT-4o, and Metagente using ROUGE-1/2/L and paired Wilcoxon tests.",
+				"comparison_controls": [
+					"All systems use the same training and test partitions, and statistical tests compare paired outputs over the 865 test items.",
+					"The single-agent baseline is GPT-4o, whereas Metagente uses GPT-4o-mini for extraction/inference and GPT-4o for iterative training-time supervision; underlying model use is therefore not matched.",
+					"The single-agent prompt is not described as receiving the optimized final prompt or the Extractor's reduced context, so model count, preprocessing, prompt optimization, and training compute are confounded.",
+					"No component ablation removes the Extractor, Teacher, or Prompt Creator while preserving models and budgets.",
+					"Token use, API calls, latency, monetary cost, energy, and inference-versus-training cost are not reported despite efficiency claims."
+				],
+				"headline_results": [
+					"With 50 training examples, Metagente achieved average ROUGE-1/2/L of 0.522/0.363/0.486 versus 0.282/0.152/0.250 for single GPT-4o, gains of 85.11%, 138.82%, and 94.40%.",
+					"With 10 training examples, Metagente achieved 0.536/0.377/0.503 versus 0.297/0.151/0.256 for GPT-4o, reported gains of 80.47%, 149.67%, and 96.48%.",
+					"Paired Wilcoxon p-values against GPT-4o on the 865-item test set were 8.62e-89, 3.40e-72, and 4.91e-91 for ROUGE-1, ROUGE-2, and ROUGE-L.",
+					"The result demonstrates a system-level prompt-optimization advantage, but cannot show that multiple agents are necessary because there is no matched single-agent optimizer using the same extraction, feedback, and final prompt.",
+					"Production claim versus evidence: the data comes from heterogeneous public GitHub repositories, but evaluation is offline and automatic; there is no human usefulness study, deployment, incident evidence, or operational monitoring."
+				],
+				"limitations": [
+					"ROUGE overlap with repository About text does not establish factual correctness, coverage, readability, usefulness, or absence of hallucination.",
+					"The 925-item GitHub-derived dataset and random 10/50-item training sets may not represent industrial documentation or other artifact types.",
+					"Model versions, decoding parameters, repeated-run variance, exact prompts, and cost measurements are absent from the paper text (prompts are delegated to the replication package).",
+					"Training examples that fail to cross ROUGE-L 0.7 within 15 iterations are discarded, which may bias the learned prompt toward easier cases.",
+					"The comparison does not isolate whether gains come from context extraction, GPT-4o teacher feedback, prompt aggregation, or multi-agent interaction."
+				],
+				"future_work": [
+					"Optimize role prompts and test the framework on code completion, code review, and other software artifacts.",
+					"Add matched component ablations and a single-agent prompt optimizer with identical models, context, feedback, and compute.",
+					"Evaluate summaries with developers for factuality, task usefulness, and failure severity in addition to ROUGE.",
+					"Report separate training and inference cost, latency, tokens, and reliability across repeated runs."
+				],
+				"combinable_methods": [
+					"Context extraction before summarization to reduce irrelevant tokens.",
+					"Training-only stronger teacher with a smaller inference model.",
+					"Metric-guided prompt refinement with held-out validation and explicit overfitting controls.",
+					"Structured handoffs and a human factuality check for high-impact documentation."
+				],
+				"quotes": [
+					{
+						"text": "Challenges such as effective coordination, efficient communication, and the overhead of integrating multiple agents persist.",
+						"page": 1,
+						"use": "States unresolved coordination and resource costs."
+					},
+					{
+						"text": "For Extractor Agent and Summarizer Agent, we opted for OpenAI’s GPT-4o-mini as the LLM engine. For Teacher Agent and Prompt Creator Agent, we leveraged the more advanced GPT-4o model.",
+						"page": 2,
+						"use": "Shows that the multi-agent and single-agent conditions are not model matched."
+					},
+					{
+						"text": "Looking at the average score, we see that GPT-4o and Metagente get 0.282 and 0.522, respectively, resulting in an increase of 85.11% by Metagente compared to GPT-4o.",
+						"page": 3,
+						"use": "Quantifies the principal single-versus-pipeline result."
+					},
+					{
+						"text": "We ran Wilcoxon rank tests on every pair of ROUGE scores of Metagente and GPT-4o for the whole testing set with 865 samples, and got the following p-values: p=8.62e-89 (ROUGE-1), p=3.40e-72 (ROUGE-2), p=4.91e-91 (ROUGE-L).",
+						"page": 3,
+						"use": "Documents paired statistical significance."
+					},
+					{
+						"text": "For the comparison with the baselines, we used the same set of data for fine tuning (training), and testing",
+						"page": 4,
+						"use": "States the shared-data control while leaving model and prompt controls missing."
+					}
+				]
+			}
+		},
+		{
+			"order": 29,
+			"status": "read",
+			"concepts": [
+				"orchestration",
+				"communication",
+				"topology",
+				"memory-context",
+				"verification-testing",
+				"reliability-nondeterminism",
+				"cost-latency",
+				"benchmarks-evaluation",
+				"code-generation-repair",
+				"human-in-loop",
+				"observability-fault-injection"
+			],
+			"evidence_notes": {
+				"hypothesis_role": "Core limitations evidence. Rather than claiming superiority, the study maps where autonomous multi-agent frameworks fail and motivates feedback-aware planning, navigation, observability, and early stopping as prerequisites for reliable deployment.",
+				"research_design": "The authors curate 34 executable web-crawling, data-analysis, and file-operation tasks with human-verified exact outputs. TaskWeaver, MetaGPT, and AutoGen are each run with GPT-4o and GPT-4o-mini in isolated Python 3.10.14 containers using a general prompt template, yielding 204 runs and 104 failures. Three authors with at least two years of programming experience inspect complete traces and reach consensus on a three-tier, 19-cause taxonomy covering planning, execution, and response generation.",
+				"comparison_controls": [
+					"The same task prompt template, task set, model versions, Linux environment, containers, and exact-match evaluator are used across frameworks.",
+					"Frameworks differ in agents, prompts, tools, memory, topology, and collaboration policies, so cross-framework scores do not isolate one mechanism.",
+					"There is no single-agent baseline, no matched call/token budget, and no component ablation of planning, coding, execution, or communication.",
+					"Only one aggregate result per framework/model condition is reported; repeated stochastic runs, confidence intervals, token use, latency, and monetary cost are missing.",
+					"Tasks were selected to be at least partially solvable and exact-matchable, which excludes harder and less easily automated real-world work and may bias success upward."
+				],
+				"headline_results": [
+					"With GPT-4o, overall success was 50.00% for TaskWeaver, 47.06% for MetaGPT, and 38.24% for AutoGen. With GPT-4o-mini it was 58.82%, 50.00%, and 50.00%, respectively.",
+					"Across all 204 runs, 104 failed. The taxonomy identifies 19 causes spanning improper or unrealistic plans, failed self-refinement, tool/code/environment errors, context loss, formatting and extraction errors, infinite loops, and round-limit exhaustion.",
+					"Success rose rapidly between three and ten iterations, then produced only marginal gains, making unbounded retry a poor reliability strategy.",
+					"GPT-4o sometimes underperformed GPT-4o-mini because extra planning conflicted with safety constraints or requested unnecessary confirmation, illustrating that stronger models do not monotonically improve agent-system reliability.",
+					"Production claim versus evidence: all evidence comes from a 34-task laboratory benchmark; no production services, incidents, security attacks, users, or longitudinal operation are observed."
+				],
+				"limitations": [
+					"The benchmark is small, covers three task families, and omits repository maintenance, collaborative SDLC work, security-sensitive actions, and production incidents.",
+					"Exact-match scoring can mark semantically adequate outputs wrong and does not measure partial progress, safety, cost, or trajectory quality.",
+					"The taxonomy was consensus-coded without reported independent agreement statistics, frequency counts per cause, or external replication.",
+					"Framework versions and model snapshots are fixed, so results can age quickly as implementations and APIs change.",
+					"The mitigation strategies are recommendations only; the paper does not implement or experimentally validate the proposed meta-controller or early-stop mechanism."
+				],
+				"future_work": [
+					"Expand the benchmark and implement feedback-aware replanning plus self-diagnosis.",
+					"Use a meta-controller to attribute root cause and route back to planning, a specialist tool, or response repair.",
+					"Detect repeated unresolved states and stop early to save calls, latency, and cost.",
+					"Add trajectory-level observability, repeated runs, calibrated partial-credit evaluation, fault injection, and production incident replay."
+				],
+				"combinable_methods": [
+					"Trace-aligned planning, code, tool, environment, and response events for root-cause attribution.",
+					"Feedback-aware replanning that chooses between local repair and full restart.",
+					"Loop detection, iteration budgets, and early stopping tied to marginal progress.",
+					"Specialist navigation based on failure class, followed by executable verification."
+				],
+				"quotes": [
+					{
+						"text": "After the task selection is completed, we designed a general prompt template to standardize requests across different categories of tasks, which contains the Task Description, Instruction, Constraints, and Environment Information.",
+						"page": 2,
+						"use": "Documents the common request-format control across frameworks."
+					},
+					{
+						"text": "After 10 iterations, increasing the maximum number of iterations yields only marginal gains.",
+						"page": 3,
+						"use": "Supports bounded retry and cost-aware early stopping."
+					},
+					{
+						"text": "The experiments were conducted across 34 tasks, 2 LLM backbones, and 3 agent frameworks, totaling 204 runs, with 104 task failures recorded along with detailed experimental logs.",
+						"page": 3,
+						"use": "Quantifies the empirical base for the taxonomy."
+					},
+					{
+						"text": "Figure 3 presents the failure taxonomy, which encompasses 19 distinct causes across three tiers.",
+						"page": 3,
+						"use": "States the taxonomy scope."
+					},
+					{
+						"text": "Moreover, if the system detects repetitive, unresolved errors, the mechanism should trigger an “early stop”, halting the process before it hits the maximum round limit, thereby saving resources.",
+						"page": 4,
+						"use": "Provides the proposed reliability and resource-control remedy."
+					}
+				]
+			}
+		},
+		{
+			"order": 30,
+			"status": "read",
+			"concepts": [
+				"comparative-single-vs-multi",
+				"role-specialization",
+				"orchestration",
+				"communication",
+				"topology",
+				"memory-context",
+				"verification-testing",
+				"security",
+				"reliability-nondeterminism",
+				"cost-latency",
+				"benchmarks-evaluation",
+				"end-to-end-sdlc",
+				"requirements-design",
+				"code-generation-repair",
+				"human-in-loop",
+				"debate-consensus"
+			],
+			"evidence_notes": {
+				"hypothesis_role": "Core comparative evidence for role-specialized, communicative software generation. ChatDev holds the GPT-3.5 backbone and reported hyperparameters constant across a single-agent baseline and two multi-agent systems, and its ablations identify roles, review/testing phases, and communicative dehallucination as contributors. The evidence remains prototype-level and is not compute matched.",
+				"research_design": "ChatDev maps five subtasks across design, coding, code completion, code review, and system testing to paired instructor/assistant roles such as CEO, CTO, programmer, reviewer, and tester. A chain topology passes only subtask solutions as long-term memory while retaining within-phase dialogue as short-term memory. Agents seek clarifying detail through communicative dehallucination and use Python execution feedback. On 1,200 human-refined synthetic software requirements, ChatDev is compared with single-agent GPT-Engineer and multi-agent MetaGPT using GPT-3.5 at temperature 0.2, automated completeness/executability/embedding-consistency metrics, pairwise GPT-4 and human preference, component ablations, dialogue analysis, and time/token measurements.",
+				"comparison_controls": [
+					"The paper states that all baselines share the same GPT-3.5 hyperparameters and settings and receive the same requirement tasks.",
+					"The comparison is not token-, time-, call-, or tool-budget matched: ChatDev uses multi-turn Python feedback and 22,949 tokens over 148.2 seconds versus GPT-Engineer's 7,183 tokens over 15.6 seconds.",
+					"Prompts necessarily differ by architecture, and the extracted text does not establish identical accessible tools or maximum inference budgets for GPT-Engineer and MetaGPT.",
+					"Ablations remove roles, communicative dehallucination, or later phases while preserving ChatDev's general pipeline, providing useful mechanism evidence but no full single-agent controller with equal interactions.",
+					"The multiplicative Quality metric combines three proxies and can magnify executability differences; semantic embedding similarity and code volume are not functional requirement tests."
+				],
+				"headline_results": [
+					"ChatDev scored 0.5600 completeness, 0.8800 executability, 0.8021 consistency, and 0.3953 composite quality, versus GPT-Engineer's 0.5022, 0.3583, 0.7887, and 0.1419.",
+					"Against MetaGPT, ChatDev improved executability from 0.4145 to 0.8800 and quality from 0.1523 to 0.3953 while using fewer tokens (22,949 versus 29,279) and similar time (148.2 versus 154.0 seconds).",
+					"Human pairwise evaluators preferred ChatDev over GPT-Engineer in 90.16% of comparisons and over MetaGPT in 88.00%; GPT-4 preference was 77.08% and 57.08%.",
+					"Ablation reduced quality from 0.3953 to 0.3094 without communicative dehallucination and to 0.2212 without role descriptions. Halting after coding yielded 0.2512, after completion 0.3690, and after review 0.3717.",
+					"The cost gap is material: ChatDev was about 9.5x slower and used about 3.2x as many tokens as GPT-Engineer, though it was slightly faster and more token-efficient than MetaGPT.",
+					"Production claim versus evidence: the authors explicitly characterize current systems as more suitable for prototypes than complex real-world applications; no production deployment or incident evidence is supplied."
+				],
+				"limitations": [
+					"The 1,200 requirements are LLM-generated with human refinement rather than industrial project specifications, and generated systems mostly implement simple prototype logic.",
+					"Evaluation omits end-to-end functional tests, robustness, maintainability, safety, security, accessibility, user experience, and longitudinal modification cost.",
+					"Agents sometimes add features not stated in requirements, which may improve preference and code-volume measures while weakening strict requirements compliance.",
+					"Multiple agents substantially increase latency, tokens, compute demand, and environmental impact.",
+					"The fixed chain topology, ten-round cap, and phase-specific memory may not scale to repository-level context, concurrent work, transactions, or recovery from cross-phase errors."
+				],
+				"future_work": [
+					"Improve capability with fewer interactions and explicitly optimize token, latency, and environmental cost.",
+					"Evaluate functionality, robustness, safety, user-friendliness, and real maintenance work in addition to proxy metrics.",
+					"Use detailed, testable requirements and production-like repositories rather than vague prototype prompts.",
+					"Compare a single-agent iterative workflow with the same memory, Python tools, feedback, calls, and token budget."
+				],
+				"combinable_methods": [
+					"Sequential role specialization with explicit, schema-like handoff artifacts between phases.",
+					"Short-term phase dialogue plus compressed long-term memory containing only accepted solutions.",
+					"Static reviewer-programmer loops followed by dynamic tester-programmer loops grounded in compiler output.",
+					"Communicative dehallucination for targeted clarification, bounded by stopping rules and regression tests.",
+					"Human review gates for requirements, security-sensitive changes, and release readiness."
+				],
+				"quotes": [
+					{
+						"text": "All baselines in the evaluation share the same hyperparameters and settings for fairness.",
+						"page": 6,
+						"use": "States the paper's model-setting control."
+					},
+					{
+						"text": "Furthermore, the software statistics presented in Table 3 indicates that the multi-agent paradigm, despite being slower and consuming more tokens than the single-agent method, yields a greater number of code files and a larger codebase, which may enhance the software’s functionality and integrity.",
+						"page": 7,
+						"use": "Explicitly states the quality-versus-cost tradeoff."
+					},
+					{
+						"text": "Most interestingly, the most substantial impact on performance occurs when the roles of all agents are removed from their system prompts.",
+						"page": 7,
+						"use": "Supports role specialization through ablation."
+					},
+					{
+						"text": "Currently, these technologies are more suitable for prototype systems rather than complex real-world applications.",
+						"page": 9,
+						"use": "Separates prototype evidence from production readiness."
+					},
+					{
+						"text": "Thirdly, compared to single-agent approaches, multiple agents require more tokens and time, increasing computational demands and environmental impact.",
+						"page": 9,
+						"use": "Direct cost and sustainability limitation."
+					}
+				]
+			}
+		}
+	]
+}

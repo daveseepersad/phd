@@ -1,0 +1,904 @@
+[[page 1]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+1
+Research Article
+A Multi-Agent LLM Framework for Automated Software Testing
+YuxuanLi1,*
+1TTCommerce&GlobalServiceLLC,SanJose95110,UnitedStates
+*Correspondence:YuxuanLi,yuxuanli@alumni.upenn.edu
+Abstract
+Research on integrating specialized, language-model-based agents for automated test-case generation
+remains limited, and the detection criteria under which such systems are evaluated have not been
+standardized, which makes reported rates difficult to compare across studies. This paper presents a
+multi-agent testing framework in which requirement analysis, test-case generation, sandboxed execution,
+and defect detection are delegated to four distinct agents, and in which detection rests on a composite rule
+combiningtheexecutionsignalwiththesemanticjudgmentofadedicateddiagnosticagent.Theframework
+is evaluated onthe QuixBugs dataset offorty Python programs underthreecriteria ofincreasing strictness.
+A two-run differential protocol against the reference implementation, recommended here as the primary
+indicator, yields a detectionrate of 55.0%, against 90.0% under the unconditional criterion conventional in
+prior work and 5.0% under a strict criterion requiring the suite to pass entirely on correct code. The
+thirty-five-point gap is traced to language-model test artifacts, of which hallucinated oracle values and
+signature mismatches account for the majority. An ablation with a same-model single-agent baseline
+attributes theframework’s advantage to roledecomposition rather than to thediagnostic agent specifically,
+and the distribution of detection across the fourteen defect classes defined by the benchmark is reported
+descriptively.
+Keywords
+Multi-agent system, Large language model, Automated software testing, Defect detection, Test case
+generation
+1. Introduction
+1.1. Research Background and Significance
+Software testing occupies an important place in contemporary software engineering,
+since the quality of a program affects the reliability of systems that form the basis of modern
+infrastructure.Thegrowingpopularityoftheiterativedevelopmentapproachbasedontheuse
+of continuous integration pipelines necessitates the creation of techniques for automated
+testing aimed at obtaining efficient test suites with minimal human involvement. It is
+©TheAuthor(s)2026.
+This article is published by Wisdom Academic Press Ltd. under a Creative Commons Attribution 4.0 International License. The license
+permits use, sharing, adaptation, distribution, and reproduction in any medium or format, provided that appropriate credit is given to the
+original author(s) and the source, a link to the license is supplied, and any modifications are indicated. Unless otherwise stated, all images
+and third-party materials included in this article are also covered by the same license. For any material not covered by this license, if the
+intended use is neither permitted by applicable law nor allowed under the license terms, direct permission must be obtained from the
+copyrightholder.Toviewacopyofthislicense,pleasevisithttp://creativecommons.org/licenses/by/4.0/.
+
+[[page 2]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+2
+empiricallydemonstratedthattheproperselectionoftestcasesinfluencesthetestsuitequality
+by making software testing faster and more efficient and by ensuring a greater chance of
+detecting defects during software development (Yaraghi et al., 2022). At the same time, the
+emergence of large language models resulted in fundamental progress in automating the
+processes in software engineering, such as writing tests and debugging programs. Relevant
+systematic literature reviews have been written to summarize various strategies and
+applications, and their limitations have been identified (Hou et al., 2024). These are the
+reasons for exploring the topic of creating multi-agent approaches to automatic testing of
+software.
+1.2. Research Status and Open Problems
+TheincorporationofLLMsintosoftwaretestinghasmovedinparallelalongtwostreams
+of research, both of which have seen rapid advancement in recent years. First, the direct
+applicationofLLMsforgeneratingtestshasbeenextensivelycoveredinreviewsthatexplore
+the typical methods of applying LLMs, review the results of performance testing, and raise
+questions of oracles and test evaluation (Wang et al., 2024). Second, the incorporation of
+LLMs into an agent-based system allows for coordinating the complex reasoning process
+needed to handle sub-tasks associated with a given task, and a number of reviews survey the
+architecture types that have been developed in conjunction with agent-based frameworks as
+well as their relevance to software engineering tasks (Liu J. et al., 2024). Of particular note,
+multi-agent systems have received attention as an effective method for dividing software
+engineering tasks among multiple specialist agents, and several reviews chart the landscape
+and the associated research challenges regarding this method (He et al., 2025). The practical
+success of multi-agent designs demonstrates the viability of the method; the
+meta-programming of roles in a multi-agent system, for example, has been demonstrated in
+thecollaborativedevelopmentofsoftwareapplicationsthroughMetaGPT(Hongetal.,2024),
+whilethe useofmulti-agent approaches toenable autonomoussoftware engineering basedon
+the software itself has been illustrated by SWE-agent (Yang et al., 2024). In the specific
+domain of software engineering, agents have been incorporated to perform testing-related
+functions; the agent-based intent-driven exploration of mobile application interfaces has been
+accomplished using DroidAgent (Yoon et al., 2024), while the next step in this research
+involves decision-making approaches with knowledge of functional characteristics (Liu Z. et
+al., 2024). Despite these accomplishments, relatively little work has been done on role
+specialization in multi-agent systems for detecting unit-level defects. A second gap concerns
+evaluationrather thanarchitecture.Studiesoflanguage-modeltestgenerationreport detection
+
+[[page 3]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+3
+under criteria that vary between publications, and a suite that merely fails on a defective
+program isoften countedas havingdetected thedefect, withoutchecking whether it alsofails
+on the corrected version. Rates obtained under such a criterion are not comparable across
+studies and may overstate fault-revealing capability whenever the generating model produces
+incorrectoraclevalues.
+1.3. Contributions and Organization
+The presented research aims to address this gap through development and
+experimentation with a multi-agent approach where software testing would be delegated to
+four agents based on different language models, which subsequently combine their results
+according toacomposite defect detection rule. Themain contributionsare: (i)an architecture
+incorporating a dedicated diagnostic agent absent from prior code-oriented multi-agent
+designs; (ii) a composite detection rule combining execution and semantic signals, together
+with an account of the recall–precision trade-off it entails; (iii) a hierarchy of three detection
+criteria and a two-run differential protocol that separates genuine defect detection from
+language-model test artifacts; and (iv) empirical evidence that the unconditional criterion
+overstates detection by thirty-five percentage points on QuixBugs, with an attribution of that
+gap to specific artifact categories. The remainder of the research paper will continue as
+follows: Section 2 presents the methodology of the proposed framework; Section 3 describes
+the experimental evaluation; Section 4 provides discussion of the results and limitations;
+Section5concludesthepaper.
+2. Methodology
+The methodological basis of this research can be explained through the observation that
+software testing automation is a reasoning process involving different stages, including
+analysis of requirements, developing tests, executing tests, and finding errors. Uniting all of
+these stages in a single agent places the entire reasoning burden on one language model,
+which limits performance on complex software where dependencies hold between
+components. That is why the architecture presented in this work is based on the assumption
+thatitispossibletobuildanentirecommunityofagentsengagedinthetestingprocess,whose
+collectiveactionisdeterminedbyinteractionratherthanbygeneration.
+2.1. Overall Architecture of the Multi-Agent Testing System
+Thesuggestedsystem implementsthethree-tierarchitecture,whereeachtierimplements
+its functionality independently. This implementation makes it possible to optimize each
+
+[[page 4]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+4
+subsystem independently without affecting othersubsystems. Being a task planninglevel, the
+input layer provides program source code and the extracted information to the agent
+collaboration layer through the predefined interface of interaction. Dispatch at this level is
+handled by an orchestrator, which receives the source code and forwards it to the agents
+below.
+Below the orchestrator is the agent collaboration layer that acts as the key part of the
+software architecture. Thelayer containsfour kindsofagentsthat simulatedifferent activities
+performed by the human expert in the team. These actions include: the requirement analysis
+agent analyzing testable requirements according to the source code provided; the test case
+generation agent developing test scripts to detect these requirements; the execution agent
+executing tests within separate process environment and recording all occurring events; and
+the defect analysis agent analyzing obtained data and deciding about detected behaviors
+whethertheyarebugsornot.
+As for the lowest layer of software, it includes the execution and feedback layer that
+gives runtime support for upper layers of software. Thus, it performs such operations as
+creating the sandbox subprocess needed for running test scripts and creating message objects
+to perform communication between the defect analysis agent and the test case generation
+agent.
+These elements, together with the principal flow of information between them, are
+depicted in Figure 1, acting as the reference architectural model for discussing technical
+aspectsintheupcomingsub-sections.
+Figure 1.
+Architecture of the multi-agent testing system. Agents 1, 2, and 4 invoke the language model;
+the execution agent is rule-based.
+
+[[page 5]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+5
+As follows from Figure 1, the four agents donot act according to a strict pipeline model
+but cooperate asynchronously to some extent. According to the suggested scheme, the defect
+analysis agent can trigger another generation cycle if, based on its findings, it concludes that
+there is no defect present in the existing test suite. The cyclic nature of the topology of the
+proposed model differentiates it from other pipeline models and serves as a basis for the
+iteration improvement process presented further. Furthermore, it allows considering
+individualcomponentsoftheframeworkindependentlyduringexperimentswiththem.
+Three characteristics distinguish this architecture. First, the separation of the whole
+model into four agents rather than using three agents typical for the approach that is
+code-oriented is justified by the notion that diagnostics need to be handled separately due to
+the cognitive nature of such activities. Second, the use of an execution signal along with the
+findings of the defect analysis helps avoid false negatives. Third, the creation of a feedback
+communication path between various components of the framework provides a way to
+overcome the lack of detecting any faults during the first generation pass through iteration
+boundlimitation.
+2.2. Coordination Mechanism Among Agents
+While the architectural decomposition approach deals with the question of distributing
+tasks between agents, thequestion of attaining consistency of decisions made bythese agents
+is a matter of methodology demanding attention. Experimental findings obtained during the
+analysis of several methods of generating unit tests based on prompting have demonstrated
+that the prompt design was the main source of variability affecting the quality and validity of
+generated tests, making prompts generate compiled but not working tests (Ouedraogo et al.,
+2024). In its own right, this discovery is highly significant in the context of working of a
+singleagent; atthesametime,itssignificanceincreasessubstantiallywhenconsideringacase
+of multi-agents working in tandem because the effect of the wrong prompt design
+accumulatesacrossthewholechainofprompts.Forthisreason,thealgorithmofcoordination
+suggested in the present research is designed as structural one based on the prompt-driven
+interactionofagentsbecausehowagentsarepromptedaffectswhattheydo.
+In accordance with the described architecture, each agent has a system prompt
+corresponding to the respective role, and thus limits the scope of possible replies from the
+agent. Each prompt follows the same four-part skeleton: a role declaration fixing the agent’s
+function,adescriptionoftheinputitreceives,aspecificationoftheoutputstructureexpected,
+and a list of prohibited constructions. The most consequential prohibition applies to the test
+generation agent, which is required to emit no markup delimiters, since its output is written
+
+[[page 6]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+6
+directlytoanexecutablefile.Theexecutionagentisrule-basedandhasnoprompt.
+Thethreepromptsareinstantiatedperprogram bysubstitutingthesourcecodeand,from
+the second round onward, the feedback signal. The requirement analysis prompt receives the
+source alone and returns a JSON description of the testable behaviours. The test generation
+prompt receives the source, that description, and the feedback signal, and returns a plain-text
+test module. The defect analysis prompt receives the source, the generated module, and the
+executionlog,and returnsaJSONreport withfourfields: aboolean judgment onwhether the
+observed outcome exposes a defect, the behaviours not covered by the current suite, an
+assessment of logical flaws in the generated tests, and recommendations for the next round.
+The first field supplies the term d(s) in Equation (1); the remaining three constitute the
+feedbacksignalf.
+Messages between agents are objects with three fields, an originator, a recipient, and a
+payloadwhosestructureisdeterminedbytheoriginator’srole.Orchestrationissequentialand
+centralised: the orchestrator invokes the requirement analysis agent once per program, then
+enters the loop of Algorithm 1, invoking generation, execution, and diagnosis in that order
+and evaluating the composite criterion after each round. No agent invokes another directly.
+Communication between agents takes place using the message objects that consist of an
+originator, a recipient, and a payload whose structure depends on the originator’s role. The
+result of this stage can be treated as semantically meaningful input of further work stages. In
+turn, the execution agent does not require the use of the language model because test scripts
+will be run as subprocesses capturing their standard output, standard error, and exit codes for
+further processing. Thedefectsare identifiedbasedontheset ofcriteria includingthestateof
+program execution in subprocess—an indication that the test suite causes an assertion failure
+or a runtime exception—and results of structured reasoning carried out by the defect analysis
+agent.Thecompositecriterioniswrittenas:
+BugDetected(s)=1[r(s)≠0]∨d(s) (1)
+where ?denotes the test suite generated for a particular program, ?(?)is the return code
+obtained when executing the suite, ?(?)is the boolean judgment emitted by the defect
+analysis agent for that execution outcome, 1[ ⋅ ]is the indicator function, and ∨denotes logical
+disjunction. This formulation captures the design choice that either an automated execution
+signal or an explicit diagnostic judgment is sufficient to conclude that a defect has been
+exposed, which reduces the risk of false negatives that would otherwise arise from relying
+exclusivelyoneithersignalinisolation.
+2.3. Iterative Feedback-Driven Refinement Algorithm
+
+[[page 7]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+7
+Thesemeasureswouldstillbeinsufficientlyefficientwhenutilizedinasystemrestricted
+to one cycle of generation and execution, given that software defects usually hide themselves
+behind execution paths that do not exist until preliminary tests have helped to reduce the
+numberofpossibilitiestocheck.Recentstudiesinuniversalfuzzingdemonstratethatiterative
+feedbackcanbeusedtofindhiddenbugsbyrevisingpromptsincrementally,beingapplicable
+to several programs written in different programming languages (Xia et al., 2024). However,
+the process of obtaining such feedback operates solely within one and the same subject who
+generates the prompts and receives results, which restricts the possibility of obtaining more
+detailed information in the process while conflating things which should be kept apart,
+according to the authors. In order to apply this technique to the multiagent setting,
+considerable modifications would have to be made because of the necessity of feedback
+crossing several agents’ borders and of the convergence loop’s management to prevent
+excessivecostsofcomputations.
+A refinement process begins with the creation of an initial test suite based on the output
+of the test case generation agent in response to testable behaviors discovered in the software
+system. Then the test suite is executed using the execution agent as a subprocess and the
+resulting standard output, standard error, and return code are saved in the execution log file.
+Subsequently, this execution log is analyzed using the defect analysis agent in order to
+produce a diagnostic report. The diagnostic report specifies (i) untested behaviors; (ii)
+weakness in test case generation; and (iii) aspects of the test suite that must be improved
+duringthenextrefinementiteration.Thealgorithmfinisheswhenthecompoundconditionfor
+detectionofadefectbecomestrueatsomeround,returningthecurrentiterationnumberasthe
+roundwherethefirstdefectwasdetected.Incasewhenthisconditiondoesnotbecometrueat
+any iteration, the diagnostic report produced by the defect analysis agent is returned as a
+feedback signal tothetest case generationagent. Thus,inthenextiteration, onlytheuntested
+behaviors from the previous diagnostic report should be covered while all the weaknesses in
+test cases should be addressed. An algorithm for the entire process explained above is fully
+detailedinAlgorithm1.
+Algorithm 1
+Iterative feedback-driven test refinement
+Line Statement Comment
+Input:sourcecodec,iterationboundK
+Output:testsuites,firstdetectionroundk*
+1 b←RequirementAgent(c) testablebehaviors,JSON
+
+[[page 8]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+8
+Line 6 returns both the boolean judgment used in the composite criterion and the
+diagnosticreportcarriedforwardasthefeedbacksignalfforthenextround.
+Here, the input variables of the algorithm include source code of the application whose
+behavior needs to be analyzed and the upper bound for the maximum number of iterations
+permitted.Theprocessthenbeginswithcallingoftheagentrequirement analysisfollowedby
+iterative calls of the agents in the order mentioned below: test case generation agent using
+feedback signal; execution agent and finally defect analysis agent. When the composite
+criteria for the identification of defects are met, the algorithm terminates with the test cases
+andthenumberofiterationsatwhichthishappensbeingtheoutputs.Inotherscenarioswhere
+the criteria do not hold true until the upper bound on the number of iterations, the algorithm
+terminatesonreachingtheupperlimitwiththetestsuitethathasnodefects.
+Combiningthestoppingconditionduetodefectdetectionandthestoppingconditiondue
+to exceeding the upper bound on the number of iterations, we can consider the system to be
+able to strike a balance between investing extra computation effort and achieving further
+progress regardingthecoverage criterionformore challengingprograms. Thecost ofa single
+iteration is dominated by the language-model invocations issued by the requirement analysis,
+test generation, and defect analysis agents, together with the subprocess execution performed
+bytheexecutionagent.Sincetheloopterminateseitherondetectionoronreachingthebound
+K, per-program cost is bounded by K iterations of this quantity. Expressing this bound
+asymptotically conveys nothing beyond the loop structure itself; measured cost is reported in
+Section3.7instead.
+3. Experimental Evaluation and Results
+2 f←∅ feedbacksignal,initiallyempty
+3 fork=1toKdo
+4 s←GenerationAgent(c,b,f) LLMinvocation
+5 (r,ℓ)←ExecutionAgent(s) returncodeandlog;rule-based
+6 (d,f)←DiagnosisAgent(c,s,ℓ) judgmentanddiagnosticreport
+7 if1[r≠0]∨dthen compositecriterion,Eq.(1)
+8 return(s,k) defectexposedatroundk
+9 endif
+10 endfor
+11 return(s,∅ ) boundreachedwithoutdetection
+
+[[page 9]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+9
+The empirical investigation of the proposed architecture will be based on answering
+three key research questions.These include (1) performance under the three detection criteria
+and against a same-model baseline, (2) the characteristics of cases in which the framework
+repeatedlyfailstoexposetheembeddeddefect,and(3)thedistributionofdetectionacrossthe
+defectclassesrepresentedinthebenchmark.
+3.1. Experimental Setup
+The empirical investigation seeks to answer the following three research questions:
+(RQ1): How does the framework perform under each of the three detection criteria, and how
+does it compare with a same-model single-agent baseline? (RQ2): What are the features of
+those cases where the proposed approach is not capable of identifying the presence of the
+defect despite being repeated several times? (RQ3): How is detection distributed across the
+defect classes represented in the benchmark? To test whether the multi-agent approach is
+effective enough in bug detection, a specific dataset is used – QuixBugs
+(https://github.com/jkoppel/QuixBugs). The dataset contains forty Python programs, each
+carrying a single-line defect drawn from an implementation of a classical algorithm. The
+distributionsupplies a corrected reference implementation for each program and assigns each
+defect to one of fourteen defect classes defined by the benchmark authors(Lin et al., 2017).
+The experiments use the Python portion at commit f2a4e2f, and reference implementations
+are taken from the corrected programs suppliedwith that revision. The benchmark’s own test
+resources are not used as oracles here. This is deliberate: the original distribution supplies
+input–output specifications for thirty-one of the forty programs, and prior analyses have
+documented missing assertions and incorrect expected values in parts of the remaining
+material. The differential protocol in Section 3.5 avoids dependence on these resources by
+using the corrected implementation itself as the point of comparison. The benchmark was
+selectedforitsopenavailability,itsconfirmeddefects,andtherangeofalgorithmsitcovers.
+Theprincipalevaluationmetricisthedefectdetectionrate,definedas
+DetectionRate= 1
+∣P∣
+p∈P
+  1[BugDetected(sp)=1] (2)
+In which the letter P stands for the programs that have been analyzed in terms of their
+quality, and sp is the test suite generated for program p. Some other performance indicators
+taken into account are the rate of execution success, average token consumption, and latency
+of each program. The test environment is provided by the GLM-4-Flash model (Zhipu AI)
+based on Python 3.12 and the maximum number of iterations is fixed at three. All agents use
+GLM-4-Flash (version glm-4-flash-250414) at temperature 0.7 with top-p 0.9, running on
+
+[[page 10]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+10
+Python 3.12.3 under Ubuntu 22.04. Experiments ran on a single machine with an Intel Core
+i7-12700 CPU and 32 GB of RAM; no GPU is required, since all model inference is served
+through the provider’s API. Test suites execute in a subprocess sandbox with a 30-second
+timeout and no network access. Because language-model outputs are stochastic, every
+condition reported below was run five times with distinct seeds, and results are given as the
+mean over thefive runswiththe standard deviationand aWilson95%confidence interval.A
+run that failed for reasons external to the framework, such as an API timeout, was retried at
+mosttwice;aprogramstillunresolvedafterthreeattemptswasrecordedasundetectedforthat
+run.Acrossallconditions,14retrieswererequiredandnoprogramremainedunresolved.
+3.2. Comparative Evaluation Against Baseline Methods
+The first research question is addressed by evaluating the framework on all forty
+QuixBugs programs under each of the three criteria. Table 1 reports the detection rates
+alongside the execution success rate, token consumption, per-program latency, and iteration
+rounds.
+Table 1
+Framework performance under the three criteria (five runs)
+All forty suites execute without error, and the three detection rates differ by a factor of
+eighteen between the loosest and the strictest reading. With forty programs, the confidence
+intervalsspanroughlythirtypercentagepoints,sotheorderingofthethreecriteriarather than
+the precise value of any one of them is the finding these data support. Prior work on
+LLM-based and search-based test generation reports outcomes under measures that differ
+from the detection rate used here, including coverage attainment, mutation scores, and
+pass@1 code-generation accuracy (Lemieux et al., 2023; Schäfer et al., 2023; Huang et al.,
+2023).Thesequantitiesare notcommensurable withadefect detectionrate, andnonumerical
+Metric Mean SD 95%CI
+Unconditionaldetectionrate(%) 90.0 1.9 [76.9,96.0]
+Differentialdetectionrate(%) 55.0 3.1 [39.8,69.3]
+Strictdetectionrate(%) 5.0 1.4 [1.4,16.5]
+Executionsuccessrate(%) 100.0 0.0 [91.2,100.0]
+Avg.tokenconsumption 9,348 214 —
+Avg.per-programlatency(s) 142.9 8.6 —
+Avg.iterationrounds 1.20 0.04 —
+
+[[page 11]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+11
+comparison against themisdrawn. Asame-model single-agent baselineisreported inSection
+3.6 as the controlled point of reference. The relationship between generation cost and the
+criterionunderwhichadefectisregisteredasdetectedisexaminedinFigure2.
+Figure 2
+Token consumption by detection tier
+Figure 2 groups the forty programs into the four mutually exclusive tiers induced by the
+three criteria and reports the token consumption of each. The three tiers in which a defect is
+registered as detected occupy substantially the same range, so that a suite satisfying the strict
+criterion is not distinguishable by cost from one satisfying only the unconditional criterion.
+Cost therefore carries no signal about the validity of the generated tests, and the separation
+visible for the undetected tier is mechanical: a program on which the composite criterion is
+never satisfied continues to the iteration bound by construction, and consuming the full
+budgetentailsahighertokencount.
+3.3. Failure Mode Analysis on Undetected Programs
+The analysis in this subsection concerns the four programs undetected under the
+unconditional criterion. Under the differential criterion the undetected set comprises eighteen
+programs, of which these four form the subset that no criterion registers as detected; failure
+modes of the wider set are characterised in Section 3.5. Understanding why the framework
+fails on these programs indicates where the architecture can be improved, which is the
+concernofthesecondresearchquestion.
+Table 2 lists these programs with their defect class, the number of iterations consumed,
+andacharacterizationofwhythedefectwasnotexposed.
+
+[[page 12]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+12
+Table 2
+Programs undetected under both criteria
+Note.Defectclassesfollowtheclassificationsuppliedwiththebenchmarkdistribution.
+All four require an input with structural or relational properties that the generation agent
+did not synthesize within the iteration bound. For this subset the obstacle lies in input
+constructionratherthaninthedetectionrule.
+3.4. Distribution of Detection across Defect Classes
+Thethirdresearchquestionconcernswhetherdetectionbehaviourvariesacrossthekinds
+of defect represented in the benchmark. The analysis uses the fourteen defect classes defined
+by the benchmark authors rather than a taxonomy constructed for this study, since a
+classificationdevisedbytheauthorsofanevaluationcannot beheldindependent oftheresult
+it is used to describe. Figure 3 reports, for each defect class, the number of programs it
+containsandthenumberdetectedunderthedifferentialcriterion.
+Figure 3
+Detection by defect class under the differential criterion
+Program Defectclass Iterations Failurecharacterization
+find_first_in_sorted
+Incorrect
+comparison
+operator
+3 Requiresinputswithspecificduplicate-element
+structurestotriggertheboundaryindexingerror
+is_valid_parenthesization Missingcondition 3 Defectmanifestsonlyoninputswithdeeplynested
+mismatcheddelimiters
+reverse_linked_list Incorrectvariable 3 Requiresconstructionofanon-triviallinked
+structurethatthetestagentdidnotsynthesize
+shortest_path_lengths Incorrectarrayslice 3 Defecttriggersunderspecificedgeweight
+configurationsnotproducedinthegeneratedtests
+
+[[page 13]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+13
+Classsizesrangefromonetosixprograms,withamedianoftwo.Twopropertiesofthis
+distribution constrain what may be inferred from it. The first is arithmetic: with most classes
+containingfewer than four instances, adifference ofone detectedprogram shiftsa class-level
+proportion by more than twenty percentage points, and no class supports an interval estimate
+narrow enough to distinguish it from any other. The second is conceptual: class membership
+isdetermined bythe syntacticform of theseedededit,whereas detection depends onwhether
+an input exposing the resulting behavioural difference can be synthesised, and these two
+properties are not in general aligned. The distribution is therefore reported descriptively, and
+no claim of differential detection capability across defect classes is advanced. A design
+adequate to that question would require either substantially more instances per class or a
+stratifiedsamplingscheme,neitherofwhichisavailablewithinthepresentevaluation.
+3.5. Supplementary Validation under a Differential Detection Protocol
+The unconditional detection rate reported in Section 3.2 marks a program as detected
+whenever the generated test suite produces a non-zero return code on the buggy
+implementation. While this criterion is consistent with prior LLM-based testing studies, it
+does not distinguish between failures truly triggered by the embedded defect and failures
+causedby LLM-generated test artifacts,such as incorrect expected values orAPI mismatches
+betweenthesynthesizedtestsandthefunctionundertest.
+To providea stricter, complementary view, we conducted a two-run validation.For each
+program, the generated test suite was post-processed before execution to remove
+re-definitions of the target function introduced by the generating agent. Such re-definitions
+arise when the agent emits a local copy of the function under test within the test file rather
+than importing it; a suite of this form executes against its own copy and returns identical
+results on the buggy and the reference implementation, defeating the two-run comparison.
+The post-processing operates on the abstract syntax tree of the generated file: every top-level
+function definition whose identifier matches the target function is removed, and the
+corresponding import from the module under test is inserted where absent. Suites re-binding
+thetarget identifier throughamechanism outsidethisrule,suchas assignment from a lambda
+expression or definition within a class body, were flagged for individual inspection. The rule
+modified 27 of the forty suites, 4 of which required manual resolution; the remaining 13
+executed as generated. Both implementations were then executed against the identical
+post-processed suite. We then computed two additional criteria. Differential Detection: a
+program is counted as detected if the number of failing tests on the buggy implementation
+strictlyexceedsthatonthereferenceimplementation;theexcessfailuresareattributabletothe
+
+[[page 14]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+14
+embedded defect rather than to test-side artifacts. Strict Detection: a program is counted as
+detected only if the test suite fails on the buggy implementation and passes entirely on the
+reference implementation; thisserves as a conservative lower bound. Table 3 summarizesthe
+threeratessidebyside.
+Table 3
+Defect detection rates under three criteria of increasing strictness
+Figure 4.
+Detection rate under the three criteria, with Wilson 95% intervals.
+Figure 4 shows the three rates side by side. The unconditional rate exceeds the
+differential rate by 35.0 points and the strict rate by 85.0 points. The intervals overlap only
+between the differential and the strict readings at their extremes, so the ordering itself is not
+an artefact of sampling variation, whereas the magnitude of each rate is estimated to within
+roughlythirtypointsatthissamplesize.
+Under the differential criterion, 22of the40programs yieldstrictlymore failingtestson
+the buggy implementation than on the reference, providing direct evidence that the
+multi-agent framework synthesizes tests with genuine fault-revealing power on a majority of
+QuixBugsprograms.
+The attribution of these excess failures to the seeded defect requires verification rather
+than assumption, since a test-side defect interacting with the modified statement would
+Criterion Rate Interpretation
+Unconditional 36/40(90.0%) Comparabletopriorwork
+Differential 22/40(55.0%) Recommendedprimaryindicator
+Strict 2/40(5.0%) Conservativelowerbound
+
+[[page 15]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+15
+produce the same differential signature. Each of the twenty-two differentially detected
+programs was therefore subjected to a coverage-based check. For a given program, the set of
+tests failing on the buggy implementation and the set failing on the reference implementation
+were computed and the difference taken. Every test in the difference set was re-executed on
+the buggy implementation under line-coverage instrumentation, and the recorded coverage
+compared against the defect line annotated in the QuixBugs distribution. A program is
+classified as attributable when at least one test in its difference set executes the annotated
+defect line, and as ambiguous otherwise, on the grounds that a test never reaching the
+modifiedstatementcannothavebeencausedtofailbyit.
+Of the twenty-two programs, 19 satisfy the attributable condition and 3 are classified as
+ambiguous. The differential rate is accordingly reported as 19/40 (47.5%) under the
+attributable reading and 22/40 (55.0%) under the unverified reading, and this interval is
+carried wherever the differential rate is cited. The check is conservative in one direction and
+permissiveintheother:itdoesnotestablishthatthefailingassertionissemanticallyrelatedto
+the defect, only that the failing execution reaches it, and may therefore retain cases of
+incidentalcoverage.Itdoes,however,excludethefailuremodeofprincipalconcern,namelya
+testfailingonthebuggyimplementationforreasonsunconnectedtotheseededfault.
+Theremaining18programsexhibitthesamenumberoffailuresonbothimplementations,
+indicating that the generated tests, although they execute successfully and trigger failure
+signals, do not differentiate buggy from correct behavior; these comprise the fourteen
+programs detected under the unconditional criterion alone and the four detected under none,
+corresponding to the third and fourth tiers in Figure 2. This gap quantifies the headroom for
+futureworkonoracle-qualitycontrolinLLM-basedtestgeneration.
+The strict criterion admits only two programs, which entails that thirty-eight of the forty
+generated suites report at least one failing test on the reference implementation. Because a
+suite failing on correct code cannot serve as a valid fault-revealing artefact irrespective of its
+behaviour onthe buggy version, the composition of these thirty-eight cases carries diagnostic
+value. Each suite was examined against the reference implementation and assigned to exactly
+oneoffivemutuallyexclusivecategories,determinedbytheearliestpointatwhichitdeviates
+fromcorrectbehaviour.
+Asuiteisassignedtothehallucinated-oraclecategorywhenitexecuteswithouterrorbut
+asserts an expected value inconsistent with the specification of the function under test. It is
+assigned to API/signature mismatch when the invocation does not match the declared
+interface, including incorrect arity, incorrect keyword names, or an unsupported assumption
+about the return type. Import/environment covers suites terminating before any assertion is
+
+[[page 16]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+16
+evaluated because of an unresolved import. Input-type violation covers suites whose
+invocationsarestructurallywellformedbutsupplyargumentsoutsidethedomainassumedby
+the reference implementation, such as a flat sequence where a nested structure is required.
+Suites whose earliest deviation could not be assigned to a single category, either because
+several defects co-occur or because the execution log does not permit determination, are
+recordedasunresolved.Table4reportsthedistribution.
+Table 4
+Failure attribution on the reference implementation
+Hallucinated oracle values account for 42.1% of the affected suites, and together with
+signature mismatches for 71.0%. This distribution bears directly on how the unconditional
+rate should be read. A suite in any of the first four categories will in general also produce a
+non-zero return code on the buggy implementation, and will therefore be counted as a
+detectionunder theunconditionalcriterioneven thoughthefailureoriginatesinthetestrather
+than in the program under test. The thirty-five-point gap between the unconditional and the
+differential rate is thus not an artefact of the differential protocol being unduly conservative,
+but a measurable consequence of the distribution recorded in Table 4. The unresolved
+category, at 5.3%, is small enough that the ordering of the remaining categories does not
+dependonitsdisposition.
+The eighteen programs undetected under the differential criterion fall into three failure
+modes,summarizedinTable5.
+Table 5
+Failure modes of the eighteen programs undetected differentially
+Category Count Share(%)
+Hallucinatedoraclevalue 16 42.1
+API/signaturemismatch 11 28.9
+Input-typeviolation 6 15.8
+Import/environmentfailure 3 7.9
+Unresolved 2 5.3
+Total 38 100.0
+Failuremode Count Representativeprograms
+Oracledoesnotseparatebuggyfromcorrectoutput 9 bitcount,gcd,next_permutation
+Requiredinputstructurenotsynthesized 6 reverse_linked_list,shortest_path_lengths
+
+[[page 17]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+17
+The first mode dominates and is the differential counterpart of the hallucinated-oracle
+categoryinTable4:thesuiteexecutes,fails,andyetfailsidenticallyonbothimplementations.
+Thefour programsof Table2appearinthesecondandthirdmodes,whichtogether comprise
+nineprograms.
+3.6. Ablation and Baseline Comparison
+The architectural claim that four agents outperform a smaller configuration, and the
+claim that the composite rule outperforms either of its two components alone, both require a
+controlled comparison. Four conditions were therefore run on the same forty programs with
+thesamemodel,thesamefiveseeds,andthesameiterationbound.Thesingle-agentcondition
+issues one prompt that performs analysis, generation, and judgment together. The three-agent
+condition removes the diagnostic agent while retaining the feedback loop, which then returns
+the raw execution log rather than a diagnostic report. The execution-only and diagnosis-only
+conditions retain all four agents but replace the composite rule with, respectively, its
+executiontermanditsdiagnosticterm.Table6reportstheoutcomeundereachcriterion.
+Table 6
+Detection rates by condition (%, mean over five runs)
+Three observationsfollow. The single-agent conditiondetects fewer defectsthan thefull
+framework under every criterion, and the gap of 17.5 points under the differential criterion is
+theonlycontrolledevidenceinthisworkthatroledecompositioncontributestodetection.The
+diagnosis-only condition performs worst throughout, which indicates that the diagnostic
+judgment is not a substitute for the execution signal. The comparison between the
+execution-only conditionand the full framework is the one that bears on the fourth agent: the
+two differ by 2.5 points under the unconditional criterion and not at all under the differential
+and strict criteria, so the diagnostic term contributes detections only where the execution
+Defectliesoutsidethepathsthesuiteexercises 3 find_first_in_sorted,is_valid_parenthesization
+Total 18 —
+Condition Unconditional Differential Strict Avg.tokens
+Fullframework 90.0 55.0 5.0 9,348
+Singleagent 72.5 37.5 2.5 3,120
+Threeagents,nodiagnosis 85.0 52.5 5.0 7,265
+Executionsignalonly 87.5 55.0 5.0 9,348
+Diagnosisonly 45.0 27.5 2.5 9,348
+
+[[page 18]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+18
+signal is already absent, and does so rarely. The removal of the diagnostic agent in the
+three-agent condition costs 5.0 points unconditionally and 2.5 points differentially, a
+differencesmallerthanthestandarddeviationacrossseedsreportedinTable1.
+The token column separates the two kinds of change. The execution-only and
+diagnosis-onlyconditionsalterthedetectionrulebutnotthegenerationpipeline,andtherefore
+cost the same as the full framework; only removing an agent reduces cost, by 22.3% for the
+three-agent conditionandby66.6%for thesingle-agent condition.The compositerule isthus
+obtainedatnoadditionalcost,whereasthefourthagentisnot.
+The evidence supports role decomposition but does not establish that the diagnostic
+agent is necessary for detection on this benchmark. Its contribution lies in the diagnostic
+report that drives the feedback loop rather than in the composite rule, and the second
+limitation in Section 4.2 discusses why that contribution is not observable here. Figure 2
+reports the tier structure for the full framework only; the ablation conditions are summarized
+byrateratherthanbydistribution.
+3.7. Measured Cost
+Table7reportsthecostofprocessingasingleprogram,aggregatedacrossthebenchmark.
+Token consumption is summed over all agent invocations for a program, monetary cost is
+derived from token counts at the published rate for the model used, and latency is wall-clock
+timeincludingsubprocessexecution.
+Table 7
+Per-program cost
+The spread between minimum and maximum reflects the iteration bound: programs
+satisfyingthecompositecriterioninthefirstroundincurroughlyonethirdofthecostofthose
+exhaustingall three rounds.Twoqualificationsapplytoreadingthese figuresasanindication
+of operating cost. The first is that they are specific to the model used and scale with its
+published rate, so the monetary column should be read as a quantity proportional to token
+consumptionrather than as astable figure. The second isthat they are measured onprograms
+of the size represented in QuixBugs, which are self-contained implementations of classical
+Measure Mean SD Min Max
+Totaltokens 9,348 2,914 3,972 17,286
+Monetarycost(USD) 0.0056 0.0017 0.0024 0.0104
+Wall-clocklatency(s) 142.9 58.3 47.2 340.1
+Iterationrounds 1.20 0.61 1 3
+
+[[page 19]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+19
+algorithms; therelationshipbetweenprogram sizeandcost isnot characterisedbythe present
+evaluation, and Section 4.3 discusses what this implies for larger targets. The mean of 1.20
+iteration rounds admits a direct reading. The four programs that satisfy no criterion each
+exhaust the bound of three, contributing twelve rounds; the remaining thirty-six programs
+thereforeaccountforthirty-sixroundsintotal,whichispossibleonlyifeachterminatedinthe
+firstround.Everydetectiononthisbenchmarkoccurredinthefirstiteration,andthefeedback
+loopcontributednoadditionaldetections.Thisholdsinallfiveruns.
+4. Discussion
+4.1. Sources of Methodological Effectiveness
+Takingintoconsiderationtheresultsobtainedwiththeuseoftheframeworkinquestion,
+it is possible to evaluate the methodological basis of its functioning and the place it occupies
+in comparison with other language-model-based approaches to the problem under
+investigation. The comparison in Table 6 provides the basis for assessing which architectural
+elements contribute to the observed performance. Role decomposition is supported: the
+single-agent condition, run with the same model and the same budget, detects 17.5 fewer
+points under the differential criterion. This is consistent with the position of Huang et al.
+(2023)thatdistributingataskacrossspecializedagentsnarrowsthesemanticrangeeachmust
+cover, though the present data establish the effect only for the specific decomposition tested
+here.
+The evidence for the diagnostic agent is weaker. Removing it costs 2.5 points
+differentially, within the seed-to-seed variation reported in Table 1, and the diagnosis-only
+conditionperformsworstofthefour.Thediagnostictermofthecompositerulethereforefires
+almost exclusively where the execution signal has already fired. Whether a dedicated
+diagnostic agent is warranted is better assessed on benchmarks where the feedback loop is
+exercised,sinceitsoutputservesthatloopaswellasthedetectionrule;onQuixBugstheloop
+isneverenteredbyaprogram thatiseventuallydetected.Inthisregard,theroleplayedbythe
+compositedefectdetectioncriteriondeservesspecialattention,anditsmethodologicalbasisis
+based on the same principles applied in previous studies. Schäfer et al. (2023) report that
+execution outcomes alone leave part of the generated-test quality space unmeasured, and
+Lemieux et al. (2023) observe that search-based generation stalls where branch coverage
+requires constructing specific inputs. The composite rule is a disjunction, and a disjunction
+maximizes recall at the expense of precision. Table 6 shows the cost of that choice: the
+unconditional rate under the composite rule exceeds the execution-only rate by 2.5 points,
+while the differential rate is identical, so the additional detections admitted by the diagnostic
+
+[[page 20]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+20
+term do not survive the differential check. The works cited above motivate richer oracles
+rather than disjunctive detection rules, and the rule adopted here should be read as a design
+decisionfavouringrecallratherthanasaninstantiationoftheirproposals.
+The failure mode analysis qualifies this account. Table 5 shows that the dominant
+obstacle is oracle quality rather than input construction: nine of the eighteen differentially
+undetected programs receive suites that execute and fail, yet fail identically on correct code.
+Inputconstructionandpathcoveragetogetheraccountfortheremainingnine.
+4.2. Limitations and Threats to Validity
+One of the limitations in the existing research is the choice of the QuixBugs set as the
+only available benchmark in the current work. It should be stressed that the dataset at issue
+includes forty programs of moderate size implementing classical algorithms and containing
+variousbugscausedbywrongoperatorchoice,off-by-oneerrors,oraslightlogicalflaw.Due
+to the relatively low generalizability of the results achieved on the selected dataset to large
+industrial code bases, where various issues associated with module interplay, race conditions
+in concurrent programs, and specification-implementation mismatch might occur, further
+verification on another dataset, e.g. Defects4J(Just et al., 2014), would considerably increase
+theexternalvalidityofthefindings.
+A second limitation concerns the iterative feedback mechanism. Section 3.7 shows that
+every detection occurred in the first round across all five runs, so the loop contributed no
+additional detections. What this manuscript demonstrates for the mechanism is therefore an
+architectural capability rather than an empirical effectiveness, and the distinction is worth
+stating plainly: the loop is specified, implemented, and executed, but on this benchmark it is
+never the reason a defect is found. QuixBugs defects are single-line faults that, once testable
+behaviors are identified, do not require iterative refinement to expose. The mechanism is
+retained as a component of the framework, and evidence of its contribution would require a
+benchmark whose defects span multiple statements. This is the same limitation as the
+single-benchmarkconstraintdiscussedabove,andthetwoarenotindependent.
+A third limitation concerns the model. All conditions reported in Table 6 use
+GLM-4-Flash, so the ablation isolates architectural contributions only within that model.
+Whether role decomposition confers the same advantage under a stronger generator is not
+established here, and a multi-model evaluation would be required to separate framework
+effects from model effects. A related constraint is that test suite quality is assessed here only
+throughexecutionoutcomes;humanevaluationofthegeneratedtests,whichpriorworktreats
+asinformativeaboutreadabilityandmaintainability,wasnotconducted.
+
+[[page 21]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+21
+A fourth limitation concerns the criterion used to declare a defect detected. The
+unconditionalrateof90.0%reportedinTable1includescaseswherethetestsuitefailsonthe
+buggy implementation due to LLM-introduced test artifacts rather than the embedded defect
+itself. The supplementary differential detection rate of 55.0% (Section 3.5) is a more
+conservative estimate of the framework’s true fault-revealing capability. Two qualifications
+attach to the analyses supporting this estimate. The attribution in Table 4 rests on identifying
+the earliest point at which a suite deviates from correct behaviour, and suites containing
+several independent defects are recorded as unresolved rather than decomposed; category
+countsare therefore lowerboundsontheincidence ofeachfailure mode.Thecoverage-based
+checkinSection3.5establishesthatafailingtestreachestheannotateddefectlinebutnotthat
+thefailingassertionissemanticallyrelatedtothedefect,andtheattributablecountofnineteen
+is correspondingly an upper bound. We recommend that future LLM-based testing studies
+adopt the differential protocol as a default reporting standard, particularly when generated
+testsareproducedbymodelspronetooraclehallucination.
+Finally, the only controlled comparison reported here is against a single-agent
+configuration of the same framework. A re-implementation of AgentCoder and of
+search-based generators on a unified harness would permit comparison across architectures
+ratherthanwithinone,andisanaturaldirectionforfollow-upwork.
+4.3. Scalability and Deployment Considerations
+Table7placesthecostofasingleQuixBugsprogram atapproximately9,300tokensand
+143 seconds. These programs are self-contained functions of a few dozen lines, whereas a
+module from an industrial repository would enlarge the prompt with imports and call sites;
+token consumption scales with that context, which the present evaluation does not measure.
+Thefiguresshouldthereforebereadasalowerboundonper-unitcost.
+Forcontinuousintegration,thislatencyiscompatiblewithper-commitinvocationonlyif
+theframework isapplied tothefunctionsa committouches, and theiterationbound serves as
+a budget control. Deployment also raises a question the benchmark does not: the differential
+protocol requires a reference implementation, which a live repository lacks. Substituting the
+pre-change version would redefine the comparison as detection of behavioural change rather
+than agreement with correct code, and whether that preserves the protocol’s discriminating
+powerremainsopen.
+5. Conclusion
+5.1. Summary of the Research
+
+[[page 22]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+22
+In the proposed study, we present an architecture for automated software testing that
+involves a multi-agent approach where each of the four subtasks involved in this automated
+testing process is handled by a language-model–based agent that performs requirement
+analysis, test case generation, isolated program execution, and defect detection. The
+decomposition is motivated by the differing demands of these subtasks, which a monolithic
+generator must reconcile within a single reasoning objective. The framework combines an
+execution signal with a semantic judgment in a composite detection rule, and the evaluation
+introduces a hierarchy of three criteria under which that rule is assessed. On QuixBugs the
+framework attains a differential detection rate of 55.0% (SD 3.1), which is the rate this work
+recommends as the primary indicator; the unconditional rate of 90.0% and the strict rate of
+5.0% bound it above and below. A same-model single-agent baseline reaches 37.5%
+differentially, and the ablation reported in Section 3.6 attributes the difference to role
+decompositionratherthantothediagnosticagentspecifically.
+5.2. Directions for Future Research
+There seem to be several natural avenues to explore for future work based on the
+conducted experiments. The generalization of the proposed framework to larger and more
+challenging problems, such as Defects4J bug suite and industrial bug corpora with increased
+variance in defect hardness relative to classical QuixBugs, will likely yield some very
+intriguingresultsthatwillextendbeyondwhatweachievewithourexistingbenchmark.Such
+benchmarks would also permit the iterative feedback mechanism to be evaluated empirically,
+which the present data do not allow. Additionally, testing the behavior of our system in
+conjunctionwithvariousbaselanguagemodelscanhelpshedlightonthenatureofitssuccess,
+separating the effects due to the model properties from those due to the framework
+architecture. Lastly, the development of advanced communication pathways between the
+agentsmayallowustodetectpreviouslymisseddefects.
+Acknowledgments
+Theauthordeclaresthatnospecificacknowledgmentsarerequired.
+Author contributions
+YuxuanLiisthesoleauthorofthismanuscriptandwasresponsibleforallaspectsofthework,
+includingconceptualization,methodology,software,validation,formalanalysis,investigation,
+datacuration,writingoriginal draft preparation,writingreview andediting,andvisualization.
+Theauthorhasreadandagreedtothepublishedversionofthemanuscript.
+
+[[page 23]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+23
+Funding
+Thisresearchreceivednoexternalfunding.
+Data availability
+The QuixBugs benchmark used in this study is publicly available at
+https://github.com/jkoppel/QuixBugs. The experimental data and code generated during this
+studyareavailablefromtheauthoruponreasonablerequest.
+Declarations
+Conflict of interest
+Theauthordeclaresthatthereisnoconflictofinterest.
+Ethics approval
+Notapplicable.
+Consent to participate
+Notapplicable.
+Consent for publication
+Allauthorshavegiventheirconsent.
+Additional information
+Received:12June2026
+Accepted:22July2026
+Published online:14August2026
+Publisher’s Note
+WisdomAcademicPressLtd.remainsneutralwithregardtojurisdictionalclaimsinpublished
+mapsandinstitutionalaffiliations.
+
+[[page 24]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+24
+References
+[1] He, J., Treude, C., & Lo, D. (2025). LLM-based multi-agent systems for software engineering:
+Literature review, vision, and the road ahead. ACM Transactions on Software Engineering and
+Methodology, 34(5),1–30.https://doi.org/10.1145/3712003
+[2] Hong,S., Zhuge,M., Chen,J.,Zheng, X.,Cheng,Y.,Wang, J.,Wang, Z., Yau,S. K. S., Lin,Z., Zhou,
+L., Ran, C., Xiao, L., Wu, C., & Schmidhuber, J. (2024). MetaGPT: Meta programming for a
+multi-agent collaborative framework. In Proceedings of the International Conference on Learning
+Representations.https://openreview.net/forum?id=VtmBAGCN7o
+[3]Hou,X.,Zhao,Y.,Liu,Y.,Yang,Z.,Wang,K.,Li,L.,Luo,X.,Lo,D.,Grundy,J.,&Wang,H.(2024).
+Large language modelsforsoftwareengineering: Asystematicliteraturereview. ACM Transactions on
+Software Engineering and Methodology, 33(8),1–79.https://doi.org/10.1145/3695988
+[4]Huang,D.,Zhang,J.M.,Luck,M.,Lu,Q.,Qing,Y.,&Cui,H.(2023). AgentCoder: Multi-agent-based
+code generation with iterative testing and optimisation [Preprint]. arXiv. https://doi.org/
+10.48550/arXiv.2312.13010
+[5] Just, R., Jalali, D., & Ernst, M. D. (2014). Defects4J: A database of existing faults to enable controlled
+testing studies for Java programs. In Proceedings of the 2014 International Symposium on Software
+Testing and Analysis (pp. 437–440). Association for Computing Machinery. https://doi.org/
+10.1145/2610384.2628055
+[6]Lemieux,C.,Inala,J.P.,Lahiri,S.K.,&Sen,S.(2023).CodaMosa:Escapingcoverageplateausintest
+generation with pre-trained large language models. In Proceedings of the 45th International
+Conference on Software Engineering (pp. 919–931). IEEE. https://doi.org/10.1109/
+ICSE48619.2023.00085
+[7] Lin, D., Koppel, J., Chen, A., & Solar-Lezama, A. (2017). QuixBugs: A multi-lingual program repair
+benchmarksetbasedontheQuixeyChallenge.In Proceedings Companion of the 2017 ACM SIGPLAN
+International Conference on Systems, Programming, Languages, and Applications: Software for
+Humanity (pp. 55–56). Association for Computing Machinery. https://doi.org/
+10.1145/3135932.3135941
+
+[[page 25]]
+Transactions on Computing Science
+https://doi.org/10.63808/tcs.v2i2.447 Volume 2 , Issue 2
+25
+[8] Liu, J., Wang, K., Chen, Y., Peng, X., Chen, Z., Zhang, L., & Lou, Y. (2024). Large language
+model-based agents for software engineering: A survey. ACM Transactions on Software Engineering
+and Methodology.Advanceonlinepublication.https://doi.org/10.1145/3695996
+[9] Liu, Z., Chen, C., Wang, J., Chen, M., Wu, B., Che, X., Wang, D., & Wang, Q. (2024). Make LLM a
+testingexpert:Bringinghuman-likeinteractiontomobileGUItestingviafunctionality-awaredecisions.
+In Proceedings of the 46th International Conference on Software Engineering (pp. 1–13). IEEE.
+https://doi.org/10.1145/3597503.3639180
+[10]Ouedraogo, W. C., Kabore, K.,Tian, H.,Song, Y., Koyuncu,A.,Klein, J., Lo,D., & Bissyandé, T. F.
+(2024). LLMs and prompting for unit test generation: A large-scale evaluation. In Proceedings of the
+39th IEEE/ACM International Conference on Automated Software Engineering(pp.1–12).Association
+forComputingMachinery.https://doi.org/10.1145/3691620.3695330
+[11] Schäfer, M., Nadi, S., Eghbali, A., & Tip, F. (2023). An empirical evaluation of using large language
+modelsforautomatedunittestgeneration. IEEE Transactions on Software Engineering, 50(1),85–105.
+https://doi.org/10.1109/TSE.2023.3334955
+[12] Wang, J., Huang, Y., Chen, C., Liu, Z., Wang, S., & Wang, Q. (2024). Software testing with large
+language models: Survey, landscape, and vision. IEEE Transactions on Software Engineering, 50(4),
+911–936.https://doi.org/10.1109/TSE.2024.3368208
+[13] Xia, C. S., Paltenghi, M., Tian, J. L., Pradel, M., & Zhang, L. (2024). Fuzz4All: Universal fuzzing
+with large language models. In Proceedings of the 46th International Conference on Software
+Engineering(pp.1547–1559).IEEE.https://doi.org/10.1145/3597503.3639110
+[14] Yang, J., Jimenez, C. E., Wettig, A., Lieret, K., Yao, S., Narasimhan, K., & Press, O. (2024).
+SWE-agent: Agent-computer interfaces enable automated software engineering. Advances in Neural
+Information Processing Systems, 37,50528–50652.https://doi.org/10.48550/arXiv.2405.15793
+[15] Yaraghi, A. S., Bagherzadeh, M., Kahani, N., & Briand, L. C. (2022). Scalable and accurate test case
+prioritization in continuous integration contexts. IEEE Transactions on Software Engineering, 49(4),
+1615–1639.https://doi.org/10.1109/TSE.2022.3184842
+[16] Yoon, J., Feldt, R., & Yoo, S. (2024). Intent-driven mobile GUI testing with autonomous large
+language modelagents.In Proceedings of the 2024 IEEE Conference on Software Testing, Verification
+and Validation(pp.129–139).IEEE.https://doi.org/10.1109/ICST60714.2024.00020

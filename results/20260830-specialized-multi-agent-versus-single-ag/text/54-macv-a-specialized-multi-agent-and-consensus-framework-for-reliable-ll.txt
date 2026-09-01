@@ -1,0 +1,636 @@
+[[page 1]]
+MACV: A Specialized Multi-Agent and 
+Consensus Framework for Reliable LLM Outputs 
+Rakesh More 
+A J Gallagher USA (Independent 
+Researcher) 
+Chicago, Illinois, USA 
+rakeshmore@gmail.com 
+Sudarshan Varma 
+Advanz101 Business Systems Inc. 
+Indore, Madhya Pradesh, India 
+sudarshanvarma@gmail.com 
+Nilay Varma 
+Student 
+Houston, Texas, USA 
+nilayvarma.india@gmail.com 
+Abstract—Large language models (LLMs) write smoothly 
+but still sometimes make believable yet incorrect or 
+unsupported claims so called hallucinations. To address this, we 
+propose MACV (Multi -Agent Cross -Verification), a modular 
+system that has several cooperating components ; a Primary 
+Response Generator (PRG) that drafts answers; a Fact -
+Checking Agent (FCA) that checks claims against external 
+sources like Wikipedia or PubMed; a Domain -Specific 
+Validator (DSV) that inspects specialist content using 
+structured datasets and ontologies; an Adversarial Tester (AT) 
+that looks for contradictions and weak reasoning; and finally a 
+Consensus Mechanism that combines agent outputs into a 
+confidence-tagged final response. We explain the architecture, 
+agent interfaces, consensus strategies, and how we evaluate the 
+system. Tests on benchmarks — SQuAD, SciQ, and FinQA 
+datasets show MACV meaningfully lowers hallucination rates 
+compared with single -LLM and RAG baselines while adding 
+modest compute overhead. We also examine failure modes, 
+scalability trade -offs, and practical deployment issues, and 
+conclude that heterogeneous, cross -checking agents are a 
+promising path toward more reliable LLM behavior in real -
+world settings. 
+Keywords—Large Language Models, Hallucination, Multi-Agent 
+Systems, Fact Checking, Verification, Ensemble Methods 
+I. INTRODUCTION 
+Large Language Models (LLMs) have advanced natural 
+language generation and reasoning, yet they still exhibit 
+hallucination—producing fluent statements that are factually 
+incorrect, unverifiable, or logically inconsistent. These errors 
+are particularly problematic in high -stakes areas such as 
+healthcare, finance, and legal services [1]. The fundamental 
+challenge of ensuring reliable AI systems has been 
+extensively discussed [2], motivating the development of 
+verification frameworks like MACV. To curb them, 
+researchers have explored several strategies: grounding with 
+retrieval systems [3], supervised fine -tuning using human 
+feedback [4], chain -of-thought prompting with self -
+consistency sampling [5], and model-of-model verification 
+[6]. While each helps, single -method solutions often miss 
+important error modes and struggle to deliver reliable 
+confidence estimates. This paper introduces the Multi-Agent 
+Cross-Verification (MACV) framework, which coordinates 
+heterogeneous agents —multiple LLM instances, retrieval 
+backed verifiers, domain validators, and adversarial testers—
+to cross-check outputs and reach a consensus. The idea rest s 
+on a simple observation: different tools excel at different 
+things. Some models are great at fluent drafting, others at 
+retrieval and factual grounding, and specialized validators 
+can enforce domain specific constraints. By orchestrating 
+these strengths and applying a consensus mechanism, MACV 
+aims to reduce hallucinations while keeping latency and 
+compute within practical limits. Contributions: 
+A modular architecture for multi -agent cross -verification 
+(MACV) that combines PRG, FCA, DSV, AT, and a 
+Consensus Mechanism. 
+Implementation and evaluation of multiple system 
+configurations, including 
+ablation studies showing the contribution of each component. 
+An experimental evaluation on SQuAD, SciQ, and FinQA 
+datasets demonstrating reductions in hallucination rates on 
+general and domain-specific benchmarks, along with analysis 
+of computational costs and failure modes. 
+Practical guidance for scaling MACV and integrating it into 
+real-world systems, including cost-benefit analysis. 
+II. BACKGROUND 
+A. Hallucinations in LLMs 
+Hallucinations refer to model outputs that are unfaithful to the 
+input or factually incorrect despite appearing plausible [1]. 
+Hallucinations can be categorized as: 
+– Factual hallucinations: incorrect factual assertions. 
+– Referential hallucinations: fabricated citations, sources, or 
+quotes. 
+– Logical hallucinations: internally inconsistent or invalid 
+reasoning steps. 
+B. Verification Techniques 
+Common strategies to control hallucinations include: 
+– Retrieval-augmented generation (RAG): combine 
+generation with document retrieval to ground outputs in 
+sources [3]. 
+– Post-hoc fact -checking: use specialized classifiers or 
+retrieval systems to verify claims after generation [8]. 
+– Ensemble and consensus: run multiple model samples or 
+multiple models and aggregate results to improve reliability 
+[5]. 
+– Structured validation: use domain ontologies, rule -based 
+checkers, or symbolic validators for precise domains. 
+C. Multi-Agent Systems for NLP 
+Multi-agent systems coordinate multiple specialized agents 
+to solve complex tasks. In NLP, multi-agent approaches have 
+been applied to divide tasks, iterative refinement, and 
+verification. MACV builds on this idea by composing agents 
+with verification-focused roles. 
+Proceedings of the 7th International Conference on Mobile Computing and Sustainable Informatics (ICMCSI-2026)
+IEEE Xplore Part Number: CFP26US4-ART; ISBN: 979-8-3315-5519-1
+979-8-3315-5519-1/26/$31.00 ©2026 IEEE 1326
+2026 7th International Conference on Mobile Computing and Sustainable Informatics (ICMCSI) | 979-8-3315-5519-1/26/$31.00 ©2026 IEEE | DOI: 10.1109/ICMCSI67283.2026.11412804
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on August 30,2026 at 07:51:33 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 2]]
+III. RELATED WORK 
+A. Problem Framing and Taxonomy 
+Hallucinations, statements that are unfaithful to inputs or not 
+verifiable in external knowledge, span summarization, QA, 
+dialogue, and now LLM assistants. Comprehensive surveys 
+identify intrinsic vs. extrinsic hallucinations, causes 
+(decoding, dataset coverage, spurious correlations), and task-
+specific manifestations [7]. 
+B. Self-Consistency and Chain-of-Thought 
+Self-consistency sampling over chain -of-thought (CoT) 
+improves reasoning by sampling multiple solution 
+trajectories and selecting the most frequent answer [5]. While 
+effective for reasoning, CoT does not explicitly verify 
+external facts. 
+C. Retrieval and Tool Use 
+Retrieval-augmented methods like RAG and tool -using 
+LLMs reduce hallucinations by grounding content [3]. Tool-
+using LLMs like Toolformer [10] demonstrate that language 
+models can learn to leverage external tools autonomously. 
+The Fact-Checking Agent in MACV builds on this concept 
+by equipping the verification system with web search 
+capabilities. MACV can incorporate retrieval as part of the 
+FCA, but extends verification to cross -agent consensus and 
+domain validators. 
+D. Fact Checking and Verification Models 
+Work on automated fact-checking (claim detection, evidence 
+retrieval, veracity classification) is relevant [8]. Those 
+systems often operate as single -pass verifiers; MACV uses 
+multiple, heterogeneous verifiers to increase robustness. 
+Recent zero -resource hallucination detection methods like 
+SelfCheckGPT [12] demonstrate that models can self -verify 
+outputs without external knowledge sources. In contrast, 
+MACV leverages both internal consistency checks (via the 
+AT component, similar to s elf-checking) and exte rnal 
+verification sources for more comprehensive coverage. 
+E. Multi-Agent Verification Architectures 
+Recent research has proposed multi -agent verification loops 
+for LLM outputs [6]. MACV formalizes specialization 
+(PRG/FCA/DSV/AT) and explicit consensus, bringing 
+together retrieval -guided verification, domain -specific 
+checks, adversarial contradiction tests, and ensemble -style 
+aggregation. Ensemble methods like model soups [9], which 
+average weights of multiple fine -tuned models, demonstrate 
+that combining multiple models can improve accuracy. 
+MACV extends this concept by using heterogeneous agents 
+with different specializations rather than identical model 
+variants. 
+IV. METHODOLOGY 
+A. Overview 
+MACV is a pipeline of coordinated agents. The PRG 
+generates an initial response; subsequent agents 
+independently analyze, verify, or challenge the response; and 
+a Consensus Mechanism aggregates results. 
+ 
+ 
+ 
+Fig. 1. MACV Framework Architecture 
+ 
+Fig. 1. shows MACV Framework Architecture. The Primary 
+Response Generator (PRG) creates an initial response, which 
+is then evaluated by three specialized agents: Fact -Checking 
+Agent (FCA), Domain -Specific Validator (DSV), and 
+Adversarial Tester (AT). A Consensus Mechanism 
+aggregates their outputs to produce the final decision 
+(ACCEPT/REJECT). 
+B. Agent Roles and Interfaces 
+Primary Response Generator (PRG): Generates the initial 
+answer using GPT-3.5-turbo. PRG outputs: 
+– Answer text 
+– Structured claims (extracted using GPT -4-turbo for claim 
+identification). Claim extraction accuracy : To estimate the 
+reliability of the structured claim extraction step, we 
+randomly sampled 30 PRG responses (10 per dataset) and 
+manually annotated all atomic factual claims. We then 
+compared these gold annotations against the claims produced 
+by the GPT-4-turbo extraction prompt. On this sample, claim 
+extraction was achieved 92% precision and 88% recall (F1 
+= 90%). In the error cases, GPT -4-turbo occasionally split 
+one complex claim into multiple shorter claims or omitted 
+low-salience details. Given these results, we treat the 
+extracted claims as a reasonably faithful approximation of the 
+underlying factual conten t, while acknowledging that noisy 
+extraction can propagate into downstream verification. 
+A small subset of verification errors can be traced to 
+imperfect claim extraction (missed or oversplit claims), 
+which suggests that improving this stage could further reduce 
+hallucinations. 
+– Processing time and token usage 
+Fact-Checking Agent (FCA): Verifies claims by retrieving 
+evidence from web sources using Tavily search API. The 
+FCA component draws inspiration from browser -assisted 
+question-answering systems like WebGPT [13], which 
+demonstrated that LLMs equipped with web browsing 
+capabilities can improve factual grounding. Our 
+implementation uses the Tavily search API to simu late 
+similar web search capabilities for evidence retrieval and 
+claim verification. The pipeline includes: 
+– Claim normalization and query formulation 
+– Evidence retrieval using web search 
+–Evidence scoring using GPT -4-turbo for veracity 
+classification 
+Proceedings of the 7th International Conference on Mobile Computing and Sustainable Informatics (ICMCSI-2026)
+IEEE Xplore Part Number: CFP26US4-ART; ISBN: 979-8-3315-5519-1
+979-8-3315-5519-1/26/$31.00 ©2026 IEEE 1327
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on August 30,2026 at 07:51:33 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 3]]
+– Output: verdict per claim {Supported / Refuted / 
+Insufficient Info}, with reasoning and citations Domain-
+Specific Validator (DSV): For specialized domains, validates 
+claims against structured datasets or domain-specific sources: 
+– Finance domain: Mock database with company information 
+(CEO, founding year, ticker symbols) 
+– Science domain: Targeted searches on Nature.com and 
+arXiv.org 
+– Medical domain: Searches on PubMed and NEJM 
+– Output: validation result {Valid / Invalid / Inconclusive} 
+with supporting evidence 
+Adversarial Tester (AT): Analyzes the PRG response for 
+logical inconsistencies: 
+– Contradiction detection between claims 
+– Internal logic evaluation 
+– Reasoning coherence assessment 
+– Output: verdict {Robust / Weak} with specific critique 
+C. Consensus Mechanism 
+The Consensus Mechanism aggregates agent outputs using a 
+rule-based approach: 
+– Immediate rejection: Any claim marked as ”Refuted” by 
+FCA or DSV triggers rejection 
+– Logic-based rejection: “Weak” verdict from AT contributes 
+to rejection 
+– Evidence-based rejection: If all claims have “Insufficient 
+Info” from both FCA and DSV 
+– Final decision: ACCEPT if no rejection criteria are met, 
+otherwise REJECT with reason 
+This consensus policy treats all verification agents as having 
+fixed, equal reliability and applies static rules; it does not 
+adapt weights or thresholds based on observed past 
+performance of individual agents. 
+D. Implementation Details 
+E. System Architecture 
+Our MACV implementation consists of several key 
+components: 
+– Cost Tracking: Comprehensive monitoring of API usage 
+with per-model token cost calculations 
+– Parallel Processing: Concurrent execution of verification 
+agents using ThreadPoolExecutor 
+– Checkpointing: Robust evaluation pipeline with automatic 
+result preservation 
+– Domain-Specific Databases: Mock financial database and 
+domain-targeted web searches 
+F. Experimental Configuration 
+The evaluation used the following settings: 
+– Models: GPT -3.5-turbo for PRG, GPT -4-turbo for 
+verification components 
+– Search API: Tavily search for web-based fact-checking 
+– Sample Size: 10 questions per dataset due to API cost 
+constraints 
+– Timeout: No timeout constraints applied 
+G. Code Availability 
+The complete implementation is available at: 
+https://github.com/nilayvarma1005/macv framework 
+The repository includes: 
+– Full MACV pipeline implementation 
+– Baseline comparison systems (RAG, Self-Correction) 
+–Evaluation framework with automated correctness 
+assessment 
+– Result analysis and visualization tools 
+V. CONFIGURATION FILES FOR DIFFERENT ABLATION 
+STUDIESEXPERIMENTAL DESIGN 
+A. Datasets 
+We evaluated on three datasets representing different 
+domains: 
+– SQuAD (validation set): General reading comprehension 
+questions 
+– SciQ (test set): Science-focused multiple choice questions 
+– FinQA (validation set): Financial reasoning and fact 
+questions 
+We evaluated on three datasets representing different 
+domains: SQuAD (general reading comprehension), SciQ 
+(science-focused questions similar to biomedical QA 
+benchmarks like PubMedQA [11]), and FinQA (financial 
+reasoning and fact questions). Each dataset was limited to 10 
+samples for this initial evaluation due to API cost constraints. 
+These small sample sizes are sufficient to illustrate the 
+behavior of the MACV pipeline but are not adequate for 
+statistically stable benchmarking. All reported metrics should 
+therefore be interpreted as preliminary and illustrative rather 
+than definitive estimates of real-world performance. 
+Effect of base model alignment. When we replaced the 
+GPT-3.5-turbo PRG with a less aligned Llama-X model on a 
+10-question SciQ subset, the raw single -model accuracy 
+dropped from 50% to 40% , and the hallucination rate 
+increased from 50% to 60% . Under MACV, the final 
+accuracy with Llama -X PRG was 66.7% and hallucination 
+rate 33.3% , compared to 72.7% and 27.3% with 
+GPT-3.5-turbo PRG. This suggests that MACV can 
+substantially mitigate hallucinations even for less aligned 
+base models, although starting from a better -aligned PRG 
+yields the strongest overall performance. 
+B. System Configurations 
+We compared four main approaches: 
+– Single LLM: GPT-3.5-turbo baseline with no verification 
+– RAG: GPT-4-turbo with web retrieval using Tavily search 
+– Self-Correction: GPT -4-turbo generating initial response , 
+then self-critiquing and refining 
+– MACV variants: Multiple configurations of our framework: 
+• Full MSV: All components enabled (FCA + DSV 
++ AT) 
+• No DSV: FCA + AT only 
+• No ATS: FCA + DSV only 
+• FCS Only: Fact-checking step alone 
+Alternative PRG alignment levels: To examine the impact 
+of base alignment, we also ran a limited comparison using a 
+less aligned open-source model (Llama-X) as the PRG while 
+keeping the verification stack (FCA/DSV/AT) fixed. This 
+allows us to isolate how MACV behaves when the initial 
+response has a higher propensity to hallucinate. 
+C. Evaluation Protocol 
+– Automated evaluation using GPT-4-turbo to assess answer 
+correctness against ground truth 
+– Token usage and cost tracking for all API calls 
+– Processing time measurement for latency analysis 
+Proceedings of the 7th International Conference on Mobile Computing and Sustainable Informatics (ICMCSI-2026)
+IEEE Xplore Part Number: CFP26US4-ART; ISBN: 979-8-3315-5519-1
+979-8-3315-5519-1/26/$31.00 ©2026 IEEE 1328
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on August 30,2026 at 07:51:33 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 4]]
+– Decision tracking for MACV variants (ACCEPT/REJECT 
+with reasons) 
+D. Metrics and Calculations 
+We report the following metrics: 
+– Accuracy. Let 𝑁 be the total number of questions 
+and Correct the number of model answers judged correct 
+against the ground truth. 
+> Accuracy = Correct
+𝑁 . > 
+ 
+– Hallucination rate. Let Hallucinated be the number of 
+answers that contain at least one factual hallucination (as 
+determined by GPT -4-turbo evaluation plus manual 
+spot-checks). 
+> Hallucination Rate = Hallucinated
+𝑁 . > 
+ 
+– Relative improvement. Given a baseline metric 
+value 𝑀base and a MACV value 𝑀MACV, we define relative 
+improvement as 
+> Relative Improvement = 𝑀MACV − 𝑀base
+𝑀base
+. > 
+ 
+For example, accuracy improves from 50.0% to 72.7%, a 
+relative improvement of (0.727 − 0.500)/0.500 = 45.4%. 
+– Processing time. For each run, we record wall -clock 
+latency 𝑡𝑖. We report the mean processing time 
+>𝑡ˉ = 1
+𝑁 ∑ 𝑡𝑖
+𝑁
+𝑖=1
+, > 
+ 
+and compare ratios such as 𝑡ˉMACV/
+𝑡ˉbaseline (approximately 23 × in our experiments). 
+– Confusion matrix terms. For MACV’s 
+ACCEPT/REJECT decision, let TP, TN, FP, FN denote true 
+positives, true negatives, false positives, and false negatives. 
+Metrics such as precision and recall are computed in the 
+standard way, e.g., 
+>Precision = TP
+TP + FP , > Recall = TP
+TP + FN . > 
+ 
+VI. RESULTS & DISCUSSION 
+A. Overall Performance Metrics 
+Our experimental results reveal significant differences in 
+accuracy, hallucination rates, and processing efficiency 
+across the evaluated approaches. 
+Key Findings: 
+– Accuracy improvement: Full MSV achieved 72.7% 
+accuracy compared to 50.0% for the single LLM baseline, 
+representing a 45% relative improvement. 
+– Hallucination reduction: The hallucination rate decreased 
+from 50.0% (baseline) to 27.3% (Full MSV), a 45% relative 
+reduction. 
+– Processing overhead: Full MSV requires approximately 
+23× longer processing time than the baseline, highlighting the 
+accuracy-latency trade-off. 
+– Incremental gains: Each verification component contributes 
+to accuracy improvements, with RAG providing modest 
+gains (53.3%) and self-correction achieving 56.7%. 
+B. MACV Decision Analysis 
+The confusion matrix analysis reveals important insights 
+about MACV’s decision making behavior: 
+– True Positives: 16 correct responses properly accepted 
+(good precision) 
+– True Negatives: 8 incorrect responses properly rejected 
+(good filtering) 
+ 
+ 
+Fig. 2. Accuracy comparison across different approaches 
+ 
+Fig. 2 shows the Accuracy comparison across different 
+approaches. Full MSV achieves the highest accuracy at 
+72.7%, significantly outperforming baseline approaches. 
+ 
+– False Negatives: 6 correct responses incorrectly rejected 
+(conservative bias) 
+– False Positives: 0 incorrect responses wrongly accepted 
+(excellent precision) 
+The rejection reasons indicate that the fact -checking 
+components (leading to “Refuted Claim”) are the primary 
+drivers of rejections (50%), while logical consistency issues 
+account for the remaining cases. 
+C. Trade-offs and Limitations 
+Our analysis reveals several important trade-offs: 
+Accuracy vs. Latency: While Full MSV achieves the highest 
+accuracy, it requires substantially more processing time. This 
+trade-off may be acceptable in high-stakes applications but 
+limits real-time use cases. 
+Conservative Filtering: The system exhibits conservative 
+behavior, rejecting some correct responses to ensure high 
+precision. This is evident in the 6 false negatives in our 
+confusion matrix. 
+Component Contributions: Ablation studies show that each 
+component contributes to overall performance, with fact -
+checking being the most critical component for accuracy 
+gains. 
+ 
+Proceedings of the 7th International Conference on Mobile Computing and Sustainable Informatics (ICMCSI-2026)
+IEEE Xplore Part Number: CFP26US4-ART; ISBN: 979-8-3315-5519-1
+979-8-3315-5519-1/26/$31.00 ©2026 IEEE 1329
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on August 30,2026 at 07:51:33 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 5]]
+Fig. 3. Hallucination rates across approaches. 
+ 
+Fig. 3 shows the hallucination rates across approaches. Full 
+MSV demonstrates the lowest hallucination rate at 27.3%, 
+representing a substantial improvement over baseline 
+methods. 
+Cost Considerations: The increased API usage and 
+processing time translate to higher operational costs, 
+requiring careful consideration in deployment 
+scenarios. 
+Limitation and future direction: Static consensus 
+weights. Our current consensus mechanism is intentionally 
+simple and rule -based, which makes it easy to interpret but 
+prevents it from adapting to dynamic reliability differences 
+between agents (e.g., FCA performing better in finance than 
+in open -domain QA). A promising extension is to learn 
+per-agent, per -domain reliability weights (e.g., via logistic 
+regression or Bayesian calibration on held -out data) and use 
+these to compute a probabilistic consensus sco re rather than 
+hard rules. 
+Sample size and statistical stability : Our experiments use 
+only 10 items per dataset, which is clearly insufficient for 
+precise estimation of accuracy or hallucination rates. As a 
+result, confidence intervals around the reported percentages 
+would be wide, and small differences between variants may 
+not be statistically significant. Larger -scale experiments are 
+required to draw firm comparative conclusions. 
+Scalability claims vs. evaluation scale: Although MACV is 
+architected for horizontal scalability (parallel agents, modular 
+components), our empirical evaluation has, so far, only been 
+conducted on small subsets of benchmark datasets. We have 
+not yet demonstrated performance on large -scale variant s 
+(e.g., full SQuAD or FinQA). Therefore, claims about 
+scalability should be read as architectural design intent, not 
+as empirically verified throughput on large corpora. 
+D. Error Analysis 
+The main failure modes observed include: 
+– Domain knowledge gaps: DSV components may reject 
+valid claims when domain-specific databases or sources are 
+incomplete or outdated. 
+– Web search limitations: FCA performance depends on the 
+quality and recency of web search results. 
+– Over-conservative consensus: The current consensus 
+mechanism prioritizes precision over recall, leading to 
+rejection of borderline correct answers. 
+ 
+ 
+ 
+Fig. 4 Average processing time comparison 
+ 
+Fig. 4 shows the average processing time comparison. Full 
+MSV requires significantly more time (12.48s) due to multi-
+agent verification, while Single LLM is fastest (0.53s). 
+ 
+ 
+Fig. 5 MSV decision performance matrix. 
+ 
+Fig. 5 shows the MSV decision performance matrix. The 
+system correctly accepts 16 correct responses and rejects 8 
+incorrect ones, but also rejects 6 correct responses, showing 
+conservative filtering behavior. 
+ 
+ 
+Fig. 6. Distribution of rejection reasons 
+ 
+Fig. 6 shows the distribution of rejection reasons in MSV 
+framework. Refuted claims account for 50% of rejections, 
+while weak logic and lack of evidence each contribute 25%. 
+Proceedings of the 7th International Conference on Mobile Computing and Sustainable Informatics (ICMCSI-2026)
+IEEE Xplore Part Number: CFP26US4-ART; ISBN: 979-8-3315-5519-1
+979-8-3315-5519-1/26/$31.00 ©2026 IEEE 1330
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on August 30,2026 at 07:51:33 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 6]]
+VII. CONCLUSION 
+This paper introduced MACV, a modular Multi-Agent Cross-
+Verification framework designed to mitigate hallucinations 
+in LLM outputs through coordinated verification agents and 
+consensus mechanisms. Our experimental evaluation across 
+SQuAD, SciQ, and FinQA datasets demonstrate that MACV 
+achieves substantial improvements in accuracy (72.7% vs. 
+50.0% baseline) and significant reductions in hallucination 
+rates (27.3% vs. 50.0% baseline). However, these gains come 
+with notable computational overhead: the full MACV system 
+requires approximately 23× longer processing time and 
+higher API costs compared to baseline approaches. The 
+system exhibits conservative filtering behavior, prioritizing 
+precision over recall, which may be appropriate for high -
+stakes applications where accuracy is paramount. Our 
+ablation studies confirm that each component contributes 
+meaningfully to overall performance, with fact -checking 
+being the most critical element. The modular design allows 
+for flexible configuration based on application requirements 
+and computational constraints. Future Work: Key directions 
+include optimizing the consensus mechanism to better 
+balance precision and recall, integrating real-time knowledge 
+sources, implementing adaptive verification strategies to 
+reduce costs, and conducting larger-scale evaluations to 
+validate these findings across broader datasets. 
+ 
+Acknowledgment 
+Declaration of Generative AI and AI -assisted Technologies 
+in the Writing Process: The topic pertains to AI hallucination; 
+therefore, the author used AI tools to generate examples and 
+test prompts. All AI-generated content was reviewed and 
+edited by a human. Generative AI was also used to refine 
+sentence structure and enhance clarity. All factual claims 
+were independently verified. For further details on the scope 
+and nature of AI usage, please contact the author. 
+ 
+ 
+REFERENCES 
+[1] Lin, S., Hilton, J., Evans, O.: TruthfulQA: Measuring How Models 
+Mimic Human Falsehoods. May 2022 (ACL 2022 - Proceedings of the 
+60th Annual Meeting of the Association for Computational 
+Linguistics). DOI - https://doi.org/10.18653/v1/2022.acl-long.229 
+[2] Marcus, G., Davis, E.: Rebooting AI: Building Artificial Intelligence 
+We Can Trust.Vintage (2019) . Penguin Random House (published 
+under the Pantheon imprint), ISBN: 9780525566045 
+[3] Lewis, P., Perez, E., Piktus, A., Petroni, F., Karpukhin, V., Goyal, N., 
+Kuttler, H., Lewis, M., Yih, W., Rocktaschel, T., et al.: Retrieval -
+Augmented Generation for Knowledge-Intensive NLP Tasks. In: 
+Advances in Neural Information Processing Systems (NeurIPS). vol.. 
+33, pp. 9459 –9474 (2020) . DOI - 
+https://doi.org/10.5555/3495724.3495883 
+[4] Stiennon, N., Ouyang, L., Wu, J., Ziegler, D., Lowe, R., Voss, C., 
+Radford, A., Amodei, D., Christiano, P.F.: Learning to Summarize with 
+Human Feedback. In: Advances in Neural Information Processing 
+Systems (NeurIPS). vol. . 33, pp. 3008 –3021 (2020) . DOI - 
+https://doi.org/10.5555/3495724.3495977 
+[5] Wang, X., Wei, J., Schuurmans, D., Le, Q., Chi, E., Narang, S., 
+Chowdhery, A., Zhou, D.: Self -Consistency Improves Chain of 
+Thought Reasoning in Language Models. In: Proceedings of the 
+Eleventh International Conference on Learning Representations (ICLR 
+2023), Kigali, Rwanda (2023) 
+[6] Dhuliawala, S., Komeili, M., Xu, J., Raileanu, R., Li, X., Celikyilmaz, 
+A., Weston, J.: Chain-of-Verification Reduces Hallucination in Large 
+Language Models. arXiv preprint arXiv:2309.11495 (2023) . DOI - 
+https://doi.org/10.18653/v1/2024.findings-acl.212 
+[7] Ji, Z., Lee, N., Frieske, R., Yu, T., Su, D., Xu, Y., Ishii, E., Bang, Y.J., 
+Madotto, A., Fung, P.: Survey of Hallucination in Natural Language 
+Generation. ACM Computing Surveys 55(12), 1 –38 (2023) . DOI - 
+https://doi.org/10.1145/3571730 
+[8] Thorne, J., Vlachos, A.: Automated Fact Checking: Task Formulations, 
+Methods and Future Directions. Proceedings of the 27th International 
+Conference on Computational Linguistics (COLING 2018) arXiv 
+preprint arXiv:1806.07687 (2018) . DOI - 
+https://doi.org/10.18653/v1/C18-1287 
+[9] Wortsman, M., Ilharco, G., Gadre, S.Y., Roelofs, R., Gontijo -Lopes, 
+R., Morcos, A.S., Namkoong, H., Farhadi, A., Carmon, Y., Kornblith, 
+S., et al.: Model Soups: Averaging Weights of Multiple Fine -Tuned 
+Models Improves Accuracy Without Increasing Inference Time. In: 
+International Conference on Machine Learning (ICML). pp. 23965 –
+23998. PMLR (2022) . DOI - 
+https://doi.org/10.48550/arXiv.2003.02852 
+[10] Schick, T., Dwivedi -Yu, J., Dessi, R., Raileanu, R., Lomeli, M., 
+Hambro, E., Zettlemoyer, L., Cancedda, N., Scialom, T.: Toolformer: 
+Language Models Can Teach Themselves to Use Tools. In: Advances 
+in Neural Information Processing Systems (NeurIPS). vol. 36, pp. 
+68539–68551 (2023). DOI - https://doi.org/10.5555/3666122.3666226 
+[11] Jin, Q., Dhingra, B., Liu, Z., Cohen, W., Ren, X.: PubMedQA: A 
+Dataset for Biomedical Research Question Answering. In: Proceedings 
+of the 2019 Conference on Empirical Methods in Natural Language 
+Processing and the 9th International Joint Conference on Natu ral 
+Language Processing (EMNLP-IJCNLP), pp. 2567–2577. Association 
+for Computational Linguistics, Hong Kong, China 
+(2019). https://doi.org/10.18653/v1/D19-1259 
+[12] Manakul, P., Liusie, A., Gales, M.J.F.: SelfCheckGPT: Zero-Resource 
+Black-Box Hallucination Detection for Generative Large Language 
+Models. arXiv preprint arXiv:2303.08896 (2023) . DOI - 
+https://doi.org/10.18653/v1/2023.emnlp-main.557 
+[13] Nakano, R., Hilton, J., Balaji, S., Wu, J., Ouyang, L., Kim, C., Hesse, 
+C., Jain, S., Kosaraju, V., Saunders, W., et al.: WebGPT: Browser -
+Assisted Question-Answering with Human Feedback. arXiv preprint 
+arXiv:2112.09332 (2021) . DOI - 
+https://doi.org/10.48550/arXiv.2112.09332 
+ 
+ 
+ 
+.
+ 
+Proceedings of the 7th International Conference on Mobile Computing and Sustainable Informatics (ICMCSI-2026)
+IEEE Xplore Part Number: CFP26US4-ART; ISBN: 979-8-3315-5519-1
+979-8-3315-5519-1/26/$31.00 ©2026 IEEE 1331
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on August 30,2026 at 07:51:33 UTC from IEEE Xplore. Restrictions apply.
