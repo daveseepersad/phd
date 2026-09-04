@@ -28,10 +28,14 @@ from _common import (
     Paper,
     launch_context,
     save_storage_state,
+    score_papers,
     seed_library_access,
+    tokenize,
     wait_past_challenge,
+    write_json_atomic,
 )
 from search import _polite_sleep
+from snowball import ranking_metadata
 
 EXIT_SUCCESS = 0
 EXIT_ERROR = 2
@@ -160,6 +164,15 @@ def paper_url(paper: Paper) -> str | None:
     return paper.url
 
 
+def normalized_title(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
+def write_candidates(path: Path, payload: dict[str, Any], papers: list[Paper]) -> None:
+    payload["papers"] = [paper.to_dict() for paper in papers]
+    write_json_atomic(path, payload)
+
+
 def main() -> int:
     args = create_parser().parse_args()
     logging.basicConfig(
@@ -173,81 +186,139 @@ def main() -> int:
         return EXIT_ERROR
 
     candidates = json.loads(candidate_path.read_text(encoding="utf-8"))
-    papers = [Paper(**item) for item in candidates.get("papers", [])]
+    papers = [Paper.from_dict(item) for item in candidates.get("papers", [])]
     screening = json.loads(screening_path.read_text(encoding="utf-8"))
-    unresolved_ranks = [
-        item["rank"] for item in screening.get("records", []) if item.get("decision") == "unresolved"
-    ]
+    by_key = {paper.key(): paper for paper in papers}
+    by_title = {normalized_title(paper.title): paper for paper in papers}
+
+    # Bind unresolved records to candidates by identity, never by position:
+    # ranks freeze at the last screen.py init while every snowball round
+    # re-ranks candidates.json (REVIEW.md A3).
+    targets: list[tuple[dict[str, Any], Paper]] = []
+    for record in screening.get("records", []):
+        if record.get("decision") != "unresolved":
+            continue
+        paper = by_key.get(record["key"])
+        if paper is not None and normalized_title(paper.title) != normalized_title(record["title"]):
+            logger.error(
+                'Key %s binds to a different title: screening "%s" vs candidates "%s".',
+                record["key"], record["title"], paper.title,
+            )
+            return EXIT_ERROR
+        if paper is None:
+            # A backfilled DOI turns a title-derived key into a DOI key; the
+            # normalized title still identifies the record.
+            paper = by_title.get(normalized_title(record["title"]))
+        if paper is None:
+            logger.error(
+                'Unresolved record missing from candidates.json: key=%s "%s".',
+                record["key"], record["title"],
+            )
+            return EXIT_ERROR
+        targets.append((record, paper))
     stop = args.offset + args.limit if args.limit is not None else None
-    ranks = unresolved_ranks[args.offset:stop]
-    by_rank = {rank: papers[rank - 1] for rank in ranks}
+    targets = targets[args.offset:stop]
 
     from playwright.sync_api import sync_playwright
 
     attempts: list[dict[str, Any]] = []
     recovered = 0
-    with sync_playwright() as playwright:
-        context = launch_context(playwright, args.profile_dir, headless=args.headless)
-        seed_library_access(context, log=logger)
-        page = context.new_page()
-        try:
-            for position, rank in enumerate(ranks, start=1):
-                paper = by_rank[rank]
-                url = paper_url(paper)
-                result: dict[str, Any] = {
-                    "rank": rank,
-                    "title": paper.title,
-                    "requested_url": url,
-                    "status": "missing",
-                    "method": None,
-                    "resolved_url": None,
-                }
-                if not url:
-                    result["method"] = "no-url"
+    try:
+        with sync_playwright() as playwright:
+            context = launch_context(playwright, args.profile_dir, headless=args.headless)
+            seed_library_access(context, log=logger)
+            page = context.new_page()
+            try:
+                for position, (record, paper) in enumerate(targets, start=1):
+                    url = paper_url(paper)
+                    result: dict[str, Any] = {
+                        "key": record["key"],
+                        "rank": record.get("rank"),
+                        "title": paper.title,
+                        "requested_url": url,
+                        "status": "missing",
+                        "method": None,
+                        "resolved_url": None,
+                    }
+                    if not url:
+                        result["method"] = "no-url"
+                        attempts.append(result)
+                        continue
+
+                    try:
+                        abstract, method, resolved = direct_abstract(url)
+                        if not abstract:
+                            abstract, method, resolved = browser_abstract(page, url)
+                    except Exception as exc:  # noqa: BLE001
+                        # httpx.InvalidURL and other non-HTTPError failures
+                        # (e.g. a malformed scraped DOI) must not abort the
+                        # remaining targets.
+                        abstract, method, resolved = None, type(exc).__name__, None
+                        result["error"] = str(exc)
+                        logger.warning("%s fetch failed: %s: %s", record["key"], type(exc).__name__, exc)
+                    if abstract:
+                        paper.abstract = abstract
+                        paper.url = resolved or paper.url
+                        result["status"] = "recovered"
+                        recovered += 1
+                        # Persist immediately so an interrupt cannot discard an
+                        # abstract that already cost a page fetch.
+                        write_candidates(candidate_path, candidates, papers)
+                    result["method"] = method
+                    result["resolved_url"] = resolved
+                    result["characters"] = len(abstract) if abstract else 0
                     attempts.append(result)
-                    continue
+                    logger.info(
+                        "[%d/%d %s] %s via %s",
+                        position,
+                        len(targets),
+                        record["key"],
+                        result["status"],
+                        method,
+                    )
+                    _polite_sleep(args.delay)
+            finally:
+                page.close()
+                save_storage_state(context, args.profile_dir)
+                context.close()
+    finally:
+        # Runs on every exit path, so an abort after a recovery can never
+        # leave a persisted abstract sitting at its no-abstract score.
+        if recovered:
+            # A recovered abstract changes the relevance component, so the
+            # corpus is re-ranked with the run's stored weights instead of
+            # leaving the record at its no-abstract score (REVIEW.md medium
+            # finding).
+            profile_name, weights = ranking_metadata(candidates)
+            before = {paper.key(): index for index, paper in enumerate(papers)}
+            scoring_meta: dict[str, Any] = {}
+            papers = score_papers(
+                papers,
+                tokenize(candidates["topic"]),
+                weights["relevance"],
+                weights["citations"],
+                weights["recency"],
+                weights["half_life_years"],
+                scoring_meta=scoring_meta,
+            )
+            moved = sum(1 for index, paper in enumerate(papers) if before[paper.key()] != index)
+            candidates["ranking_profile"] = profile_name
+            candidates["weights"] = weights
+            candidates["scoring"] = scoring_meta
+            write_candidates(candidate_path, candidates, papers)
+            logger.info("Re-ranked %d candidates after recovery; %d moved position.", len(papers), moved)
 
-                abstract, method, resolved = direct_abstract(url)
-                if not abstract:
-                    abstract, method, resolved = browser_abstract(page, url)
-                if abstract:
-                    paper.abstract = abstract
-                    paper.url = resolved or paper.url
-                    result["status"] = "recovered"
-                    recovered += 1
-                result["method"] = method
-                result["resolved_url"] = resolved
-                result["characters"] = len(abstract) if abstract else 0
-                attempts.append(result)
-                logger.info(
-                    "[%d/%d rank %d] %s via %s",
-                    position,
-                    len(ranks),
-                    rank,
-                    result["status"],
-                    method,
-                )
-                _polite_sleep(args.delay)
-        finally:
-            page.close()
-            save_storage_state(context, args.profile_dir)
-            context.close()
-
-    candidates["papers"] = [paper.to_dict() for paper in papers]
-    candidate_path.write_text(
-        json.dumps(candidates, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
-    report = {
-        "generated": datetime.now(UTC).isoformat(),
-        "attempted": len(ranks),
-        "recovered": recovered,
-        "offset": args.offset,
-        "limit": args.limit,
-        "attempts": attempts,
-    }
-    report_path = args.run_dir / "abstract-recovery.json"
-    report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-    logger.info("Recovered %d/%d abstracts -> %s", recovered, len(ranks), report_path)
+        report = {
+            "generated": datetime.now(UTC).isoformat(),
+            "attempted": len(targets),
+            "recovered": recovered,
+            "offset": args.offset,
+            "limit": args.limit,
+            "attempts": attempts,
+        }
+        report_path = args.run_dir / "abstract-recovery.json"
+        write_json_atomic(report_path, report)
+        logger.info("Recovered %d/%d abstracts -> %s", recovered, len(targets), report_path)
     return EXIT_SUCCESS
 
 

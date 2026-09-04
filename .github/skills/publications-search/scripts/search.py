@@ -4,13 +4,14 @@
 # ///
 """Search academic sources, merge results, and rank them for a review topic.
 
-API sources (OpenAlex, Crossref) need no browser. Google Scholar, ACM DL, and
-IEEE Xplore are read through a Playwright profile; ACM and IEEE additionally
-need the institutional session created by auth_setup.py.
+API sources (OpenAlex, Crossref, arXiv) need no browser. Google Scholar, ACM
+DL, and IEEE Xplore are read through a Playwright profile; ACM and IEEE
+additionally need the institutional session created by auth_setup.py.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import random
@@ -18,7 +19,10 @@ import re
 import sys
 import time
 import urllib.parse
+import xml.etree.ElementTree as ET
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -28,7 +32,9 @@ from _common import (
     RANKING_PROFILES,
     Paper,
     check_access,
+    clean_authors,
     launch_context,
+    looks_preprint,
     merge,
     paper_from_openalex,
     reconstruct_abstract,
@@ -39,6 +45,7 @@ from _common import (
     seed_library_access,
     tokenize,
     wait_past_challenge,
+    write_json_atomic,
 )
 
 EXIT_SUCCESS = 0
@@ -46,7 +53,7 @@ EXIT_ERROR = 2
 
 logger = logging.getLogger(__name__)
 
-API_SOURCES = {"openalex", "crossref"}
+API_SOURCES = {"openalex", "crossref", "arxiv"}
 BROWSER_SOURCES = {"scholar", "acm", "ieee"}
 AUTH_SOURCES = {"acm", "ieee"}
 
@@ -57,7 +64,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--sources",
         default="openalex,crossref,scholar",
-        help="Comma-separated: openalex, crossref, scholar, acm, ieee.",
+        help="Comma-separated: openalex, crossref, arxiv, scholar, acm, ieee.",
     )
     parser.add_argument("--per-source", type=int, default=50)
     parser.add_argument("--from-year", type=int, default=None)
@@ -65,6 +72,12 @@ def create_parser() -> argparse.ArgumentParser:
         "--keywords",
         default=None,
         help="Query used for ACM and IEEE, which reject long questions. Auto-condensed when omitted.",
+    )
+    parser.add_argument(
+        "--enrich-limit",
+        type=int,
+        default=200,
+        help="Max records to backfill from OpenAlex; skipped targets are logged.",
     )
     parser.add_argument("--out", type=Path, default=Path("results"))
     parser.add_argument("--profile-dir", type=Path, default=DEFAULT_PROFILE_DIR)
@@ -123,24 +136,99 @@ def search_crossref(topic: str, limit: int, from_year: int | None) -> list[Paper
             if parts and parts[0] and isinstance(parts[0][0], int):
                 year = parts[0][0]
                 break
+        authors = [
+            " ".join(filter(None, [a.get("given"), a.get("family")])).strip()
+            for a in item.get("author", [])
+            if a.get("family") or a.get("given")
+        ]
+        paper = Paper(
+            title=titles[0],
+            authors=authors,
+            year=year,
+            venue=container[0] if container else None,
+            doi=item.get("DOI"),
+            url=item.get("URL"),
+            cited_by=item.get("is-referenced-by-count", 0),
+            sources=["crossref"],
+            discovery_methods=["keyword"],
+            work_type=item.get("type"),
+            volume=item.get("volume"),
+            issue=item.get("issue"),
+            pages=item.get("page"),
+            publisher=item.get("publisher"),
+            authors_source="api" if authors else None,
+        )
+        # Crossref registers preprints as posted-content; DOI/venue markers
+        # catch preprints deposited under other types.
+        paper.is_preprint = item.get("type") == "posted-content" or looks_preprint(paper)
+        papers.append(paper)
+    return papers
+
+
+ATOM_NS = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
+
+
+def parse_arxiv_atom(xml_text: str, from_year: int | None) -> list[Paper]:
+    """Map arXiv Atom entries onto Papers.
+
+    The query API has no publication-date filter, so from_year is applied
+    here against each entry's published date.
+    """
+    papers: list[Paper] = []
+    for entry in ET.fromstring(xml_text).findall("atom:entry", ATOM_NS):
+        title = re.sub(r"\s+", " ", entry.findtext("atom:title", "", ATOM_NS)).strip()
+        if not title:
+            continue
+        published = entry.findtext("atom:published", "", ATOM_NS)
+        year = int(published[:4]) if published[:4].isdigit() else None
+        if from_year and year and year < from_year:
+            continue
+        pdf_url = None
+        for link in entry.findall("atom:link", ATOM_NS):
+            if link.get("title") == "pdf" or link.get("type") == "application/pdf":
+                pdf_url = link.get("href")
+        abstract = re.sub(r"\s+", " ", entry.findtext("atom:summary", "", ATOM_NS)).strip()
+        authors = [
+            name.strip()
+            for name in (
+                author.findtext("atom:name", "", ATOM_NS)
+                for author in entry.findall("atom:author", ATOM_NS)
+            )
+            if name.strip()
+        ]
         papers.append(
             Paper(
-                title=titles[0],
-                authors=[
-                    " ".join(filter(None, [a.get("given"), a.get("family")])).strip()
-                    for a in item.get("author", [])
-                    if a.get("family") or a.get("given")
-                ],
+                title=title,
+                authors=authors,
                 year=year,
-                venue=container[0] if container else None,
-                doi=item.get("DOI"),
-                url=item.get("URL"),
-                cited_by=item.get("is-referenced-by-count", 0),
-                sources=["crossref"],
+                venue="arXiv preprint",
+                doi=entry.findtext("arxiv:doi", None, ATOM_NS),
+                url=entry.findtext("atom:id", None, ATOM_NS),
+                pdf_url=pdf_url,
+                abstract=abstract or None,
+                sources=["arxiv"],
                 discovery_methods=["keyword"],
+                work_type="preprint",
+                is_preprint=True,
+                authors_source="api" if authors else None,
             )
         )
     return papers
+
+
+def search_arxiv(topic: str, limit: int, from_year: int | None) -> list[Paper]:
+    """arXiv covers the grey literature the publisher databases miss (REVIEW.md B)."""
+    params: dict[str, str | int] = {
+        "search_query": f"all:{topic}",
+        "max_results": min(limit, 200),
+        "sortBy": "relevance",
+        "sortOrder": "descending",
+    }
+    resp = httpx.get(
+        "https://export.arxiv.org/api/query", params=params, timeout=60.0, follow_redirects=True
+    )
+    resp.raise_for_status()
+    return parse_arxiv_atom(resp.text, from_year)
 
 
 def _polite_sleep(delay: float) -> None:
@@ -240,14 +328,23 @@ def search_acm(context, topic: str, limit: int, from_year: int | None, delay: fl
         venue = item.query_selector(".issue-item__detail a, .epub-section__title")
         abstract = item.query_selector(".issue-item__abstract")
         cited = 0
-        for span in item.query_selector_all("span.citation, .issue-item__detail span"):
-            text = span.inner_text().strip()
+        # Bare digits under .issue-item__detail include the publication year,
+        # so counts come only from ACM's citation-specific markup.
+        for span in item.query_selector_all("span.citation, span.citation span"):
+            text = span.inner_text().strip().replace(",", "")
             if text.isdigit():
                 cited = max(cited, int(text))
+        # .loa scopes to the author list; the bare ul.rlist--inline also
+        # matches the result-item toolbar (REVIEW.md A1). Profile links are
+        # the fallback when ACM renames the class again.
+        author_links = item.query_selector_all("ul.rlist--inline.loa li a") or item.query_selector_all(
+            'a[href*="/profile/"]'
+        )
+        authors = clean_authors(a.inner_text().strip() for a in author_links)
         papers.append(
             Paper(
                 title=link.inner_text().strip(),
-                authors=[a.inner_text().strip() for a in item.query_selector_all("ul.rlist--inline li a")],
+                authors=authors,
                 venue=venue.inner_text().strip() if venue else None,
                 doi=doi,
                 url=urllib.parse.urljoin("https://dl.acm.org", href),
@@ -255,6 +352,7 @@ def search_acm(context, topic: str, limit: int, from_year: int | None, delay: fl
                 cited_by=cited,
                 sources=["acm"],
                 discovery_methods=["keyword"],
+                authors_source="scraped" if authors else None,
             )
         )
     page.close()
@@ -275,30 +373,45 @@ def search_ieee(context, topic: str, limit: int, from_year: int | None, delay: f
         href = link.get_attribute("href") or ""
         desc = item.query_selector(".description, .js-displayer-content")
         venue = item.query_selector(".description a, .publisher-info-container")
+        authors = clean_authors(
+            a.inner_text().strip() for a in item.query_selector_all("xpl-authors-name-list a, .author a")
+        )
         papers.append(
             Paper(
                 title=link.inner_text().strip(),
-                authors=[a.inner_text().strip() for a in item.query_selector_all("xpl-authors-name-list a, .author a")],
+                authors=authors,
                 venue=venue.inner_text().strip() if venue else None,
                 url=urllib.parse.urljoin("https://ieeexplore.ieee.org", href),
                 abstract=desc.inner_text().strip() if desc else None,
                 sources=["ieee"],
                 discovery_methods=["keyword"],
+                authors_source="scraped" if authors else None,
             )
         )
     page.close()
     return papers
 
 
-def enrich_missing(papers: list[Paper], limit: int = 60) -> int:
+def enrich_missing(papers: list[Paper], limit: int = 200) -> tuple[int, int]:
     """Backfill authors, year, citations, venue, and DOI from OpenAlex by title match.
 
     Scholar supplies neither authors nor DOIs, and IEEE often omits the year.
-    Without this, citations are unusable and ranking is distorted.
+    Without this, citations are unusable and ranking is distorted. API
+    authorship also replaces scraped DOM lists outright (REVIEW.md A1).
+
+    Returns (enriched, truncated), where truncated counts targets skipped by
+    the limit.
     """
     enriched = 0
-    targets = [p for p in papers if not p.year or not p.cited_by or not p.authors or not p.doi][:limit]
-    for paper in targets:
+    targets = [p for p in papers if not p.year or not p.cited_by or not p.authors or not p.doi]
+    truncated = max(len(targets) - limit, 0)
+    if truncated:
+        logger.warning(
+            "enrichment capped: %d of %d targets skipped; raise --enrich-limit to cover them",
+            truncated,
+            len(targets),
+        )
+    for paper in targets[:limit]:
         try:
             params = {"filter": f"title.search:{paper.title[:180]}", "per-page": 1}
             if _mailto():
@@ -312,27 +425,44 @@ def enrich_missing(papers: list[Paper], limit: int = 60) -> int:
             hit = hits[0]
             if not _titles_match(paper.title, hit.get("display_name") or ""):
                 continue
+            location = hit.get("primary_location") or {}
+            biblio = hit.get("biblio") or {}
             paper.year = paper.year or hit.get("publication_year")
             paper.cited_by = paper.cited_by or hit.get("cited_by_count", 0)
             paper.doi = paper.doi or (hit.get("doi") or "").replace("https://doi.org/", "") or None
             paper.abstract = paper.abstract or reconstruct_abstract(hit.get("abstract_inverted_index"))
-            paper.venue = paper.venue or ((hit.get("primary_location") or {}).get("source") or {}).get(
-                "display_name"
-            )
+            paper.venue = paper.venue or (location.get("source") or {}).get("display_name")
             paper.openalex_id = paper.openalex_id or (hit.get("id") or "").rsplit("/", 1)[-1] or None
-            if not paper.authors:
-                paper.authors = [
-                    a["author"]["display_name"]
-                    for a in hit.get("authorships", [])
-                    if a.get("author", {}).get("display_name")
-                ]
+            hit_authors = [
+                a["author"]["display_name"]
+                for a in hit.get("authorships", [])
+                if a.get("author", {}).get("display_name")
+            ]
+            if hit_authors and paper.authors_source != "api":
+                paper.authors = hit_authors
+                paper.authors_source = "api"
+            paper.work_type = paper.work_type or hit.get("type")
+            paper.volume = paper.volume or biblio.get("volume")
+            paper.issue = paper.issue or biblio.get("issue")
+            first_page, last_page = biblio.get("first_page"), biblio.get("last_page")
+            paper.pages = paper.pages or (
+                f"{first_page}-{last_page}" if first_page and last_page else first_page
+            )
+            paper.publisher = paper.publisher or (location.get("source") or {}).get(
+                "host_organization_name"
+            )
+            paper.is_preprint = (
+                paper.is_preprint
+                or location.get("version") == "submittedVersion"
+                or looks_preprint(paper)
+            )
             if not paper.pdf_url:
                 paper.pdf_url = (hit.get("best_oa_location") or {}).get("pdf_url")
             paper.is_oa = paper.is_oa or (hit.get("open_access") or {}).get("is_oa", False)
             enriched += 1
         except Exception as exc:  # noqa: BLE001
             logger.debug("enrich failed for %r: %s", paper.title[:50], exc)
-    return enriched
+    return enriched, truncated
 
 
 def enrich_from_source(papers: list[Paper]) -> int:
@@ -340,11 +470,12 @@ def enrich_from_source(papers: list[Paper]) -> int:
 
     Google Scholar returns no structured authors, and OpenAlex title matching
     misses very recent preprints. Going straight to the hosting service is
-    authoritative, so citations are never guessed.
+    authoritative, so citations are never guessed. API authorship replaces
+    scraped DOM lists, never the reverse (REVIEW.md A1).
     """
     fixed = 0
     for paper in papers:
-        if paper.authors:
+        if paper.authors and paper.authors_source == "api":
             continue
         source = f"{paper.url or ''} {paper.pdf_url or ''}"
         arxiv_id = re.search(r"arxiv\.org/(?:abs|pdf)/([\w.]+?)(?:v\d+)?(?:\s|$)", source)
@@ -363,21 +494,26 @@ def enrich_from_source(papers: list[Paper]) -> int:
                 names = re.findall(r"<author>\s*<name>([^<]+)</name>", resp.text)
                 if names:
                     paper.authors = names
+                    paper.authors_source = "api"
                     paper.venue = paper.venue or "arXiv preprint"
+                    paper.is_preprint = True
                     fixed += 1
             elif doi:
                 resp = httpx.get(f"https://api.crossref.org/works/{doi}", timeout=30.0)
                 if resp.status_code == 200:
                     msg = resp.json()["message"]
-                    paper.authors = [
+                    names = [
                         " ".join(filter(None, [a.get("given"), a.get("family")])).strip()
                         for a in msg.get("author", [])
                         if a.get("family") or a.get("given")
                     ]
+                    if names:
+                        paper.authors = names
+                        paper.authors_source = "api"
+                        fixed += 1
                     container = msg.get("container-title") or []
                     paper.venue = paper.venue or (container[0] if container else None)
                     paper.doi = paper.doi or msg.get("DOI")
-                    fixed += 1
         except Exception as exc:  # noqa: BLE001
             logger.debug("source enrich failed for %r: %s", paper.title[:50], exc)
     return fixed
@@ -411,6 +547,48 @@ def resolve_ranking(args: argparse.Namespace) -> dict[str, float]:
     return weights
 
 
+def append_search_log(root: Path, run_entry: dict[str, Any]) -> None:
+    """Persist per-run search evidence for the PRISMA flow diagram (REVIEW.md A4).
+
+    A refresh or re-search appends to the runs list so earlier counts survive.
+    """
+    path = root / "search-log.json"
+    runs: list[dict[str, Any]] = []
+    if path.is_file():
+        try:
+            runs = json.loads(path.read_text(encoding="utf-8")).get("runs") or []
+        except (json.JSONDecodeError, OSError):
+            logger.warning("Existing %s was unreadable; starting a fresh log", path)
+    runs.append(run_entry)
+    write_json_atomic(path, {"runs": runs})
+    logger.info("Search log -> %s", path)
+
+
+def append_dedup_log(root: Path, run_entry: dict[str, Any]) -> None:
+    """Persist per-run dedup events with the same append shape as the search
+    log, so a refresh adds to earlier duplicate counts instead of erasing them.
+    """
+    path = root / "dedup-log.json"
+    runs: list[dict[str, Any]] = []
+    if path.is_file():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            logger.warning("Existing %s was unreadable; starting a fresh log", path)
+        else:
+            if isinstance(existing, dict) and isinstance(existing.get("runs"), list):
+                runs = existing["runs"]
+            elif isinstance(existing, dict):
+                # Legacy flat {generated, event_count, events}: absorb it as
+                # the first run.
+                runs = [existing]
+            elif isinstance(existing, list):
+                runs = [{"event_count": len(existing), "events": existing}]
+    runs.append(run_entry)
+    write_json_atomic(path, {"runs": runs})
+    logger.info("Dedup log -> %s", path)
+
+
 def main() -> int:
     args = create_parser().parse_args()
     logging.basicConfig(
@@ -438,14 +616,29 @@ def main() -> int:
         return EXIT_ERROR
 
     groups: list[list[Paper]] = []
-    for name, fn in (("openalex", search_openalex), ("crossref", search_crossref)):
+    source_log: list[dict[str, Any]] = []
+    for name, fn in (
+        ("openalex", search_openalex),
+        ("crossref", search_crossref),
+        ("arxiv", search_arxiv),
+    ):
         if name in requested:
+            entry: dict[str, Any] = {
+                "source": name,
+                "interface": "api",
+                "query_as_sent": args.topic,
+                "requested": args.per_source,
+                "returned": 0,
+            }
             try:
                 found = fn(args.topic, args.per_source, args.from_year)
                 logger.info("%-9s %d results", name, len(found))
                 groups.append(found)
+                entry["returned"] = len(found)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("%s failed: %s", name, exc)
+                entry["error"] = str(exc)
+            source_log.append(entry)
 
     browser_requested = [s for s in requested if s in BROWSER_SOURCES]
     if browser_requested:
@@ -468,12 +661,22 @@ def main() -> int:
                     if name not in browser_requested:
                         continue
                     query = args.topic if name == "scholar" else keywords
+                    entry = {
+                        "source": name,
+                        "interface": "browser",
+                        "query_as_sent": query,
+                        "requested": args.per_source,
+                        "returned": 0,
+                    }
                     try:
                         found = fn(context, query, args.per_source, args.from_year, args.delay)
                         logger.info("%-9s %d results", name, len(found))
                         groups.append(found)
+                        entry["returned"] = len(found)
                     except Exception as exc:  # noqa: BLE001
                         logger.warning("%s failed: %s", name, exc)
+                        entry["error"] = str(exc)
+                    source_log.append(entry)
             finally:
                 save_storage_state(context, args.profile_dir)
                 context.close()
@@ -482,11 +685,13 @@ def main() -> int:
         logger.error("No source returned results.")
         return EXIT_ERROR
 
-    merged = merge(*groups)
-    enrich_from_source(merged)
-    filled = enrich_missing(merged)
+    dedup_events: list[dict[str, Any]] = []
+    merged = merge(*groups, events=dedup_events)
+    source_fixed = enrich_from_source(merged)
+    filled, truncated = enrich_missing(merged, limit=args.enrich_limit)
     if filled:
         logger.info("enriched %d records with OpenAlex metadata", filled)
+    scoring_meta: dict[str, Any] = {}
     ranked = score_papers(
         merged,
         tokenize(args.topic),
@@ -494,6 +699,7 @@ def main() -> int:
         w_citations=weights["citations"],
         w_recency=weights["recency"],
         half_life_years=weights["half_life_years"],
+        scoring_meta=scoring_meta,
     )
 
     root = run_dir(args.out, args.topic)
@@ -505,8 +711,41 @@ def main() -> int:
         sources=requested,
         ranking_profile=args.ranking_profile,
         weights=weights,
+        scoring=scoring_meta,
     )
     logger.info("%d unique papers -> %s", len(ranked), out_path)
+
+    append_search_log(
+        root,
+        {
+            "generated": datetime.now(UTC).isoformat(timespec="seconds"),
+            "topic": args.topic,
+            "parameters": {
+                "sources": requested,
+                "per_source": args.per_source,
+                "from_year": args.from_year,
+                "delay": args.delay,
+                "ranking_profile": args.ranking_profile,
+                "weights": weights,
+            },
+            "per_source": source_log,
+            "merged_unique": len(merged),
+            "enrichment": {
+                "openalex_backfilled": filled,
+                "source_backfilled": source_fixed,
+                "truncated": truncated,
+            },
+            "scoring": scoring_meta,
+        },
+    )
+    append_dedup_log(
+        root,
+        {
+            "generated": datetime.now(UTC).isoformat(timespec="seconds"),
+            "event_count": len(dedup_events),
+            "events": dedup_events,
+        },
+    )
     for paper in ranked[:10]:
         logger.info("  %.3f  %-4s  %s", paper.score, paper.year or "----", paper.title[:88])
     print(root)

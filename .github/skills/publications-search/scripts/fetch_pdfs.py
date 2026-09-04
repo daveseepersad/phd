@@ -286,7 +286,14 @@ def main() -> int:
         logger.error("No paper input in %s. Run search.py and screen.py first.", args.run_dir)
         return EXIT_ERROR
 
-    if input_path == candidates and args.limit is None:
+    # The unscreened-pool guard below is pointless if --input can smuggle in
+    # an arbitrary corpus; downloads only ever run against this run's files.
+    run_root = args.run_dir.resolve()
+    input_resolved = input_path.resolve()
+    if not input_resolved.is_relative_to(run_root):
+        logger.error("--input must resolve inside %s (got %s).", run_root, input_resolved)
+        return EXIT_ERROR
+    if input_resolved == candidates.resolve() and args.limit is None:
         logger.error(
             "Refusing to download the unscreened candidate pool. Run screen.py apply "
             "or provide an explicit --limit."
@@ -308,6 +315,22 @@ def main() -> int:
     papers = all_papers[args.offset:stop]
     pdf_dir = args.run_dir / "pdfs"
     pdf_dir.mkdir(parents=True, exist_ok=True)
+
+    def persist(attempted_through: int) -> int:
+        """Rewrite retrieved.json so a crash or interrupt cannot lose state."""
+        total = sum(
+            1 for paper in all_papers if paper.pdf_url and Path(paper.pdf_url).is_file()
+        )
+        save_papers(
+            retrieved_path,
+            input_payload.get("topic", ""),
+            all_papers,
+            fetched=total,
+            attempted_through=attempted_through,
+            screening_counts=input_payload.get("screening_counts", {}),
+            baseline_size=input_payload.get("baseline_size", 20),
+        )
+        return total
     logger.info(
         "Fetching screened papers %d-%d of %d at %.1fs intervals",
         args.offset + 1,
@@ -344,6 +367,7 @@ def main() -> int:
                 logger.info("[%02d] cached  %s", index, name)
                 paper.pdf_url = str(target)
                 fetched += 1
+                persist(index)
                 continue
 
             body = None
@@ -379,9 +403,10 @@ def main() -> int:
             else:
                 paper.pdf_url = None
                 logger.warning("[%02d] MISSING %s", index, paper.title[:70])
+            persist(index)
             _polite_sleep(args.delay)
     except KeyboardInterrupt:
-        logger.warning("Interrupted; keeping what was downloaded.")
+        logger.warning("Interrupted; retrieved.json reflects every completed attempt.")
         return 130
     finally:
         if context:
@@ -390,18 +415,7 @@ def main() -> int:
         if playwright:
             playwright.stop()
 
-    total_fetched = sum(
-        1 for paper in all_papers if paper.pdf_url and Path(paper.pdf_url).is_file()
-    )
-    save_papers(
-        retrieved_path,
-        input_payload.get("topic", ""),
-        all_papers,
-        fetched=total_fetched,
-        attempted_through=args.offset + len(papers),
-        screening_counts=input_payload.get("screening_counts", {}),
-        baseline_size=input_payload.get("baseline_size", 20),
-    )
+    total_fetched = persist(args.offset + len(papers))
     logger.info(
         "Retrieved %d/%d total (%d in this batch) -> %s",
         total_fetched,

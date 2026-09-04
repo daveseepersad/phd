@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import sys
+import time
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -33,6 +34,7 @@ from _common import (
     save_papers,
     score_papers,
     tokenize,
+    write_json_atomic,
 )
 
 EXIT_SUCCESS = 0
@@ -41,6 +43,8 @@ EXIT_ERROR = 2
 logger = logging.getLogger(__name__)
 
 OPENALEX_API = "https://api.openalex.org"
+RETRY_ATTEMPTS = 3
+RETRY_BASE_DELAY_S = 2.0
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -86,9 +90,25 @@ class OpenAlexClient:
         request_params = dict(params or {})
         if self.mailto:
             request_params["mailto"] = self.mailto
-        response = self.client.get(path, params=request_params)
-        response.raise_for_status()
-        return response.json()
+        # OpenAlex intermittently returns 429/5xx under load; without retries a
+        # single transient failure used to discard every anchor's fetched data.
+        for attempt in range(1, RETRY_ATTEMPTS + 1):
+            try:
+                response = self.client.get(path, params=request_params)
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPError as exc:
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                retryable = status is None or status == 429 or status >= 500
+                if not retryable or attempt == RETRY_ATTEMPTS:
+                    raise
+                delay = RETRY_BASE_DELAY_S * 2 ** (attempt - 1)
+                logger.warning(
+                    "OpenAlex %s attempt %d/%d failed (%s); retrying in %.0fs",
+                    path, attempt, RETRY_ATTEMPTS, exc, delay,
+                )
+                time.sleep(delay)
+        raise AssertionError("unreachable")  # loop always returns or raises
 
     def resolve(self, paper: Paper) -> dict[str, Any] | None:
         identifiers: list[str] = []
@@ -133,12 +153,18 @@ class OpenAlexClient:
 
     def citing_works(
         self, openalex_id: str, limit: int, from_year: int | None
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Return citing works plus whether the limit cut off known results.
+
+        Truncation must be reported, not silent: capping forward citations is a
+        deviation from Wohlin closure that the round file has to make auditable.
+        """
         filters = [f"cites:{openalex_id}"]
         if from_year:
             filters.append(f"from_publication_date:{from_year}-01-01")
         works: list[dict[str, Any]] = []
         cursor = "*"
+        total: int | None = None
         while len(works) < limit:
             page_size = min(200, limit - len(works))
             payload = self.get(
@@ -149,12 +175,14 @@ class OpenAlexClient:
                     "cursor": cursor,
                 },
             )
+            if total is None:
+                total = (payload.get("meta") or {}).get("count")
             page = payload.get("results", [])
             works.extend(page)
             cursor = (payload.get("meta") or {}).get("next_cursor")
             if not page or not cursor:
                 break
-        return works[:limit]
+        return works[:limit], total is not None and total > limit
 
 
 def normalized_title(value: str) -> str:
@@ -223,7 +251,7 @@ def main() -> int:
         return EXIT_ERROR
 
     payload = json.loads(candidate_path.read_text(encoding="utf-8"))
-    papers = [Paper(**item) for item in payload.get("papers", [])]
+    papers = [Paper.from_dict(item) for item in payload.get("papers", [])]
     anchors: list[Paper] = []
     for spec in args.anchor:
         paper = resolve_candidate(spec, papers)
@@ -242,63 +270,99 @@ def main() -> int:
     discovered: list[Paper] = []
     edges: list[dict[str, str]] = []
     anchor_records: list[dict[str, Any]] = []
+    anchor_errors: list[dict[str, str]] = []
     try:
         for anchor in anchors:
-            work = client.resolve(anchor)
+            # One dead anchor must not discard the expansion already fetched
+            # for the others; record the failure and keep the partial round.
+            try:
+                work = client.resolve(anchor)
+            except (httpx.HTTPError, ValueError) as exc:
+                logger.warning("Anchor resolution failed for %s: %s", anchor.title[:64], exc)
+                anchor_errors.append({"title": anchor.title, "error": f"resolve: {exc}"})
+                continue
             if work is None:
                 logger.warning("OpenAlex could not resolve anchor: %s", anchor.title)
                 continue
             anchor_id = work["id"].rsplit("/", 1)[-1]
             anchor.openalex_id = anchor_id
             anchor.discovery_methods = sorted(set(anchor.discovery_methods) | {"anchor"})
-            anchor_records.append(
-                {
-                    "openalex_id": anchor_id,
-                    "doi": anchor.doi,
-                    "title": anchor.title,
-                }
-            )
+            record = {
+                "openalex_id": anchor_id,
+                "doi": anchor.doi,
+                "title": anchor.title,
+                "truncated": False,
+            }
+            anchor_records.append(record)
 
-            references = client.works_by_ids(
-                work.get("referenced_works", []), args.backward_limit
-            )
-            for item in references:
-                paper = paper_from_openalex(item, "snowball-backward", 1)
-                paper.backward_reference_of = [anchor_id]
-                discovered.append(paper)
-                edges.append(
-                    {
-                        "anchor": anchor_id,
-                        "work": paper.openalex_id or paper.key(),
-                        "direction": "backward-reference",
-                    }
+            try:
+                references = client.works_by_ids(
+                    work.get("referenced_works", []), args.backward_limit
                 )
+                for item in references:
+                    paper = paper_from_openalex(item, "snowball-backward", 1)
+                    paper.backward_reference_of = [anchor_id]
+                    discovered.append(paper)
+                    edges.append(
+                        {
+                            "anchor": anchor_id,
+                            "work": paper.openalex_id or paper.key(),
+                            "direction": "backward-reference",
+                        }
+                    )
 
-            forward = client.citing_works(
-                anchor_id, args.forward_limit, args.forward_from_year
-            )
-            for item in forward:
-                paper = paper_from_openalex(item, "snowball-forward", 1)
-                paper.forward_citation_of = [anchor_id]
-                discovered.append(paper)
-                edges.append(
-                    {
-                        "anchor": anchor_id,
-                        "work": paper.openalex_id or paper.key(),
-                        "direction": "forward-citation",
-                    }
+                forward, truncated = client.citing_works(
+                    anchor_id, args.forward_limit, args.forward_from_year
                 )
-            logger.info(
-                "%s: %d references, %d forward citations",
-                anchor.title[:64],
-                len(references),
-                len(forward),
-            )
+                if truncated:
+                    # Capped forward snowballing deviates from Wohlin closure;
+                    # the flag keeps the deviation auditable per anchor.
+                    record["truncated"] = True
+                    logger.warning(
+                        "Forward citations truncated at --forward-limit=%d for %s "
+                        "(Wohlin deviation recorded in round file)",
+                        args.forward_limit,
+                        anchor.title[:64],
+                    )
+                for item in forward:
+                    paper = paper_from_openalex(item, "snowball-forward", 1)
+                    paper.forward_citation_of = [anchor_id]
+                    discovered.append(paper)
+                    edges.append(
+                        {
+                            "anchor": anchor_id,
+                            "work": paper.openalex_id or paper.key(),
+                            "direction": "forward-citation",
+                        }
+                    )
+                logger.info(
+                    "%s: %d references, %d forward citations",
+                    anchor.title[:64],
+                    len(references),
+                    len(forward),
+                )
+            except (httpx.HTTPError, ValueError) as exc:
+                record["error"] = str(exc)
+                anchor_errors.append(
+                    {"title": anchor.title, "openalex_id": anchor_id, "error": str(exc)}
+                )
+                logger.warning(
+                    "Anchor expansion failed for %s: %s (keeping partial results)",
+                    anchor.title[:64],
+                    exc,
+                )
     finally:
         client.close()
 
+    if anchor_errors and not anchor_records and not discovered:
+        logger.error("Every anchor failed before any expansion; nothing to save.")
+        for failure in anchor_errors:
+            logger.error("  %s: %s", failure["title"][:64], failure["error"])
+        return EXIT_ERROR
+
     profile_name, weights = ranking_metadata(payload)
     expanded = merge(papers, discovered)
+    scoring_meta: dict[str, Any] = {}
     ranked = score_papers(
         expanded,
         tokenize(payload["topic"]),
@@ -306,6 +370,7 @@ def main() -> int:
         weights["citations"],
         weights["recency"],
         weights["half_life_years"],
+        scoring_meta=scoring_meta,
     )
     prior_runs = payload.get("snowball_runs", 0)
     save_papers(
@@ -315,6 +380,7 @@ def main() -> int:
         sources=payload.get("sources", []),
         ranking_profile=profile_name,
         weights=weights,
+        scoring=scoring_meta,
         snowball_runs=prior_runs + 1,
     )
 
@@ -324,6 +390,7 @@ def main() -> int:
         "generated": datetime.now(UTC).date().isoformat(),
         "round": prior_runs + 1,
         "anchors": anchor_records,
+        "anchor_errors": anchor_errors,
         "forward_from_year": args.forward_from_year,
         "limits": {
             "backward_per_anchor": args.backward_limit,
@@ -334,9 +401,8 @@ def main() -> int:
         "corpus_before": len(papers),
         "corpus_after": len(ranked),
     }
-    graph_text = json.dumps(graph, indent=2, ensure_ascii=False)
-    graph_path.write_text(graph_text, encoding="utf-8")
-    round_path.write_text(graph_text, encoding="utf-8")
+    write_json_atomic(graph_path, graph)
+    write_json_atomic(round_path, graph)
     logger.info(
         "%d unique candidates (%+d) -> %s",
         len(ranked),
@@ -344,6 +410,13 @@ def main() -> int:
         candidate_path,
     )
     logger.info("Citation graph -> %s", round_path)
+    if anchor_errors:
+        logger.warning(
+            "%d of %d anchors failed; partial round saved, errors recorded in %s",
+            len(anchor_errors),
+            len(anchors),
+            round_path,
+        )
     return EXIT_SUCCESS
 
 

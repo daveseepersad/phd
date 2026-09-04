@@ -55,6 +55,40 @@ Filter ACM specifically with `filter=member:320`.
 Abstracts are frequently absent, and present ones are JATS XML needing tag
 stripping.
 
+Useful bibliographic fields beyond the basics: `type` (work type;
+`posted-content` marks preprints), `volume`, `issue`, `page`, `publisher`.
+
+## arXiv
+
+Endpoint: `https://export.arxiv.org/api/query`
+
+The grey-literature backbone (cs.SE / cs.AI / cs.MA preprints appear here
+months before any publisher indexes them). Keyless Atom-XML API; parseable
+with stdlib `xml.etree.ElementTree`.
+
+Query: `search_query=all:<terms>&sortBy=relevance&sortOrder=descending&max_results=<n>`
+
+| Atom element | Maps to |
+|---|---|
+| `entry/title` | title (collapse internal whitespace) |
+| `entry/author/name` | authors |
+| `entry/summary` | abstract |
+| `entry/published` | year (first four characters) |
+| `entry/id` | abs-page URL |
+| `entry/link[@title="pdf"]` | pdf_url (all arXiv PDFs are open) |
+| `entry/arxiv:doi` | DOI, present only when the author registered one |
+
+Namespaces: Atom `http://www.w3.org/2005/Atom`, arXiv extensions
+`http://arxiv.org/schemas/atom`.
+
+Quirks:
+
+- No publication-date filter parameter; filter on `published` client-side.
+- Every record is a preprint by definition: `venue = "arXiv preprint"`, `work_type = "preprint"`, `is_preprint = true`.
+- No citation counts; records lean on OpenAlex enrichment for the citation term.
+- The published-version DOI usually differs from the `10.48550/arXiv.*` DOI; title-merge reconciles them at dedup time.
+- arXiv asks for a 3-second gap between calls; a single search stays well within that.
+
 ## Google Scholar
 
 Endpoint: `https://scholar.google.com/scholar?q=...&start=<n>&as_ylo=<year>`
@@ -94,9 +128,10 @@ interstitial clears in roughly six seconds; `wait_past_challenge` polls for it.
 |---|---|
 | Result block | `li.search__item` |
 | Title and link | `h5.issue-item__title a` |
-| Authors | `ul.rlist--inline li a` |
+| Authors | `ul.rlist--inline.loa li a` (fallback: `a[href*="/profile/"]`) |
 | Abstract | `.issue-item__abstract` |
 | Venue | `.issue-item__detail a` |
+| Citation count | `span.citation` and its descendants |
 
 PDF pattern: `https://dl.acm.org/doi/pdf/<doi>`. Fetch it through the
 Playwright request context so session cookies apply.
@@ -104,6 +139,8 @@ Playwright request context so session cookies apply.
 Quirks:
 
 - Result links appear as `/doi/`, `/doi/abs/`, or `/doi/full/`; strip the prefix to recover the bare DOI.
+- The author list is `ul.rlist--inline.loa`; the bare `ul.rlist--inline` also matches the result-item toolbar and injects "Highlights"/"AI Summary"/"Get Access" as authors. Author names always link to `/profile/` pages, which is the drift-proof fallback.
+- Bare digits inside `.issue-item__detail span` include the publication year, so citation counts must be read only from `span.citation` markup.
 - FAccT, CHI, and CSCW proceedings are often gold open access and fetchable without a session.
 - The `AfterYear` parameter is honored, `BeforeYear` inconsistently.
 
@@ -143,6 +180,7 @@ over OpenAlex plus Crossref for this workflow.
 |---|---|---|---|---|
 | OpenAlex | none | yes | usually | OA links only |
 | Crossref | none | low counts | sometimes | no |
+| arXiv | none | no | yes | yes, always OA |
 | Google Scholar | none | yes, highest | snippets | links out |
 | ACM DL | institutional | yes | yes | yes |
 | IEEE Xplore | institutional | no | yes | yes |
