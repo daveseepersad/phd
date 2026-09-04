@@ -1,6 +1,6 @@
 ---
 name: publications-search
-description: "Systematic literature review across ACM, IEEE, Scholar, OpenAlex, and Crossref with frontier ranking, citation snowballing, full-text retrieval, saturation checks, and cited synthesis. - Brought to you by dave/phd"
+description: "Systematic literature review across ACM, IEEE, Scholar, OpenAlex, Crossref, and arXiv with protocol preregistration, frontier ranking, citation snowballing, full-text retrieval, saturation checks, PRISMA logging, corpus search, cited synthesis, and per-run thesis + docx distillation. - Brought to you by dave/phd"
 argument-hint: "research-question=... [from-year=...]"
 ---
 
@@ -16,36 +16,54 @@ This skill does not bypass access controls.
 
 ## Overview
 
-Seven stages combine broad screening with auditable citation chaining:
+Nine stages combine preregistration, broad screening, and auditable citation
+chaining. Every artifact — including the final `thesis.md` and its rendered
+Word document — lives inside the run folder, so multiple topics can be
+explored side by side.
 
 | Stage | Who | Output |
 |---|---|---|
+| 0. Preregister protocol | `protocol.py init` | `protocol.md` (hash stamped into `screening.json`) |
 | 1. Authenticate | `auth_setup.py` (once) | Persistent browser profile |
-| 2. Search and frontier-rank | `search.py` | `candidates.json` |
-| 3. Screen every abstract | `screen.py`, agent | `baseline.json`, `screening.json` |
+| 2. Search and frontier-rank | `search.py` | `candidates.json`, `search-log.json`, `dedup-log.json` |
+| 3. Screen every abstract | `screen.py`, agent | `baseline.json`, `screening.json`, `screening-history.json` |
 | 4. Snowball anchor citations | `snowball.py` | Expanded candidates and `snowball-round-NN.json` |
 | 5. Select and retrieve | `screen.py`, `fetch_pdfs.py` | `selected.json`, `retrieved.json`, `pdfs/` |
 | 6. Extract and test saturation | `extract.py`, `saturation.py`, agent | `text/`, `manifest.json`, `evidence-ledger.json` |
-| 7. Synthesize | Agent | `review.md`, `references.bib` |
+| 7. Quality and validation | `quality.py`, `screen.py sample/kappa`, agent | `quality.json`, `human-validation-report.json` |
+| 8. Synthesize and cross-check | Agent, `crosscheck.py`, `prisma.py`, `annotated_bib.py` | `review.md`, `references.bib`, `prisma.md`, `annotated-bibliography.md` |
+| 9. Distill topics | Agent, `render_thesis_docx.py` | `thesis.md`, `Problem-Statement-Literature-Review.docx` |
 
 Run folder layout:
 
 ```text
 results/YYYYMMDD-<topic-slug>/
+├── protocol.md              # preregistered protocol (stage 0), sha256-stamped
 ├── candidates.json          # every keyword and snowball hit, ranked
+├── search-log.json          # per-source query-as-sent and counts (PRISMA-S)
+├── dedup-log.json           # every merge event across sources
 ├── baseline.json            # top 20 quality baseline, not a corpus boundary
 ├── baseline-current.json    # current top 20 after citation expansion
 ├── screening.json           # abstract decisions for every candidate
-├── snowball-round-NN.json   # anchors and citation-discovery edges
+├── screening-history.json   # superseded decisions, append-only audit trail
+├── snowball-round-NN.json   # anchors, citation edges, truncation flags
 ├── selected.json            # all core and supporting papers
 ├── retrieved.json           # cumulative PDF retrieval state
-├── evidence-ledger.json     # concepts and novelty by full-text paper
-├── saturation-report.json   # auditable stopping decision
+├── fulltext-exclusions.json # full-text exclusion reasons (agent-written)
+├── evidence-ledger.json     # concepts, novelty, and structured extraction
+├── saturation-report.json   # auditable stopping decision (+ window sweep)
+├── quality.json             # per-core-paper Kitchenham/Garousi checklist
+├── human-validation-*.json  # blind screening sample and Cohen's kappa
 ├── manifest.json            # citations, scores, text file paths
-├── references.bib           # BibTeX for all selected papers
+├── references.bib           # typed BibTeX for all selected papers
+├── prisma.json / prisma.md  # PRISMA 2020 flow counts and diagram
+├── crosscheck-report.json   # citation <-> reference completeness
+├── annotated-bibliography.md
 ├── pdfs/                    # downloaded PDFs
 ├── text/                    # page-anchored text, [[page N]] markers
-└── review.md                # the synthesis
+├── review.md                # the synthesis
+├── thesis.md                # topic candidates (see references/THESIS-TEMPLATE.md)
+└── Problem-Statement-Literature-Review.docx  # rendered from thesis.md
 ```
 
 ## Prerequisites
@@ -88,12 +106,19 @@ cd /home/davesee/repos/dave/phd
 export PATH="$HOME/.local/bin:$PATH"
 S=.github/skills/publications-search/scripts
 
+# Stage 0: preregister the protocol BEFORE searching (creates the run folder);
+# fill in the research question, criteria, and 5-10 known-item papers
+RUN=$(uv run $S/protocol.py init "multi-agent LLM systems for production software engineering" | tail -1)
+
 # Once: sign in to the library, ACM, and IEEE
 uv run $S/auth_setup.py
 
-# Search broadly; frontier ranking is the default
-RUN=$(uv run $S/search.py "multi-agent LLM systems for production software engineering" \
-        --sources openalex,crossref,scholar,acm,ieee --from-year 2022 | tail -1)
+# Search broadly; frontier ranking is the default; arxiv needs no session
+uv run $S/search.py "multi-agent LLM systems for production software engineering" \
+        --sources openalex,crossref,arxiv,scholar,acm,ieee --from-year 2022
+
+# Validate the search found the preregistered known items
+uv run $S/protocol.py check "$RUN"
 
 # Build the complete abstract queue and preserve a top-20 baseline
 uv run $S/screen.py init "$RUN" --baseline 20
@@ -120,12 +145,54 @@ uv run $S/extract.py "$RUN"
 
 # Track conceptual novelty and continue until saturation
 uv run $S/saturation.py init "$RUN"
-uv run $S/saturation.py check "$RUN" --minimum-read 20 --window 5
+uv run $S/saturation.py check "$RUN" --minimum-read 20 --window 5 --window-sweep
 ```
 
 The agent updates screening decisions and the evidence ledger between commands.
 If saturation reports `continue`, retrieve the next batch or snowball from a
 newly discovered core paper, then repeat extraction and the saturation check.
+
+After saturation, close out the run:
+
+```bash
+# Human-validation sample for the AI-use disclosure (fill by hand, then kappa)
+uv run $S/screen.py sample "$RUN" --fraction 0.15 --seed 17
+uv run $S/screen.py kappa "$RUN"
+
+# Quality assessment for every core paper read in full
+uv run $S/quality.py init "$RUN"    # agent/student scores the checklist
+uv run $S/quality.py check "$RUN" && uv run $S/quality.py report "$RUN"
+
+# PRISMA flow, citation cross-check, and the annotated bibliography
+uv run $S/prisma.py "$RUN"
+uv run $S/crosscheck.py "$RUN" --doc thesis.md
+uv run $S/annotated_bib.py "$RUN"
+
+# Render the advisor-review Word document from the run's thesis.md
+uv run tools/render_thesis_docx.py "$RUN"
+```
+
+## Searching the corpus
+
+`corpus_search.py` answers "where is the evidence for X?" across everything
+read so far — BM25-ranked, page-anchored hits joined with each paper's
+screening decision and ledger concepts:
+
+```bash
+# Ranked evidence search (best page per paper; --all-pages for every hit)
+uv run $S/corpus_search.py "$RUN" "token budget single agent comparison" --top 10
+
+# Restrict to the papers that matter
+uv run $S/corpus_search.py "$RUN" "handoff information loss" --decision core,supporting
+
+# Verify a quotation before it enters any document: exact match first, then
+# a PDF-artifact-tolerant normalized match; NOT FOUND exits non-zero
+uv run $S/corpus_search.py "$RUN" --quote "confounding implementation variables"
+```
+
+Use it during topic mining (stage 9) to test whether a candidate problem's
+evidence spans multiple papers, and during synthesis to page-anchor every
+claim without re-reading whole texts.
 
 ## Ranking Model
 
@@ -158,15 +225,20 @@ decides what belongs in the review.
 | Parameter | Default | Purpose |
 |---|---|---|
 | `topic` | required | Research question in plain language |
-| `--sources` | `openalex,crossref,scholar` | Any of `openalex`, `crossref`, `scholar`, `acm`, `ieee` |
+| `--sources` | `openalex,crossref,scholar` | Any of `openalex`, `crossref`, `arxiv`, `scholar`, `acm`, `ieee` |
 | `--per-source` | `50` | Results requested per source |
 | `--from-year` | none | Earliest publication year |
 | `--out` | `results` | Base folder for run directories |
 | `--ranking-profile` | `frontier` | `frontier`, `balanced`, or `foundational` |
 | `--w-relevance` / `--w-citations` / `--w-recency` | profile | Optional profile overrides |
 | `--half-life` | profile | Optional recency half-life override |
+| `--enrich-limit` | `200` | OpenAlex metadata-backfill cap; truncation is logged |
 | `--delay` | `3.0` | Seconds between browser requests |
 | `--headless` | off | Blocked by ACM and Scholar; prefer `xvfb-run` |
+
+Every invocation appends a run entry to `search-log.json` (query-as-sent per
+source, counts, scoring reference year) and writes `dedup-log.json`, so the
+PRISMA identification counts stay reconstructible.
 
 ### screen.py
 
@@ -175,6 +247,14 @@ decides what belongs in the review.
 | `init <run> --baseline 20` | Preserve decisions, add new candidates, and mark the strong-signal baseline |
 | `merge <run> <chunks...>` | Validate and merge parallel abstract-screening decisions |
 | `apply <run>` | Reject incomplete screening and select all core/supporting records |
+| `sample <run> --fraction 0.15 --seed N` | Blind, stratified sample for independent human screening |
+| `kappa <run>` | Cohen's kappa between the filled sample and the recorded decisions |
+
+Chunk records passed to `merge` must carry `key` and `title`; records are
+bound by key with a normalized-title check (rank is only a redundant
+cross-check), and any mismatch aborts before a single decision is written.
+Superseded decisions land in `screening-history.json`, and every decision
+carries a `decided_at` timestamp.
 
 ### resolve_abstracts.py
 
@@ -218,9 +298,28 @@ decides what belongs in the review.
 
 | Command | Purpose |
 |---|---|
-| `init <run>` | Preserve evidence notes and add newly selected records |
-| `merge <run> <chunks...>` | Validate parallel full-text evidence and recompute novelty globally |
+| `init <run>` | Preserve evidence notes, add newly selected records, and scaffold the structured `extraction` form per paper |
+| `merge <run> <chunks...>` | Validate parallel full-text evidence (including `read_order`) and recompute novelty globally |
 | `check <run> --minimum-read 20 --window 5` | Require all core papers plus five consecutive papers with no new concepts |
+| `check ... --window-sweep` | Also report the stopping decision across windows 3–8 (methods-chapter sensitivity check) |
+
+Give every read paper a `read_order` in the ledger; the novelty window is then
+evaluated in true reading order. Without it, `check` falls back to corpus
+order and records `window_basis: corpus-order-fallback` in the report. The
+`extraction` form per paper ({study_type, framework, agent_count, topology,
+benchmark, baseline, key_results, limitations, venue_type}) feeds the
+Proposal's Chapter 2 evidence tables directly.
+
+### New pipeline scripts
+
+| Script | Purpose |
+|---|---|
+| `protocol.py init <topic> \| hash <run> \| check <run>` | Stage-0 preregistration; `check` verifies known-item recall against `candidates.json` |
+| `prisma.py <run>` | PRISMA 2020 four-phase counts and mermaid diagram from the run artifacts; absent logs degrade to "not recorded" |
+| `crosscheck.py <run> [--doc thesis.md]` | Every in-text citation has a reference and vice versa, cross-checked against `references.bib` (NSU states this requirement twice) |
+| `quality.py init \| check \| report <run>` | Kitchenham checklist per core paper (+ Garousi items for preprints) → rigor scores |
+| `corpus_search.py <run> <query> \| --quote "..."` | BM25 page-anchored evidence search and quote verification (see "Searching the corpus") |
+| `annotated_bib.py <run>` | Annotated bibliography from screening rationales + ledger notes (directly graded NSU rubric item) |
 
 ## Agent Workflow
 
@@ -262,7 +361,8 @@ evidence ledger. This bounds expansion by conceptual value rather than count.
 ### Stage 6: Saturation
 
 After reading each full text, update `evidence-ledger.json` with its detailed
-concepts. The script maps those labels into 20 preregistered evidence domains and
+concepts, set its `read_order`, and fill its structured `extraction` form. The
+script maps concept labels into 20 preregistered evidence domains and
 computes both detailed novelty and domain novelty. Only the stable domain taxonomy
 controls stopping, preventing synonyms and paper-specific microtags from extending
 the review indefinitely. Saturation requires:
@@ -274,7 +374,7 @@ the review indefinitely. Saturation requires:
 Unavailable core papers remain explicit evidence gaps. Do not relabel them to
 make the stopping rule pass.
 
-### Stage 7: Synthesize
+### Stage 8: Synthesize
 
 Read `manifest.json` for citations and the `text/*.txt` files for content. Write
 `review.md` in the run folder containing:
@@ -296,10 +396,30 @@ Quote format, page number taken from the nearest preceding `[[page N]]` marker:
 
 Rules for this stage:
 
-- Quote only text present in `text/`. If a claim cannot be quoted, attribute it as a paraphrase or leave it out.
+- Quote only text present in `text/`. Verify every quotation with `corpus_search.py --quote` before it enters the document. If a claim cannot be quoted, attribute it as a paraphrase or leave it out.
 - Never invent a DOI, page number, venue, or author. Use `manifest.json` verbatim.
 - Papers with no PDF are cited from abstract only and must be labelled as such.
-- Note when a source is a preprint rather than the published version.
+- Note when a source is a preprint rather than the published version (`is_preprint` in the metadata).
+- Finish with `crosscheck.py <run> --doc review.md` and resolve every flag before the document is considered done.
+
+### Stage 9: Distill topics
+
+Mine the evidence ledger and full texts for recurring, unresolved problems —
+contradictory findings, confounded comparisons, and gaps the papers' own
+authors name as future work. Use `corpus_search.py` to test whether each
+candidate problem's evidence spans multiple independent papers. Write
+`thesis.md` **in the run folder**, following
+[THESIS-TEMPLATE.md](./references/THESIS-TEMPLATE.md) exactly (the docx
+renderer parses that structure), with every quotation verified via
+`corpus_search.py --quote` and every citation passed through
+`crosscheck.py --doc thesis.md`. Then render the advisor-review document:
+
+```bash
+uv run tools/render_thesis_docx.py "$RUN"
+```
+
+Both files stay inside the run folder, so each research question carries its
+own self-contained deliverables.
 
 ## Dissertation Alignment (NSU)
 
@@ -321,12 +441,15 @@ Johnson 2006 and SAFE-style consecutive-zero-novelty windows), not exhaustive
 Kitchenham coverage. Report both novelty curves, a window sensitivity check,
 and unread supporting/context counts as an explicit limitation.
 
-Known metadata caveat: scraped ACM records can pollute `authors`,
-`citation_apa`, and `bibtex` with tokens like "Highlights" or "AI Summary",
-and BibTeX entries are typed `@inproceedings` regardless of venue. Until the
-fixes in [REVIEW.md](./REVIEW.md) land, verify author names, year, and venue
-against the first page of each paper's `text/` file before citing it in any
-submitted document.
+Metadata provenance: the REVIEW.md A1/A2 fixes landed 2026-09-03 — scraped
+author lists are cleaned and never overwrite API-sourced authorship, and
+BibTeX entries are typed by work type with APA-7 name inversion. Runs created
+before that date carry polluted `citation_apa`/`bibtex` in `manifest.json`
+and `references.bib`; re-running `extract.py` on such a run regenerates both
+from the repaired citation code. Regardless of vintage, spot-check author
+names, year, and venue against the first page of each paper's `text/` file
+before citing it in any submitted document, and run `crosscheck.py` on every
+outgoing document.
 
 ## Access and Conduct
 
@@ -347,6 +470,7 @@ submitted document.
 | Scholar returns 0 results | Headless mode, or CAPTCHA triggered | Run headed; if it persists, wait and drop `scholar` |
 | Many `MISSING` lines in fetch | Items not covered by your subscription | Expected; those papers stay abstract-only |
 | Empty `text/` files | Scanned or image-only PDF | Needs OCR; out of scope |
+| `screen.py merge` rejects old chunks | Chunks predate the key+title contract | Regenerate chunks including each record's `key` and `title` |
 
 Verify the session at any time:
 

@@ -1,5 +1,24 @@
 # Publications-Search Skill Review — 2026-08-30
 
+> **Implementation status (2026-09-03):** all four roadmap tiers below are
+> implemented. A1 (author hygiene + provenance-aware merge), A2 (APA-7 names,
+> typed/escaped BibTeX, collision-safe keys), A3 (key+title identity binding
+> in `screen.py merge` and `resolve_abstracts.py`), A4 (`search-log.json` +
+> `dedup-log.json`); methodology row fixes: `protocol.py` (Stage 0 +
+> known-item check), `prisma.py`, full-text exclusion reasons
+> (`fulltext-exclusions.json`), `quality.py` (Kitchenham + Garousi),
+> `screen.py sample`/`kappa` (Cohen's kappa human validation), structured
+> extraction form + `read_order` novelty + `--window-sweep` in
+> `saturation.py`, arXiv as a first-class source, `crosscheck.py`,
+> `annotated_bib.py`, snowball retry/partial-save/truncation flags,
+> reproducible scoring metadata, interrupt-safe `fetch_pdfs.py`/`resolve_abstracts.py`.
+> **Not verifiable offline:** the corrected ACM/IEEE DOM selectors and the
+> authenticated fetch paths need one live institutional session to confirm.
+> **Known live-run artifact:** `references.bib` in the 2026-08-30 run predates
+> the fixes (e.g. the authorless `anon2026` entry crosscheck.py flagged);
+> re-running `extract.py` on that run regenerates manifest citations from the
+> repaired code.
+
 Comprehensive review of the skill against (a) its own code, (b) established
 systematic-review methodology, and (c) NSU's dissertation process
 (`dissertation-guide.pdf`). Produced by a multi-agent review: one agent read

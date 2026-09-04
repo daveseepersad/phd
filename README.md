@@ -7,10 +7,16 @@ This repository contains the tooling, artifacts, and results of a systematic
 literature review on **multi-agent LLM systems for software development**, and
 the three evidence-grounded dissertation topic candidates derived from it.
 
-**Start here:** [thesis.md](thesis.md) — the three strongest topics, each with a
-literature-supported problem statement, verbatim page-anchored evidence, a
-proposed controlled experiment, and the published evidence that the approach is
-viable.
+**Start here:**
+[results/20260830-specialized-multi-agent-versus-single-ag/thesis.md](results/20260830-specialized-multi-agent-versus-single-ag/thesis.md)
+— the three strongest topics, each with a literature-supported problem
+statement, verbatim page-anchored evidence, a proposed controlled experiment,
+and the published evidence that the approach is viable.
+
+Every topic exploration is **self-contained under `results/<run>/`** — its
+search logs, screening decisions, corpus, `thesis.md`, and the rendered
+advisor-review Word document all live in one folder, so multiple candidate
+topics can be explored and compared side by side.
 
 ---
 
@@ -37,10 +43,13 @@ document.
 
 | Path | What it is |
 |---|---|
-| [thesis.md](thesis.md) | **Final output:** top 3 dissertation topics with problems, evidence, experiments, and references |
-| [.github/skills/publications-search/](.github/skills/publications-search/) | The literature-review pipeline ("the Skill"): 9 Python scripts + agent instructions ([SKILL.md](.github/skills/publications-search/SKILL.md)) |
-| [.github/skills/publications-search/REVIEW.md](.github/skills/publications-search/REVIEW.md) | Independent audit of the pipeline against SLR standards (Kitchenham, PRISMA 2020, Wohlin) and NSU's dissertation guide |
-| `results/<date>-<topic>/` | One folder per review run: every search hit, screening decision, citation edge, PDF, extracted text, and evidence note (git-ignored; PDFs are licensed to me personally) |
+| [results/20260830-.../thesis.md](results/20260830-specialized-multi-agent-versus-single-ag/thesis.md) | **Final output of the first run:** top 3 dissertation topics with problems, evidence, experiments, and references (plus its rendered `.docx` beside it) |
+| [.github/skills/publications-search/](.github/skills/publications-search/) | The literature-review pipeline ("the Skill"): 15 Python scripts + agent instructions ([SKILL.md](.github/skills/publications-search/SKILL.md)) |
+| [.github/skills/topic-ideation/](.github/skills/topic-ideation/) | Topic-ideation skill: OpenAlex/arXiv landscape scanner + PhD-worthiness rubric for evaluating alternative dissertation topics across the agentic/generative-AI space |
+| [.github/skills/publications-search/REVIEW.md](.github/skills/publications-search/REVIEW.md) | Independent audit of the pipeline against SLR standards (Kitchenham, PRISMA 2020, Wohlin) and NSU's dissertation guide — implemented 2026-09-03 |
+| [tools/render_thesis_docx.py](tools/render_thesis_docx.py) | Renders any run's `thesis.md` into the NSU-formatted advisor-review Word document |
+| `results/<date>-<topic>/` | One self-contained folder per review run: search logs, screening decisions, citation edges, PDFs, extracted text, evidence notes, `thesis.md`, and its `.docx` (PDFs are licensed to me personally) |
+| `results/<date>-ideation-<areas>/` | One folder per topic-ideation scan: `landscape.json`/`landscape.md` and the ranked `ideas.md` |
 | [dissertation-guide.pdf](dissertation-guide.pdf) | NSU dissertation guide the process is aligned to |
 
 ## How the topics were created
@@ -123,7 +132,10 @@ flowchart TD
 
 - [x] Literature review pipeline built and audited ([REVIEW.md](.github/skills/publications-search/REVIEW.md))
 - [x] Saturated review of multi-agent vs. single-agent LLM software development
-- [x] Topic candidates with verified evidence ([thesis.md](thesis.md))
+- [x] Topic candidates with verified evidence ([thesis.md](results/20260830-specialized-multi-agent-versus-single-ag/thesis.md))
+- [x] Pipeline improvements from the audit (citation-metadata fixes, PRISMA logging, protocol preregistration, quality assessment, corpus search, human-validation kappa)
+- [x] Per-run containment: each run carries its own `thesis.md` + rendered docx
+- [x] Topic-ideation skill for scanning the wider agentic/generative-AI landscape
+- [ ] Ideation sweep across candidate topic areas; compare against the current topic
 - [ ] Select topic with advisor and author the Dissertation Idea Paper (my writing; future tense per NSU guide)
-- [ ] Pipeline improvements from the audit (citation-metadata fixes, PRISMA logging, protocol preregistration)
 - [ ] Dissertation Proposal → controlled experiment → Dissertation Report
