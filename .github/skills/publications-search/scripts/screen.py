@@ -7,7 +7,9 @@ The top 20 remain marked as a quality baseline, but every candidate with an
 abstract is screened. Apply writes selected.json from all core and supporting
 decisions, so full-text retrieval is bounded by relevance rather than rank.
 Sample and kappa support the AI-assist disclosure: a decision-blind stratified
-sample for independent human screening, then Cohen's kappa against the agent.
+sample for an independent blind second pass, then Cohen's kappa against the
+recorded decisions. Whether that kappa measures human inter-rater reliability
+or only decision stability depends on who rated, which the sample records.
 """
 from __future__ import annotations
 
@@ -32,7 +34,7 @@ EXIT_ERROR = 2
 logger = logging.getLogger(__name__)
 
 DECISIONS = {"pending", "core", "supporting", "context", "exclude", "unresolved"}
-# Abstract judgments a blind human validator can reproduce; pending and
+# Abstract judgments a blind second rater can reproduce; pending and
 # unresolved are queue states, not screening decisions.
 SCREENED_DECISIONS = ("core", "supporting", "context", "exclude")
 
@@ -55,12 +57,12 @@ def create_parser() -> argparse.ArgumentParser:
     apply.add_argument("--include-context", action="store_true")
     apply.add_argument("--include-unresolved", action="store_true")
 
-    sample = subparsers.add_parser("sample", help="Draw a decision-blind human-validation sample.")
+    sample = subparsers.add_parser("sample", help="Draw a decision-blind second-rater sample.")
     sample.add_argument("run_dir", type=Path)
     sample.add_argument("--fraction", type=float, default=0.15)
     sample.add_argument("--seed", type=int, default=0)
 
-    kappa = subparsers.add_parser("kappa", help="Score the filled human sample with Cohen's kappa.")
+    kappa = subparsers.add_parser("kappa", help="Score the filled second-rater sample with Cohen's kappa.")
     kappa.add_argument("run_dir", type=Path)
     return parser
 
@@ -398,7 +400,7 @@ def sample_records(run_dir: Path, fraction: float, seed: int) -> int:
             continue
         take = min(len(stratum), max(1, round(fraction * len(stratum))))
         chosen.extend(rng.sample(stratum, take))
-    # Shuffled and stripped of the agent's decision so the human screens blind.
+    # Shuffled and stripped of the recorded decision so rater B screens blind.
     rng.shuffle(chosen)
     payload = {
         "generated": datetime.now(UTC).isoformat(),
@@ -406,18 +408,23 @@ def sample_records(run_dir: Path, fraction: float, seed: int) -> int:
         "seed": seed,
         "decision_categories": list(SCREENED_DECISIONS),
         "n": len(chosen),
+        # Who performed the second pass decides what the kappa can claim: a
+        # second model instance measures decision stability under re-prompting,
+        # only a person measures human inter-rater reliability.
+        "rater_b": "",
+        "rater_b_hint": "Record the second rater, e.g. 'human: A. Student' or 'llm: <model> (blind re-prompt)'.",
         "entries": [
             {
                 "key": item["key"],
                 "title": item["title"],
                 "abstract": item["abstract"],
-                "human_decision": "",
+                "rater_b_decision": "",
                 "note": "",
             }
             for item in chosen
         ],
     }
-    sample_path = run_dir / "human-validation-sample.json"
+    sample_path = run_dir / "second-rater-sample.json"
     write_json_atomic(sample_path, payload)
     logger.info(
         "%d of %d screened records sampled (fraction=%.2f seed=%d) -> %s",
@@ -428,9 +435,9 @@ def sample_records(run_dir: Path, fraction: float, seed: int) -> int:
 
 def kappa_report(run_dir: Path) -> int:
     screening_path = run_dir / "screening.json"
-    sample_path = run_dir / "human-validation-sample.json"
+    sample_path = run_dir / "second-rater-sample.json"
     if not screening_path.is_file() or not sample_path.is_file():
-        logger.error("Need screening.json and human-validation-sample.json in %s.", run_dir)
+        logger.error("Need screening.json and second-rater-sample.json in %s.", run_dir)
         return EXIT_ERROR
     screening = json.loads(screening_path.read_text(encoding="utf-8"))
     sample = json.loads(sample_path.read_text(encoding="utf-8"))
@@ -442,14 +449,14 @@ def kappa_report(run_dir: Path) -> int:
     unmatched: list[str] = []
     blank = 0
     for entry in sample.get("entries", []):
-        human = (entry.get("human_decision") or "").strip().lower()
-        if not human:
+        rater_b = (entry.get("rater_b_decision") or "").strip().lower()
+        if not rater_b:
             blank += 1
             continue
-        if human not in SCREENED_DECISIONS:
+        if rater_b not in SCREENED_DECISIONS:
             logger.error(
-                'Invalid human_decision "%s" for %s; use one of %s.',
-                human, entry["key"], "/".join(SCREENED_DECISIONS),
+                'Invalid rater_b_decision "%s" for %s; use one of %s.',
+                rater_b, entry["key"], "/".join(SCREENED_DECISIONS),
             )
             return EXIT_ERROR
         record = by_key.get(entry["key"]) or by_title.get(normalized_title(entry["title"]))
@@ -459,37 +466,45 @@ def kappa_report(run_dir: Path) -> int:
             unmatched.append(entry["key"])
             logger.warning("Sample entry no longer in screening.json: %s", entry["key"])
             continue
-        pairs.append((human, record["decision"], entry))
+        pairs.append((rater_b, record["decision"], entry))
     if not pairs:
-        logger.error("No filled human decisions in %s.", sample_path)
+        logger.error("No filled rater_b_decision values in %s.", sample_path)
         return EXIT_ERROR
 
     n = len(pairs)
-    categories = sorted({human for human, _, _ in pairs} | {ai for _, ai, _ in pairs})
-    confusion = {human: dict.fromkeys(categories, 0) for human in categories}
-    human_marginal: Counter[str] = Counter()
-    ai_marginal: Counter[str] = Counter()
+    categories = sorted({b for b, _, _ in pairs} | {a for _, a, _ in pairs})
+    confusion = {b: dict.fromkeys(categories, 0) for b in categories}
+    rater_b_marginal: Counter[str] = Counter()
+    rater_a_marginal: Counter[str] = Counter()
     agree = 0
-    for human, ai, _ in pairs:
-        confusion[human][ai] += 1
-        human_marginal[human] += 1
-        ai_marginal[ai] += 1
-        if human == ai:
+    for rater_b, rater_a, _ in pairs:
+        confusion[rater_b][rater_a] += 1
+        rater_b_marginal[rater_b] += 1
+        rater_a_marginal[rater_a] += 1
+        if rater_b == rater_a:
             agree += 1
     po = agree / n
-    pe = sum(human_marginal[c] * ai_marginal[c] for c in categories) / (n * n)
+    pe = sum(rater_b_marginal[c] * rater_a_marginal[c] for c in categories) / (n * n)
     # pe == 1 only when both raters used a single identical category.
     kappa = 1.0 if pe == 1.0 else (po - pe) / (1 - pe)
 
     disagreements = [
-        {"key": entry["key"], "title": entry["title"], "human": human, "ai": ai}
-        for human, ai, entry in pairs
-        if human != ai
+        {"key": entry["key"], "title": entry["title"], "rater_b": b, "rater_a": a}
+        for b, a, entry in pairs
+        if b != a
     ]
+    rater_b_identity = (sample.get("rater_b") or "").strip()
+    if not rater_b_identity:
+        logger.warning(
+            "sample has no rater_b identity; kappa cannot be described as human "
+            "inter-rater reliability unless a person performed the second pass."
+        )
     report = {
         "generated": datetime.now(UTC).isoformat(),
         "kappa": round(kappa, 4),
         "n": n,
+        "rater_a": "recorded screening decisions",
+        "rater_b": rater_b_identity or "unrecorded",
         "observed_agreement": round(po, 4),
         "expected_agreement": round(pe, 4),
         "per_category_confusion": confusion,
@@ -497,7 +512,7 @@ def kappa_report(run_dir: Path) -> int:
         "blank_entries": blank,
         "unmatched_entries": unmatched,
     }
-    report_path = run_dir / "human-validation-report.json"
+    report_path = run_dir / "second-rater-report.json"
     write_json_atomic(report_path, report)
     logger.info(
         "Cohen's kappa = %.3f over %d records (%d disagreements) -> %s",

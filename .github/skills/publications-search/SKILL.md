@@ -30,7 +30,7 @@ explored side by side.
 | 4. Snowball anchor citations | `snowball.py` | Expanded candidates and `snowball-round-NN.json` |
 | 5. Select and retrieve | `screen.py`, `fetch_pdfs.py` | `selected.json`, `retrieved.json`, `pdfs/` |
 | 6. Extract and test saturation | `extract.py`, `saturation.py`, agent | `text/`, `manifest.json`, `evidence-ledger.json` |
-| 7. Quality and validation | `quality.py`, `screen.py sample/kappa`, agent | `quality.json`, `human-validation-report.json` |
+| 7. Quality and validation | `quality.py`, `screen.py sample/kappa`, agent | `quality.json`, `second-rater-report.json` |
 | 8. Synthesize and cross-check | Agent, `crosscheck.py`, `prisma.py`, `annotated_bib.py` | `review.md`, `references.bib`, `prisma.md`, `annotated-bibliography.md` |
 | 9. Distill topics | Agent, `render_thesis_docx.py` | `thesis.md`, `Problem-Statement-Literature-Review.docx` |
 
@@ -53,7 +53,7 @@ results/YYYYMMDD-<topic-slug>/
 ├── evidence-ledger.json     # concepts, novelty, and structured extraction
 ├── saturation-report.json   # auditable stopping decision (+ window sweep)
 ├── quality.json             # per-core-paper Kitchenham/Garousi checklist
-├── human-validation-*.json  # blind screening sample and Cohen's kappa
+├── second-rater-*.json      # blind second-pass sample and Cohen's kappa
 ├── manifest.json            # citations, scores, text file paths
 ├── references.bib           # typed BibTeX for all selected papers
 ├── prisma.json / prisma.md  # PRISMA 2020 flow counts and diagram
@@ -186,7 +186,8 @@ newly discovered core paper, then repeat extraction and the saturation check.
 After saturation, close out the run:
 
 ```bash
-# Human-validation sample for the AI-use disclosure (fill by hand, then kappa)
+# Blind second-rater sample for the AI-use disclosure; fill rater_b and the
+# rater_b_decision fields by hand, then score
 uv run $S/screen.py sample "$RUN" --fraction 0.15 --seed 17
 uv run $S/screen.py kappa "$RUN"
 
@@ -278,8 +279,13 @@ PRISMA identification counts stay reconstructible.
 | `init <run> --baseline 20` | Preserve decisions, add new candidates, and mark the strong-signal baseline |
 | `merge <run> <chunks...>` | Validate and merge parallel abstract-screening decisions |
 | `apply <run>` | Reject incomplete screening and select all core/supporting records |
-| `sample <run> --fraction 0.15 --seed N` | Blind, stratified sample for independent human screening |
+| `sample <run> --fraction 0.15 --seed N` | Blind, stratified sample for an independent second rater |
 | `kappa <run>` | Cohen's kappa between the filled sample and the recorded decisions |
+
+Record who performed the second pass in the sample's `rater_b` field. Only a
+person makes the result human inter-rater reliability; a second model instance
+measures decision stability under re-prompting, and must be described that way
+in any methods chapter or AI-use disclosure.
 
 Chunk records passed to `merge` must carry `key`, `title`, `decision`,
 `rationale`, and `concepts`; records are bound by key with a normalized-title
