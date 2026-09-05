@@ -131,6 +131,8 @@ def main() -> int:
             "score": paper.score,
             "score_parts": paper.score_parts,
             "sources": paper.sources,
+            "work_type": paper.work_type,
+            "is_preprint": paper.is_preprint,
             "citation_apa": citation_apa(paper),
             "bibtex": citation_bibtex(paper, make_bibtex_key(paper, used_keys)),
             "pdf": paper.pdf_url,

@@ -125,19 +125,23 @@ def extract_citations(body: str) -> dict[tuple[str, str], dict[str, Any]]:
 
 
 def split_reference_entries(section: str) -> list[str]:
-    """Split a References section into entries (bulleted or hanging-indent)."""
+    """Split a References section into entries (bulleted, numbered, or hanging-indent)."""
     entries: list[str] = []
     current: list[str] = []
-    bulleted = any(line.startswith("- ") for line in section.splitlines())
-    for line in section.splitlines():
-        starts_entry = line.startswith("- ") if bulleted else bool(line) and not line[0].isspace()
+    lines = section.splitlines()
+    marker = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
+    listed = any(marker.match(line) for line in lines)
+    for line in lines:
+        starts_entry = (
+            bool(marker.match(line)) if listed else bool(line) and not line[0].isspace()
+        )
         if starts_entry:
             if current:
                 entries.append(" ".join(current))
-            current = [re.sub(r"^-\s+", "", line).strip()]
+            current = [marker.sub("", line).strip()]
         elif line.strip() and current:
             current.append(line.strip())
-        elif not line.strip() and current and not bulleted:
+        elif not line.strip() and current and not listed:
             entries.append(" ".join(current))
             current = []
     if current:
@@ -150,6 +154,18 @@ def parse_reference_entry(entry: str) -> dict[str, Any] | None:
     year_match = re.search(rf"\(({YEAR})\)", entry)
     if not year_match:
         return None
+    head = entry[: year_match.start()].strip().rstrip(".").strip()
+    # APA 7 section 9.12 puts the title in the author position when a work has
+    # no author. An authored entry always opens "Surname, I."; anything else is
+    # a title and has to be matched on its words rather than a surname.
+    authored = re.match(r"^[^,]{1,60},\s+(?:[A-Z]\.|[A-Z][a-z]+,)", head)
+    if head and not authored and len(head) > 40:
+        return {
+            "surname": head,
+            "year": year_match.group(1),
+            "entry": re.sub(r"\s+", " ", entry)[:140],
+            "title_words": [w for w in re.findall(r"[a-z0-9]{4,}", head.lower())],
+        }
     surname = entry.split(",", 1)[0].strip().strip("*_").strip()
     if not surname:
         return None
@@ -157,11 +173,12 @@ def parse_reference_entry(entry: str) -> dict[str, Any] | None:
         "surname": surname,
         "year": year_match.group(1),
         "entry": re.sub(r"\s+", " ", entry)[:140],
+        "title_words": [],
     }
 
 
 def parse_bib(path: Path) -> list[dict[str, Any]]:
-    """Minimal BibTeX read: key, first-author surname, year per entry."""
+    """Minimal BibTeX read: key, first-author surname, year, title per entry."""
     entries: list[dict[str, Any]] = []
     for chunk in re.split(r"(?=^@\w+\s*\{)", path.read_text(encoding="utf-8"), flags=re.MULTILINE):
         head = re.match(r"@\w+\s*\{\s*([^,\s]+)", chunk)
@@ -169,12 +186,18 @@ def parse_bib(path: Path) -> list[dict[str, Any]]:
             continue
         author = re.search(r"author\s*=\s*\{(.+?)\},?\s*$", chunk, flags=re.MULTILINE)
         year = re.search(r"year\s*=\s*\{(\d{4})\}", chunk)
+        title = re.search(r"title\s*=\s*\{(.+?)\},?\s*$", chunk, flags=re.MULTILINE)
         surname = ""
         if author:
             first = author.group(1).split(" and ")[0].strip()
             surname = apa_name(first).split(",")[0].strip()
         entries.append(
-            {"key": head.group(1), "surname": surname, "year": year.group(1) if year else None}
+            {
+                "key": head.group(1),
+                "surname": surname,
+                "year": year.group(1) if year else None,
+                "title": title.group(1) if title else "",
+            }
         )
     return entries
 
@@ -190,13 +213,19 @@ def crosscheck(run_root: Path, doc: Path | None) -> tuple[dict[str, Any], int]:
             raise FileNotFoundError(f"No thesis.md or review.md in {run_root}; pass --doc.")
     text = doc_path.read_text(encoding="utf-8")
 
-    parts = re.split(r"^##\s+References\s*$", text, maxsplit=1, flags=re.MULTILINE)
+    # Headings are commonly numbered ("## 5. References"); an over-strict match
+    # silently yields zero entries and then reports every citation as unreferenced.
+    parts = re.split(
+        r"^#{1,3}\s+(?:[\d.]+\s*)?References?\s*$", text, maxsplit=1, flags=re.MULTILINE
+    )
     body = parts[0]
     ref_section = parts[1] if len(parts) > 1 else ""
     if not ref_section:
-        logger.warning("%s has no '## References' section; reference-side checks are empty.", doc_path.name)
+        logger.warning(
+            "%s has no References heading; reference-side checks are empty.", doc_path.name
+        )
     # Stop at the next same-level heading so appendices are not read as entries.
-    ref_section = re.split(r"^##\s+", ref_section, maxsplit=1, flags=re.MULTILINE)[0]
+    ref_section = re.split(r"^#{1,3}\s+", ref_section, maxsplit=1, flags=re.MULTILINE)[0]
 
     citations = extract_citations(body)
     references = [
@@ -205,6 +234,14 @@ def crosscheck(run_root: Path, doc: Path | None) -> tuple[dict[str, Any], int]:
         if (parsed := parse_reference_entry(entry))
     ]
     ref_keys = {(norm_name(r["surname"]), base_year(r["year"])) for r in references}
+    if citations and not references:
+        logger.error(
+            "%s has %d in-text citations but no parseable reference entries; "
+            "the reference list did not parse, so treat every 'cited but not in "
+            "reference list' flag below as a parser failure, not a real gap.",
+            doc_path.name,
+            len(citations),
+        )
     ref_by_surname: dict[str, set[str]] = {}
     for ref in references:
         ref_by_surname.setdefault(norm_name(ref["surname"]), set()).add(base_year(ref["year"]))
@@ -229,6 +266,18 @@ def crosscheck(run_root: Path, doc: Path | None) -> tuple[dict[str, Any], int]:
 
     cited_keys = set(citations)
     cited_surnames = {surname for surname, _ in cited_keys}
+    body_words = re.findall(r"[a-z0-9]{4,}", body.lower())
+
+    def cited_by_title(ref: dict[str, Any]) -> bool:
+        """An author-less work is cited by a shortened italic title, not a surname."""
+        words = ref.get("title_words") or []
+        if len(words) < 3:
+            return False
+        lead = words[:4]
+        return any(
+            body_words[i : i + len(lead)] == lead for i in range(len(body_words) - len(lead) + 1)
+        )
+
     referenced_never_cited = [
         ref
         for ref in references
@@ -237,14 +286,29 @@ def crosscheck(run_root: Path, doc: Path | None) -> tuple[dict[str, Any], int]:
         # the surname counts as possibly-this-entry, so only fully uncited
         # surnames are flagged.
         and norm_name(ref["surname"]) not in cited_surnames
+        and not cited_by_title(ref)
     ]
+    bib_titles = [b.get("title", "").lower() for b in bib]
+
+    def in_bib_by_title(ref: dict[str, Any]) -> bool:
+        words = ref.get("title_words") or []
+        return bool(words) and any(
+            sum(1 for w in set(words) if w in title) / len(set(words)) >= 0.6
+            for title in bib_titles
+        )
+
     in_references_not_in_bib = [
         ref
         for ref in references
         if bib
         and (norm_name(ref["surname"]), base_year(ref["year"])) not in bib_keys
         and norm_name(ref["surname"]) not in bib_surnames
+        and not in_bib_by_title(ref)
     ]
+
+    def reportable(refs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        # title_words is a set used only for matching and is not JSON-serializable.
+        return [{k: v for k, v in ref.items() if k != "title_words"} for ref in refs]
 
     report = {
         "generated": datetime.now(UTC).date().isoformat(),
@@ -259,10 +323,10 @@ def crosscheck(run_root: Path, doc: Path | None) -> tuple[dict[str, Any], int]:
             "in_references_not_in_bib": len(in_references_not_in_bib),
             "year_mismatches": len(year_mismatches),
         },
-        "cited_not_in_references": cited_not_referenced,
-        "referenced_never_cited": referenced_never_cited,
-        "in_references_not_in_bib": in_references_not_in_bib,
-        "year_mismatches": year_mismatches,
+        "cited_not_in_references": reportable(cited_not_referenced),
+        "referenced_never_cited": reportable(referenced_never_cited),
+        "in_references_not_in_bib": reportable(in_references_not_in_bib),
+        "year_mismatches": reportable(year_mismatches),
         "notes": [
             (
                 "Matching is first-author surname + year only; every flag means "

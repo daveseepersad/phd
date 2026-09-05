@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["httpx>=0.27", "playwright>=1.47"]
+# dependencies = ["httpx>=0.27", "playwright>=1.47", "pypdf>=4.3"]
 # ///
 """Download the top-ranked PDFs for a review run.
 
@@ -16,6 +16,7 @@ above the default.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import logging
 import re
@@ -25,6 +26,7 @@ import urllib.request
 from pathlib import Path
 
 import httpx
+from pypdf import PdfReader
 
 sys.path.insert(0, str(Path(__file__).parent))
 from _common import (
@@ -33,6 +35,7 @@ from _common import (
     check_access,
     launch_context,
     load_papers,
+    openalex_headers,
     save_papers,
     save_storage_state,
     seed_library_access,
@@ -66,6 +69,34 @@ PDF_LINK_SELECTORS = (
     'a[data-track-action*="download"]',
     'a.c-pdf-download__link',
 )
+
+# Landing pages advertise recommended and related articles, so a generic
+# "first .pdf link" can return someone else's paper. Every download is checked
+# against its own title before it is saved.
+TITLE_STOPWORDS = frozenset(
+    ["a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "into", "is", "it", "its", "of", "on", "or", "the", "to", "with", "using", "via", "toward", "towards", "based", "llm", "llms", "large", "language", "model", "models", "study", "paper", "approach", "towards", "how", "what", "when", "where", "does", "do"]
+)
+TITLE_MATCH_RATIO = 0.34
+
+
+def pdf_matches_title(body: bytes, title: str) -> bool:
+    """True when the PDF's opening pages actually mention the requested title."""
+    terms = {
+        word
+        for word in re.findall(r"[a-z0-9]{4,}", title.lower())
+        if word not in TITLE_STOPWORDS
+    }
+    if len(terms) < 3:
+        return True
+    try:
+        reader = PdfReader(io.BytesIO(body))
+        head = " ".join((page.extract_text() or "") for page in reader.pages[:3])
+    except Exception:  # noqa: BLE001
+        return True
+    if not head.strip():
+        return True
+    head = re.sub(r"[^a-z0-9]+", " ", head.lower())
+    return sum(1 for term in terms if term in head) / len(terms) >= TITLE_MATCH_RATIO
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -110,7 +141,9 @@ def candidate_urls(paper: Paper) -> list[str]:
     urls: list[str] = []
 
     def add(url: str | None) -> None:
-        if url and url not in urls:
+        # pdf_url is rewritten to the saved local path after a successful
+        # download, so a re-run would otherwise hand that path to urllib.
+        if url and url.split(":", 1)[0] in ("http", "https") and url not in urls:
             urls.append(url)
 
     add(paper.pdf_url)
@@ -148,7 +181,9 @@ def refreshed_open_urls(paper: Paper) -> list[str]:
         return []
     try:
         response = httpx.get(
-            f"https://api.openalex.org/works/{identifier}", timeout=30.0
+            f"https://api.openalex.org/works/{identifier}",
+            timeout=30.0,
+            headers=openalex_headers(),
         )
         response.raise_for_status()
         work = response.json()
@@ -391,6 +426,14 @@ def main() -> int:
                         body = fetch_authenticated(context, resolved)
                 if body is None and paper.is_oa:
                     body = fetch_open(url)
+                if body and not pdf_matches_title(body, paper.title):
+                    logger.warning(
+                        "[%02d] discarded PDF from %s: content does not match the title",
+                        index,
+                        url[:80],
+                    )
+                    body = None
+                    continue
                 if body:
                     logger.debug("[%02d] hit via %s", index, url)
                     break

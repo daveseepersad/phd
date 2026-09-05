@@ -69,6 +69,31 @@ REJECT_PHRASES = (
     "the doi system",
 )
 
+# Generic social/SEO meta tags often carry a site-wide publisher blurb rather
+# than the paper's abstract, so text taken from them must also look like it
+# belongs to this paper.
+GENERIC_META_SOURCES = (
+    "meta[name=description]",
+    "meta[property=og:description]",
+    "json-ld.description",
+)
+STOPWORDS = frozenset(
+    ["a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "into", "is", "it", "its", "of", "on", "or", "the", "to", "with", "using", "toward", "towards", "via", "based", "multi", "single", "new", "study", "paper", "approach"]
+)
+
+
+def looks_like_own_abstract(text: str, title: str) -> bool:
+    """A real abstract restates its own subject; publisher boilerplate does not.
+
+    Deliberately language-agnostic: one landing page returned Polish marketing
+    copy for the publishing house, which no English phrase list would catch.
+    """
+    terms = {t for t in re.findall(r"[a-z0-9]{4,}", title.lower()) if t not in STOPWORDS}
+    if len(terms) < 3:
+        return True
+    lowered = text.lower()
+    return sum(1 for term in terms if term in lowered) / len(terms) >= 0.2
+
 
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -256,6 +281,15 @@ def main() -> int:
                         abstract, method, resolved = None, type(exc).__name__, None
                         result["error"] = str(exc)
                         logger.warning("%s fetch failed: %s: %s", record["key"], type(exc).__name__, exc)
+                    if abstract and method in GENERIC_META_SOURCES and not looks_like_own_abstract(
+                        abstract, paper.title
+                    ):
+                        logger.info(
+                            "[%s] discarding %s: text shares no terms with the title (publisher boilerplate)",
+                            record["key"],
+                            method,
+                        )
+                        abstract, method = None, f"{method}-boilerplate"
                     if abstract:
                         paper.abstract = abstract
                         paper.url = resolved or paper.url

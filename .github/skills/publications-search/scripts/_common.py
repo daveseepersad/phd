@@ -31,6 +31,42 @@ BROWSER_ARGS = ["--disable-blink-features=AutomationControlled"]
 CHALLENGE_MARKERS = ("just a moment", "checking your browser", "verifying you are human")
 
 
+def load_dotenv(start: Path | None = None) -> None:
+    """Populate os.environ from the nearest .env, without overriding real env vars."""
+    current = (start or Path.cwd()).resolve()
+    for folder in (current, *current.parents):
+        env_path = folder / ".env"
+        if not env_path.is_file():
+            continue
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+        return
+
+
+def openalex_headers() -> dict[str, str]:
+    """Auth headers for OpenAlex.
+
+    The key travels in the Authorization header rather than the documented
+    api_key query parameter because httpx logs full request URLs, which would
+    write the key into run logs and terminal scrollback.
+    """
+    load_dotenv()
+    headers = {"User-Agent": "publications-search/0.2"}
+    key = os.getenv("OPENALEX_API_KEY", "").strip()
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    return headers
+
+
+def contact_email() -> str:
+    load_dotenv()
+    return os.getenv("CONTACT_EMAIL", "").strip()
+
+
 @dataclass(frozen=True)
 class RankingProfile:
     """Weights for a repeatable literature-ranking strategy."""
@@ -528,14 +564,14 @@ def citation_apa(paper: Paper) -> str:
     junk-free even for legacy corpora that predate the hygiene fixes.
     """
     names = [apa_name(n) for n in clean_authors(paper.authors)]
-    if not names:
-        authors = "[No author listed]"
-    elif len(names) == 1:
+    if len(names) == 1:
         authors = names[0]
-    elif len(names) <= 20:
-        authors = ", ".join(names[:-1]) + ", & " + names[-1]
-    else:  # APA 7: first 19, ellipsis, final author, no ampersand
+    elif len(names) > 20:  # APA 7: first 19, ellipsis, final author, no ampersand
         authors = ", ".join(names[:19]) + ", ... " + names[-1]
+    elif names:
+        authors = ", ".join(names[:-1]) + ", & " + names[-1]
+    else:
+        authors = ""
     year = paper.year or "n.d."
     source = ""
     if paper.venue:
@@ -548,6 +584,11 @@ def citation_apa(paper: Paper) -> str:
             source += f", {paper.pages}"
         source += "."
     doi = f" https://doi.org/{paper.doi}" if paper.doi else (f" {paper.url}" if paper.url else "")
+    if not authors:
+        # APA 7 section 9.12: with no author, the title moves into the author
+        # position. A "[No author listed]" placeholder is not a citable name and
+        # yields reference entries that no in-text citation can ever match.
+        return f"{paper.title}. ({year}).{source}{doi}".strip()
     return f"{authors} ({year}). {paper.title}.{source}{doi}".strip()
 
 

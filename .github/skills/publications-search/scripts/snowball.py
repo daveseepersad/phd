@@ -14,7 +14,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import re
 import sys
 import time
@@ -29,7 +28,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from _common import (
     RANKING_PROFILES,
     Paper,
+    contact_email,
     merge,
+    openalex_headers,
     paper_from_openalex,
     save_papers,
     score_papers,
@@ -71,6 +72,16 @@ def create_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional earliest year for forward citations; references remain unrestricted.",
     )
+    parser.add_argument(
+        "--backward-from-year",
+        type=int,
+        default=None,
+        help=(
+            "Optional earliest year for backward references. Deep reference tails are "
+            "mostly pre-LLM textbooks and proceedings front matter; set this to the "
+            "protocol's earliest eligible year to keep them out of the screening queue."
+        ),
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
 
@@ -79,9 +90,10 @@ class OpenAlexClient:
     """Small polite-pool client for the OpenAlex endpoints used here."""
 
     def __init__(self) -> None:
-        headers = {"User-Agent": "publications-search/0.2"}
-        self.client = httpx.Client(base_url=OPENALEX_API, headers=headers, timeout=60.0)
-        self.mailto = os.getenv("CONTACT_EMAIL", "").strip()
+        self.client = httpx.Client(
+            base_url=OPENALEX_API, headers=openalex_headers(), timeout=60.0
+        )
+        self.mailto = contact_email()
 
     def close(self) -> None:
         self.client.close()
@@ -216,15 +228,51 @@ def resolve_candidate(spec: str, papers: list[Paper]) -> Paper | None:
     return None
 
 
-def anchors_from_screening(path: Path, papers: list[Paper], limit: int) -> list[Paper]:
+def used_anchor_keys(run_dir: Path) -> set[str]:
+    """Anchors already expanded in earlier rounds, by OpenAlex ID, DOI, and title."""
+    used: set[str] = set()
+    for round_file in sorted(run_dir.glob("snowball-round-*.json")):
+        try:
+            data = json.loads(round_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for record in data.get("anchors", []):
+            for field in ("openalex_id", "doi", "title"):
+                value = record.get(field)
+                if value:
+                    used.add(str(value).rsplit("/", 1)[-1].lower())
+    return used
+
+
+def anchors_from_screening(
+    path: Path, papers: list[Paper], limit: int, exclude: set[str] | None = None
+) -> list[Paper]:
+    """Pick unexpanded core papers.
+
+    Without the exclusion set every round re-selects the same highest-ranked
+    core papers, so round 2 onward discovers nothing.
+    """
+    exclude = exclude or set()
     data = json.loads(path.read_text(encoding="utf-8"))
-    keys = [
-        item["key"]
-        for item in data.get("records", [])
-        if item.get("decision") == "core"
-    ][:limit]
     by_key = {paper.key(): paper for paper in papers}
-    return [by_key[key] for key in keys if key in by_key]
+    chosen: list[Paper] = []
+    for item in data.get("records", []):
+        if item.get("decision") != "core":
+            continue
+        paper = by_key.get(item["key"])
+        if paper is None:
+            continue
+        identifiers = {
+            str(value).rsplit("/", 1)[-1].lower()
+            for value in (paper.openalex_id, paper.doi, paper.title)
+            if value
+        }
+        if identifiers & exclude:
+            continue
+        chosen.append(paper)
+        if len(chosen) >= limit:
+            break
+    return chosen
 
 
 def ranking_metadata(payload: dict[str, Any]) -> tuple[str, dict[str, float]]:
@@ -260,7 +308,16 @@ def main() -> int:
             return EXIT_ERROR
         anchors.append(paper)
     if args.anchors_from:
-        anchors.extend(anchors_from_screening(args.anchors_from, papers, args.anchor_count))
+        already = used_anchor_keys(args.run_dir)
+        fresh = anchors_from_screening(args.anchors_from, papers, args.anchor_count, already)
+        if already:
+            logger.info("skipping %d anchor(s) expanded in earlier rounds", len(already))
+        if not fresh and not anchors:
+            logger.warning(
+                "Every core paper has already been expanded; screen more abstracts or "
+                "pass --anchor explicitly to re-expand one."
+            )
+        anchors.extend(fresh)
     anchors = merge(anchors)[: args.anchor_count]
     if not anchors:
         logger.error("Choose anchors with --anchor or --anchors-from; none were resolved.")
@@ -271,6 +328,7 @@ def main() -> int:
     edges: list[dict[str, str]] = []
     anchor_records: list[dict[str, Any]] = []
     anchor_errors: list[dict[str, str]] = []
+    skipped_backward = 0
     try:
         for anchor in anchors:
             # One dead anchor must not discard the expansion already fetched
@@ -301,6 +359,9 @@ def main() -> int:
                 )
                 for item in references:
                     paper = paper_from_openalex(item, "snowball-backward", 1)
+                    if args.backward_from_year and (paper.year or 0) < args.backward_from_year:
+                        skipped_backward += 1
+                        continue
                     paper.backward_reference_of = [anchor_id]
                     discovered.append(paper)
                     edges.append(
@@ -392,6 +453,8 @@ def main() -> int:
         "anchors": anchor_records,
         "anchor_errors": anchor_errors,
         "forward_from_year": args.forward_from_year,
+        "backward_from_year": args.backward_from_year,
+        "backward_skipped_by_year": skipped_backward,
         "limits": {
             "backward_per_anchor": args.backward_limit,
             "forward_per_anchor": args.forward_limit,

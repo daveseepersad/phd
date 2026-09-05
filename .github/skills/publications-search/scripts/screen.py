@@ -341,7 +341,11 @@ def merge_chunks(run_dir: Path, chunk_paths: list[Path]) -> int:
                 logger.error("%s has no screening rationale.", target["key"])
                 return EXIT_ERROR
             if not isinstance(item.get("concepts"), list):
-                logger.error("%s concepts must be a list.", target["key"])
+                logger.error(
+                    '%s: "concepts" must be a list of short topic labels (may be empty). '
+                    "Chunk records require key, title, decision, rationale, and concepts.",
+                    target["key"],
+                )
                 return EXIT_ERROR
             reviewed[id(target)] = (target, item)
 

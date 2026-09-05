@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import random
 import re
 import sys
@@ -33,9 +32,12 @@ from _common import (
     Paper,
     check_access,
     clean_authors,
+    contact_email,
     launch_context,
+    load_papers,
     looks_preprint,
     merge,
+    openalex_headers,
     paper_from_openalex,
     reconstruct_abstract,
     run_dir,
@@ -102,16 +104,63 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def _mailto() -> str:
-    return os.getenv("CONTACT_EMAIL", "").strip()
+    return contact_email()
+
+
+RATE_LIMIT_GIVE_UP = 5
+
+
+def _openalex_get(params: dict[str, Any], timeout: float, attempts: int = 4) -> httpx.Response | None:
+    """GET api.openalex.org, backing off on 429 instead of burning the request.
+
+    Enrichment issues one call per metadata-poor record, so an unthrottled loop
+    trips the rate limiter and then starves search_openalex on later runs.
+    """
+    return _openalex_request("https://api.openalex.org/works", params, timeout, attempts)
+
+
+def _openalex_entity(identifier: str, timeout: float, attempts: int = 4) -> httpx.Response | None:
+    """Fetch one work by DOI or OpenAlex ID.
+
+    Single-entity reads are billed at $0, while `filter=title.search:` is billed
+    at the full search rate, so any record carrying a DOI must come through here.
+    """
+    return _openalex_request(
+        f"https://api.openalex.org/works/{identifier}", {}, timeout, attempts
+    )
+
+
+def _openalex_request(
+    url: str, params: dict[str, Any], timeout: float, attempts: int
+) -> httpx.Response | None:
+    if _mailto():
+        params = {**params, "mailto": _mailto()}
+    headers = openalex_headers()
+    wait = 2.0
+    for attempt in range(attempts):
+        resp = httpx.get(url, params=params, timeout=timeout, headers=headers)
+        if resp.status_code != 429:
+            return resp
+        if attempt == attempts - 1:
+            return resp
+        retry_after = resp.headers.get("Retry-After")
+        pause = float(retry_after) if (retry_after or "").replace(".", "", 1).isdigit() else wait
+        # A budget reset is hours away; only transient limits are worth waiting on.
+        if pause > 60:
+            return resp
+        logger.info("OpenAlex 429; retrying in %.1fs", pause)
+        time.sleep(pause)
+        wait = min(wait * 2, 30.0)
+    return None
 
 
 def search_openalex(topic: str, limit: int, from_year: int | None) -> list[Paper]:
-    params: dict[str, str | int] = {"search": topic, "per-page": min(limit, 200)}
+    params: dict[str, Any] = {"search": topic, "per-page": min(limit, 200)}
     if from_year:
         params["filter"] = f"from_publication_date:{from_year}-01-01"
-    if _mailto():
-        params["mailto"] = _mailto()
-    resp = httpx.get("https://api.openalex.org/works", params=params, timeout=60.0)
+    resp = _openalex_get(params, timeout=60.0)
+    if resp is None:
+        raise httpx.HTTPError("OpenAlex rate limited after retries")
     resp.raise_for_status()
     return [paper_from_openalex(item) for item in resp.json().get("results", [])]
 
@@ -411,20 +460,44 @@ def enrich_missing(papers: list[Paper], limit: int = 200) -> tuple[int, int]:
             truncated,
             len(targets),
         )
+    rate_limited = 0
+    consecutive_limited = 0
     for paper in targets[:limit]:
+        # A sustained limiter response means the whole pass is futile; grinding
+        # through hundreds of backoffs costs hours and enriches nothing.
+        if consecutive_limited >= RATE_LIMIT_GIVE_UP:
+            rate_limited += len(targets[:limit]) - enriched - rate_limited
+            logger.warning(
+                "OpenAlex limiter persisted for %d consecutive lookups; abandoning enrichment",
+                RATE_LIMIT_GIVE_UP,
+            )
+            break
         try:
-            params = {"filter": f"title.search:{paper.title[:180]}", "per-page": 1}
-            if _mailto():
-                params["mailto"] = _mailto()
-            resp = httpx.get("https://api.openalex.org/works", params=params, timeout=30.0)
+            if paper.doi:
+                resp = _openalex_entity(f"doi:{paper.doi}", timeout=30.0)
+                billed = False
+            else:
+                resp = _openalex_get(
+                    {"filter": f"title.search:{paper.title[:180]}", "per-page": 1}, timeout=30.0
+                )
+                billed = True
+            if resp is None or resp.status_code == 429:
+                rate_limited += 1
+                consecutive_limited += 1
+                continue
+            consecutive_limited = 0
             if resp.status_code != 200:
                 continue
-            hits = resp.json().get("results") or []
-            if not hits:
-                continue
-            hit = hits[0]
-            if not _titles_match(paper.title, hit.get("display_name") or ""):
-                continue
+            payload = resp.json()
+            if billed:
+                hits = payload.get("results") or []
+                if not hits:
+                    continue
+                hit = hits[0]
+                if not _titles_match(paper.title, hit.get("display_name") or ""):
+                    continue
+            else:
+                hit = payload
             location = hit.get("primary_location") or {}
             biblio = hit.get("biblio") or {}
             paper.year = paper.year or hit.get("publication_year")
@@ -462,6 +535,13 @@ def enrich_missing(papers: list[Paper], limit: int = 200) -> tuple[int, int]:
             enriched += 1
         except Exception as exc:  # noqa: BLE001
             logger.debug("enrich failed for %r: %s", paper.title[:50], exc)
+    if rate_limited:
+        logger.warning(
+            "OpenAlex rate-limited %d of %d enrichment lookups; those records keep "
+            "missing year/citation data and rank low as a result",
+            rate_limited,
+            len(targets[:limit]),
+        )
     return enriched, truncated
 
 
@@ -685,6 +765,27 @@ def main() -> int:
         logger.error("No source returned results.")
         return EXIT_ERROR
 
+    root = run_dir(args.out, args.topic)
+    out_path = root / "candidates.json"
+
+    # A run folder accumulates across invocations: added sources, refresh runs
+    # with a later --from-year, and snowball discoveries all land in the same
+    # candidates.json. Without seeding the merge from disk, a second search
+    # silently discards everything found earlier.
+    carried = 0
+    prior_sources: list[str] = []
+    if out_path.exists():
+        try:
+            existing = load_papers(out_path)
+            prior_meta = json.loads(out_path.read_text(encoding="utf-8"))
+            prior_sources = list(prior_meta.get("sources") or [])
+            carried = len(existing)
+            groups.insert(0, existing)
+            logger.info("carrying forward %d existing candidates from %s", carried, out_path)
+        except (OSError, ValueError, KeyError) as exc:
+            logger.error("Existing %s is unreadable (%s); refusing to overwrite it.", out_path, exc)
+            return EXIT_ERROR
+
     dedup_events: list[dict[str, Any]] = []
     merged = merge(*groups, events=dedup_events)
     source_fixed = enrich_from_source(merged)
@@ -702,18 +803,18 @@ def main() -> int:
         scoring_meta=scoring_meta,
     )
 
-    root = run_dir(args.out, args.topic)
-    out_path = root / "candidates.json"
     save_papers(
         out_path,
         args.topic,
         ranked,
-        sources=requested,
+        sources=sorted(set(prior_sources) | set(requested)),
         ranking_profile=args.ranking_profile,
         weights=weights,
         scoring=scoring_meta,
     )
-    logger.info("%d unique papers -> %s", len(ranked), out_path)
+    logger.info(
+        "%d unique papers (%d new this run) -> %s", len(ranked), len(ranked) - carried, out_path
+    )
 
     append_search_log(
         root,

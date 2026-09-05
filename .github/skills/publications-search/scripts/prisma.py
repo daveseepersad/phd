@@ -154,10 +154,31 @@ def deduplication(run_root: Path, notes: list[str]) -> dict[str, Any]:
 def fulltext_exclusions(run_root: Path, notes: list[str]) -> tuple[Any, list[dict[str, Any]]]:
     payload = read_json(run_root / "fulltext-exclusions.json")
     if payload is None:
+        # The evidence ledger already accounts for every assessed report, so a
+        # missing file is only unknown when the ledger is missing too.
+        ledger = read_json(run_root / "evidence-ledger.json")
+        records = (ledger or {}).get("records") if isinstance(ledger, dict) else None
+        if not records:
+            notes.append(
+                "No fulltext-exclusions.json and no evidence ledger; full-text "
+                "exclusions (if any) were not recorded."
+            )
+            return NOT_RECORDED, []
+        derived = [
+            {
+                "key": item.get("key"),
+                "title": item.get("title"),
+                "reason": (item.get("evidence_notes") or {}).get("reason", "other"),
+                "source": "evidence-ledger",
+            }
+            for item in records
+            if item.get("status") == "excluded"
+        ]
         notes.append(
-            "No fulltext-exclusions.json; full-text exclusions (if any) were not recorded."
+            f"Full-text exclusions derived from evidence-ledger.json ({len(derived)} "
+            "excluded after assessment); write fulltext-exclusions.json to override."
         )
-        return NOT_RECORDED, []
+        return dict(Counter(record["reason"] for record in derived)), derived
     records = payload.get("exclusions", []) if isinstance(payload, dict) else []
     for record in records:
         reason = record.get("reason")
