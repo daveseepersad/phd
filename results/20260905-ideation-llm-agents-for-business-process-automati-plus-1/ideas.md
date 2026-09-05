@@ -121,10 +121,30 @@ finding transfers directly into framework-selection guidance.
 | Problem clarity | 4/5 | The harness survey (10.20944/preprints202604.0428.v3) names the harness as an under-examined determinant of agent behavior, and the question is falsifiable in one sentence. It is not 5 because the disagreement is implicit in inconsistent setups rather than staged between named papers. |
 | Experimental tractability | 5/5 | Conditions x tasks x repetitions are enumerable today from public harnesses and public benchmarks, so a power analysis is possible before building; the comparison needs no proprietary access. |
 | Measurable outcomes | 5/5 | Task success, variance decomposition, and cost per success are orthogonal and interpretable, and results compare number-for-number against the published baselines being re-run. |
-| Refereed anchors | 2/5 | This is the area's structural weakness. Of the on-topic corpus, only LATS-RCA is archival (10.1007/978-3-032-36590-3_14); the survey is a preprint (10.20944/preprints202604.0428.v3), the most-cited on-topic paper has five citations (10.48550/arxiv.2501.14170), and the venue list is led by Zenodo, Research Square, and Preprints.org. Refereed anchors likely exist in SE venues outside this scan's narrow query, which is exactly what the deep-dive run must establish before this candidate is committed to. |
+| Refereed anchors | 2/5 → **4/5**, corrected 2026-09-05 | Scored 2/5 from the scan: only LATS-RCA was archival (10.1007/978-3-032-36590-3_14), the survey was a preprint (10.20944/preprints202604.0428.v3), the most-cited on-topic paper had five citations (10.48550/arxiv.2501.14170), and the venue list was led by Zenodo, Research Square, and Preprints.org. The deep-dive run refutes that score — see the correction note below. |
 | Practitioner alignment | 4/5 | Framework selection is a live enterprise decision and sits in the student's domain; it is not 5 because the question is posed to researchers first and buyers second. |
 | Novelty window | 5/5 | The scan shows the area rising from one on-topic work in 2024 to 103 in a partial 2026 while remaining almost entirely unrefereed — a rising, under-published niche where a careful solo study stays citable regardless of frontier-model progress. |
-| **Total** | **25/30** | |
+| **Total** | **25/30 → 27/30** | |
+
+**Correction, 2026-09-05.** The 2/5 above was wrong, and the deep-dive run is
+what found it wrong — which is the reason the rubric hands its weakest criterion
+to a review rather than settling it from a scan. Screening 786 abstracts in
+`results/20260905-agent-harness-as-a-confounding-variable` surfaced a substantial
+harness-attribution literature that the seed area's narrow query never reached,
+including a position paper arguing that agent comparisons should not be published
+without disclosing the harness, a survey of agent system and harness design, a
+study attributing coding-agent quality shifts to scaffolding evolution rather
+than the model, and controlled decompositions such as HAL (model × scaffold ×
+benchmark), CORE-Bench, AblationBench, BrowserGym, and AFlow. Ninety-nine
+records were screened core. The criterion is re-scored to 4/5: a steady stream
+with benchmark and survey anchors, held below 5 only because the archival
+conversation is young enough that replications and documented disagreements are
+still thin.
+
+The original 2/5 is left in place rather than overwritten. It is evidence of how
+the topic was chosen, and the scan's error is itself a finding: an ideation query
+tight enough to keep the key-papers table on topic can be too tight to see a
+literature that names the same problem in different words.
 
 **Next step.**
 
@@ -298,3 +318,12 @@ refereed-anchor score of 2/5 that the deep-dive run must either repair or
 confirm. If Candidate 2's review cannot find archival anchors beyond this
 scan's narrow query, its rubric score stands and the candidate should be
 parked, whatever the topic's appeal.
+
+**Outcome, 2026-09-05.** Both reviews were run. Candidate 1 completed all nine
+stages and produced a rendered document; its review found that the research
+question as posed contains a confound, because the studies reporting large
+violation reductions each bind a different artefact at a different enforcement
+site, and the strongest ablation attributes the effect to tool mediation rather
+than to process structure. Candidate 2's review repaired its own weakest
+criterion, as recorded above, so neither candidate should be parked; Candidate 2
+is now the higher-scoring of the two at 27/30.
