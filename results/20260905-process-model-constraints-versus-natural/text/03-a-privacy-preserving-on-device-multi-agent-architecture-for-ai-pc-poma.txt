@@ -1,0 +1,784 @@
+[[page 1]]
+A Privacy-Preserving On-Device Multi-Agent Architecture 
+for AI PC (POMA) Workflow Automation 
+Sultana Begum Michael Rosenzweig 
+Sultana.begum@intel.com Michael.rosenzweig@intel.com 
+ Intel Corporation, USA 
+Abstract— AI agents that automate desktop workflows can 
+reduce time spent on repetitive knowledge work, but enterprise 
+deployment raises acute privacy and trust challenges. 
+Computer-use agents (CUAs) observe sensitive on -screen 
+content and execute high -impact action s in open -world 
+environments, making them vulnerable to prompt injection and 
+unsafe tool use. Meanwhile, recent model evolution has 
+significantly improved the capabilities of small language and 
+compact multimodal models, enabling specialized low -latency 
+inference that can run fully on -device. This paper presents 
+AIPC-POMA, a privacy -preserving on -device multi -agent 
+architecture for personal and enterprise AI PC workflow 
+automation. AIPC POMA composes a set of carefully crafted, 
+task-specialized small agents including an SLM for drafting, a 
+compact VLM+OCR stack for document and screen 
+understanding, and a sandboxed CUA for GUI interaction 
+coordinated by a local Orchestrator and enforced by a Policy 
+Verifier. POMA is designed around two principles: privacy by 
+minimized data flow and trust by controlled action execution, 
+achieved through least -privilege action primitives, risk -aware 
+gating, and auditable execution traces. We describe a hardware 
+aware implementation optimized for heterogeneous AI 
+acceleration on AI PCs such as Panther Lake -class system, and 
+we introduce an evaluation task suite and adversarial safety 
+battery targeting indirect prompt injection and real-world agent 
+threats. We defi ne metrics spanning utility, latency, privacy 
+leakage, and action safety, demonstrating that POMA enables 
+practical low -cost automation while reducing exposure to 
+untrusted inputs. 
+ 
+Keywords— On-device AI, multi -agent systems, workflow 
+automation, privacy-preserving inference, computer-use agents, 
+prompt injections, multimodal models, AI PC, trustworthy 
+autonomy. 
+ 
+ I. INTRODUCTION 
+Desktop workflow automation is entering a new phase as AI 
+agents evolve from passive assistants into systems that can 
+perceive, plan, and act across real software environments. 
+Computer-use agents (CUAs) agents that operate through 
+GUIs by interpreting on-screen content and executing actions 
+have rapidly advanced in capability and scope. Recent 
+surveys summarize foundational architectures and open 
+challenges for agents that “use” computers in the loop [1]. 
+Systems such as Mobile -Agent-v3 [2] and OpenCUA [3] 
+demonstrate increasingly general and robust GUI automation, 
+while COLA shows that multi -agent decomposition and 
+dynamic scheduling can improve reliability and scalability 
+[4]. Collectively, these advances indicate that many 
+productivity tasks document pre paration, extraction, cross 
+application coordination, and reporting can be automated 
+with minimal user intervention. However, enterprise 
+deployment remains constrained by privacy and trust. CUAs 
+inherently observe sensitive on -screen data (e.g., internal 
+dashboards, proprietary documents) and can execute 
+highimpact actions such as opening links, downloading files, 
+authenticating, and transferring content across applications. 
+This creates a risk that an agent’s control policy can be 
+influenced by untrusted inputs (web pages, shared 
+documents, external text). Recent security research shows 
+that agentic systems expand the attack surface beyond 
+standard assistants by exposing tool interfaces and autonomy 
+loops to adversarial manipulation [7], [9], [10]. In particular, 
+prompt injection incl uding indirect injection through tool 
+inputs or retrieved content has been benchmarked as a 
+practical threat to tool -integrated agents [8]. These risks 
+intensify when execution privileges are available: evaluations 
+show that computer -use and code -capable a gents can be 
+coerced into dangerous real -world behaviors under 
+adversarial conditions [5]. Enterprise -ready automation 
+therefore requires not only utility, but also controlled 
+execution, least privilege, and auditability. 
+At the same time, the hardware and systems ecosystem is 
+shifting toward local -first autonomy. Advances in edge and 
+on-device LLMs supported by improved efficiency, 
+quantization, and hardware -aware scheduling make it 
+increasingly practical to run agent subr outines locally using 
+specialized compact models [11], [12], [14]. Keeping 
+inference on -device reduces data movement and mitigates 
+exposure when sensitive inputs would otherwise leave 
+enterprise endpoints [13]. This aligns with emerging AI PCs 
+that provide heterogeneous acceleration across CPU, GPU, 
+and NPU units. For example, Intel’s Panther Lake platform 
+targets high -performance local inference via heterogeneous 
+acceleration and OpenVINO ™ [6], enabling interactive 
+multimodal workloads without constant cloud dependence. 
+Together, these trends motivate architectures where cloud 
+connectivity is optional and policy -gated, rather than the 
+default execution path. Motivated by these developments, we 
+propose AI PC -POMA, a privacy -preserving, on -device 
+multi-agent architecture for personal and enterprise workflow 
+automation on AI PCs. 
+ II. BACKGROUND AND MOTIV ATION 
+A. Why On-Device Agents Now 
+Recent progress in small language models (SLMs) and 
+compact multimodal models has improved the feasibility of 
+979-8-3315-7330-0/26/$31.00 ©2026 IEEE
+2026 IEEE International Conference on AI and Data Analytics (ICAD) | 979-8-3315-7330-0/26/$31.00 ©2026 IEEE | DOI: 10.1109/ICAD69378.2026.11608651
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 06:40:17 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 2]]
+deploying capable agents directly on end-user devices. Rather 
+than relying on a single large cloud model, modern pipelines 
+increasingly use task -specialized components e.g., an SLM 
+for drafting and structured reasoning, lightweight OCR for 
+extraction, and compact VLMs for grounded document and 
+screen understanding achieving favorable accuracy –latency 
+tradeoffs while reducing operational cost. This shift aligns 
+with edge LLM execution trends in quantization, 
+compilation, and hardware -aware co -design that ena ble 
+efficient inference under strict latency and power budgets 
+[11], [12], [14]. For enterprises, local execution also supports 
+privacy and compliance by limiting exposure when sensitive 
+artifacts (contracts, customer data, internal dashboards) 
+would otherwise be transmitted off-device [13]. 
+Modern AI PCs further accelerate this transition by providing 
+heterogeneous compute across CPU/GPU/NPU, supporting 
+concurrent modality -specific workloads. Intel’s Panther 
+Lake-class platforms target this direction through 
+heterogeneous acceleration via OpenVINO ™, enabling 
+flexible mapping of model components to available compute 
+and reducing end-to-end workflow latency [6]. 
+ 
+B. The Enterprise Risk: Autonomy Meets Untrusted Inputs 
+Although CUAs and agentic automation have progressed 
+rapidly, enterprise adoption remains constrained by the 
+security and trust implications of autonomy in open -world 
+software environments. Agents routinely ingest content from 
+untrusted sources web pages, PDFs, email attachments, 
+shared documents, and tool outputs where adversaries can 
+embed malicious instructions to manipulate reasoning and 
+tool use. Prompt injection, including indirect injection 
+through retrieved or tool-generated content, persists even for 
+strong models because it targets the control pathway rather 
+than factual knowledge [7], [9]. Benchmarking work shows 
+that tool-integrated agents can be reliably diverted by indirect 
+injections plac ed in the environment or intermediate tool 
+outputs [8]. These risks are amplified for CUAs because 
+model outputs translate into real actions clicking UI elements, 
+opening links, authenticating, granting permissions, and 
+transferring data across application s where a single 
+adversarial interaction can trigger credential leakage, data 
+exfiltration, or unintended configuration changes. Security 
+studies increasingly frame this as an “Internet of Agents” 
+challenge, where agents expand the attack surface by 
+coupling perception, planning, and execution [10]. Recent 
+evidence further suggests that agents with execution 
+privileges can be induced into end -to-end harmful behavior 
+in realistic settings [5]. Togeth er, these risks motivate AI 
+PCPOMA’s local-first design and policy-governed execution 
+model. 
+III. THE AI PC POMA 
+POMA composes specialized small models and tools an 
+SLM-based drafting agent for content generation, a compact 
+multimodal VLM+OCR agent for document and screen 
+understanding, and a sandboxed CUA for GUI interaction 
+coordinated through a local Orchestrator and enforced by a 
+Policy Verifier. 
+POMA is designed around two core principles: 
+1. Privacy by minimized data flow: keep inference 
+and intermediate artifacts on -device by default, and 
+limit inter-agent information sharing to only what is 
+necessary for task completion. 
+2. Trust by controlled action execution: constrain 
+autonomous GUI actions through verification, 
+riskaware policies, and explicit user escalation for 
+highimpact steps. 
+key design goal is to support reliable automation while 
+maintaining meaningful human control. Human oversight is 
+not simply a “confirmation dialog,” but a socio -technical 
+requirement: effective oversight must be calibrated to avoid 
+both over -trust and excessive friction [16]. POMA 
+incorporates structured intervention points and interpretable 
+execution traces consistent with emerging human-in-the-loop 
+agent paradigms [15] and broader system -theoretic views of 
+human–agent interaction [18]. Further, POMA align s with 
+recent calls for safe and responsible agent design rooted in 
+transparency, accountability, and trustworthiness [17]. 
+Contributions 
+The following sections provide details on: 
+1. POMA architecture: a need -based, on -device 
+multiagent framework for workflow automation that 
+composes specialized models for text, multimodal 
+understanding, and GUI action execution. 
+2. Policy-governed autonomy: a Policy Verifier that 
+mediates CUA actions with least privilege primitives, 
+risk scoring, and controlled escalation to human 
+oversight. 
+3. Hardware-aware implementation: an execution 
+pipeline optimized for heterogeneous AI PC acceleration 
+(CPU/GPU/NPU) on Lake -class systems [6], informed 
+by edge LLM execution principles [11], [12], [14]. 
+4. Evaluation methodology: an automation task suite and 
+adversarial safety battery grounded in known agent 
+security threats and injection benchmarks [7], [8], [9], 
+[10], with metrics spanning utility, efficiency, privacy, 
+and safety. 
+ IV . AI PC POMA ARCHITECTURE OVERVIEW 
+A. Need-Based Orchestration 
+At the center of AI PC -POMA is a local Orchestrator, 
+responsible for intent decomposition, task planning, and 
+agent coordination. Given a user goal (e.g., “summarize 
+this report and prepare slides”), the Orchestrator creates 
+a structured plan and activates only the minimal set of 
+agents required (need -based composition). This design 
+reduces compute overhead and limits exposure by 
+979-8-3315-7330-0/26/$31.00 ©2026 IEEE
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 06:40:17 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 3]]
+avoiding unnecessary perception or action modules, 
+aligning with multi -agent scheduling principles 
+proposed for GUI automation systems [4]. Importantly, 
+AI PC -POMA treats untrusted sources (web content, 
+documents, tool outputs) as potential adversarial inp uts, 
+consistent with agent threat models described in the 
+security literature [7], [9], [10]. 
+ 
+Fig. 1. AI PC-POMA is a privacy-preserving on-device 
+multi-agent framework for workflow automation. A 
+local Orchestrator performs need -based task 
+decomposition and coordinates specialized agents 
+(SLM drafting <8B, compact VLM+OCR perception, 
+and sandboxed CUA execution). A Policy Verifier gates 
+high-impact actions via least -privilege primitives and 
+risk-aware escalation. Optional need -based cloud 
+collaboration is enabled through an MCP -managed 
+proxy under strict policy constraints and auditing. B. 
+Specialized On-Device Agents 
+AI PC -POMA composes specialized agents, each 
+powered by compact models optimized for a specific 
+modality or workflow stage: 
+1. Drafting Agent (SLM): The Drafting Agent handles 
+summarization, rewriting, structured extraction, 
+planning, and document generation. AI PC -POMA 
+assumes SLMs below ~8B parameters as a practical 
+deployment target because they offer a strong 
+balance of latency, memory footprint, and accuracy 
+for workflow tasks, and their performance has 
+improved significantly in recent model evolution. 
+This design decision is supported by edge LLM 
+execution trends emphasizing efficient inference 
+and hardware -aware deployment strategies [11], 
+[12], [14]. Keeping drafting local also reduces 
+privacy exposure by avoiding cloud transmission of 
+sensitive enterprise artifacts [13]. 
+2. Perception Agent (Compact VLM + OCR). The 
+Perception Agent performs screen and document 
+understanding over UI regions, PDFs, and slide 
+canvases. It uses OCR and compact multimodal 
+reasoning to extract structured evidence (tables, 
+fields, layout blocks, cha rt labels) needed by 
+downstream planning and drafting. This component 
+is security -critical: indirect prompt injection can 
+enter through OCR text, extracted page content, and 
+tool outputs, motivating strict provenance tagging 
+and separation between untruste d content and 
+control logic [8]–[10]. 
+3. CUA Interaction Agent (Sandboxed GUI Actions). 
+The CUA Interaction Agent executes constrained UI 
+primitives (click/type/scroll/navigation) across 
+applications, enabling real workflow completion 
+beyond text generation. This module draws directly 
+on recent progress in computer-use agents and GUI 
+automation foundations [1] –[3]. However, because 
+execution privileges raise enterprise risk, AI 
+PCPOMA routes all CUA actions through a 
+dedicated Policy Verifier (Section IV-C). 
+4. Media Agent (ASR/TTS, optional). 
+The Media Agent supports transcription and 
+auditory feedback, enabling hands -free workflow 
+control and low -attention confirmations (useful for 
+safety escalation and task status updates). Human – 
+agent interaction research increasingly emphasizes 
+system-level coordination between user oversight 
+and autonomy in agentic environments [15], [18]. 
+V. POLICY-GOVERNED AUTONOMY: POLICY VERIFIER 
+FOR CONTROLLED CUA EXECUTION 
+A central contribution of AI PC -POMA is policy -governed 
+autonomy: a runtime Policy Verifier that mediates highimpact 
+actions issued by the computer -use agent (CUA) to reduce 
+unsafe automation under untrusted inputs. While recent CUA 
+and multi-agent systems demonstrate strong GUI interaction 
+capability [1]–[4], enterprise deployment requires safeguards 
+because CUAs operate amid mixed-trust content (web pages, 
+PDFs, shared documents, emails, and tool outputs). Tool -
+integrated agents are vulnerable to indirect prompt injection, 
+where malicious instructions embedded in retrieved or 
+observed content can redirect tool use and execution despite 
+benign user intent [7], [8]. More broadly, agentic workflows 
+979-8-3315-7330-0/26/$31.00 ©2026 IEEE
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 06:40:17 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 4]]
+expand the attack surface by coupling perception, reasoning, 
+and action, enabling manipulation through intermediate 
+artifacts (OCR text, extracted HTML, file previews) and tool 
+responses [9], [10]. With unconstrained execution privileges, 
+agents can be ind uced into end -to-end harmful behavior in 
+realistic settings [5]. These findings motivate AI PC-POMA’s 
+stance: actions must be verified at execution time, not trusted 
+by default. 
+ 
+A. Action Model: Typed, Least-Privilege Primitives 
+AI PC -POMA restricts the CUA to a typed set of 
+leastprivilege action primitives, avoiding unconstrained 
+scripts and reducing the damage from both errors and 
+adversarial manipulation. This aligns with least-privilege tool 
+authorization frameworks (e.g., Min iScope [20]). Each 
+primitive is bounded and auditable, enabling verification 
+based on what the agent will execute. Core primitives 
+(illustrative): OPEN_URL, CLICK, TYPE, SCROLL, 
+DOWNLOAD, UPLOAD, COPY/PASTE, 
+CONFIRM_DIALOG. Each action request includes an 
+envelope with: (i) plan-step binding, (ii) evidence provenance 
+(OCR/VLM/web/email/user), (iii) sensitivity tags 
+(PII/credential/confidential/public), (iv) destination identity 
+and trust tier, (v) rationale, and (vi) expected post-condition. 
+This provides enough context for verification without relying 
+on the agent to self-police. 
+ 
+B. Risk Model: Impact × Uncertainty 
+For each action 𝑎, the verifier computes a risk score 
+combining: 
+• Impact: potential harm if wrong (low: navigation; 
+medium: local edits/forms; high: credential entry, 
+permission grants, external upload/share, executable 
+downloads). 
+• Uncertainty (evidence trust): evidence from 
+untrusted channels (web content, OCR text, extracted 
+HTML, tool outputs) is treated as lower trust because 
+these are key injection and workflow manipulation 
+pathways [8] –[10]. This mitigates a common 
+weakness identified in security analyses: authorizing 
+high-impact actions using low -trust evidence [7], [9]. 
+In practice, environment-derived instructions are non-
+authoritative unless corroborated by trusted signals or 
+escalated. 
+ 
+C. Policy Checks and Outcomes 
+Before execution, the verifier enforces a policy chain: 
+• Intent alignment: action must advance the user 
+goal and approved plan step; actions justified mainly 
+by untrusted instructions are denied or escalated, 
+addressing trust–authorization mismatch [21]. 
+• Destination trust: allow/deny rules for 
+apps/domains; unknown endpoints raise risk, 
+especially with data transfer. 
+• Data exposure: detect/redact sensitive values and 
+escalate external transfer of confidential content 
+[13]. 
+• Scope enforcement: prevent privilege creep 
+beyond minimal required permissions [20]. 
+• UI integrity checks: validate app/window identity 
+and flag suspicious dialogs or context switches. 
+Actions are classified as ALLOW, ESCALATE 
+(user confirmation required), or DENY . 
+ 
+Fig. 2. Policy verification pipeline for safe CUA execution 
+in AI PC-POMA; Given an action request and context, the 
+Policy Verifier checks intent alignment, destination trust, and 
+sensitive-data exposure, computes a risk score, and applies 
+least-privilege gating. High-risk actions trigger escalation to 
+human oversight, unsafe actions are denied, and decisions 
+are logged for accountability. 
+D. Boundary Firewalls for Tool Feedback Because 
+injections can propagate through intermediate artifacts, AI 
+PC-POMA applies “minimize & sanitize” boundary defenses 
+[25] to prevent untrusted tool outputs from becoming control 
+signals: 
+• Tool-Input Minimizer : strips irrelevant context and 
+minimizes sensitive export. 
+979-8-3315-7330-0/26/$31.00 ©2026 IEEE
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 06:40:17 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 5]]
+• Tool-Output Sanitizer: removes instruction -like 
+patterns, tags provenance, and downgrades trust. 
+These complement runtime guardrail systems (e.g., Llama 
+Firewall [26]) and reduce indirect injection impact when tool 
+boundaries are exposed [8], [25]. 
+ 
+E. Escalation, Human Oversight, and Auditing High-
+impact or ambiguous actions trigger escalation with a short 
+explanation of what will happen, what data is involved, and 
+where it is going. This supports calibrated human oversight 
+that avoids both over -trust and excessive friction [16], 
+consistent wit h human -in-the-loop agent paradigms [15], 
+[18] and broader trustworthy agent principles [17]. Finally, 
+AI PC-POMA maintains an append -only audit trail logging 
+action requests (with provenance/sensitivity/destinatio n), 
+risk score, policy decision, and execution/post -condition 
+outcomes. Combined, least -privilege primitives, risk -aware 
+gating, boundary sanitization, and escalation operationalize 
+trust by controlled action execution, improving robustness to 
+injection and workflow exploits while preserving automation 
+utility [7]– [10]. 
+ VI. HARDWARE-AWARE IMPLEMENTATION: AI PC- 
+CLASS HETEROGENEOUS ACCELERA TION ENABLES 
+ONDEVICE MULTI-AGENT AUTOMA TION 
+AI PC-POMA is designed around the observation that modern 
+AI PCs now provide sufficient heterogeneous acceleration 
+spanning CPU, integrated GPU, and NPU —to support 
+practical, privacy -preserving, on -device agentic workflows. 
+This capability is critical for enterprise automation, where 
+data locality and responsive interaction often outweigh the 
+benefits of cloud -scale inference. Recent surveys of edge 
+LLM execution emphasize that model compression, runtime 
+optimization, and hardware -aware scheduling have 
+collectively made on -device language and multimodal 
+inference increasingly feasible in real applications [11], [12], 
+[14]. AI PC -POMA leverages these principles and targets 
+Panther Lake -class systems using OpenVINO ™ as the 
+enabling runtime layer for optimized inference and 
+heterogeneous deployment [6]. 
+A. AI PC Hardware Resources: Panther Lake and Lunar 
+Lake 
+Next-generation Intel AI PC processors illustrate the scale of 
+on-device acceleration now available. Intel’s Lunar Lake 
+platform is positioned explicitly for AI PC workloads, 
+featuring 40+ NPU TOPS, 60+ GPU TOPS, and 100+ total 
+platform TOPS (CPU+GPU+NPU), enabling substantial 
+local inference throughput for interactive AI experiences. 
+Building on this trajectory, Intel’s Panther Lake (Core Ultra 
+Series 3) further strengthens local AI execution, with top 
+SKUs advertising up to 50 NPU TOPS alongside 
+highperformance CPU and integrated Arc GPU capabilities 
+intended for demanding multitask workloads as shown in 
+table 1. 
+For AI PC-POMA, these heterogeneous resources provide a 
+practical substrate for running multiple specialized agents 
+concurrently (drafting, multimodal perception, policy 
+verification, and GUI automation) without requiring 
+persistent cloud calls, aligning w ith enterprise requirements 
+for responsiveness, cost predictability, and reduced data 
+movement. 
+AI PC 9 288v 
+First Token 
+Latency 
+Second Token 
+Latency 
+AI PC iGPU 
+Qwen 0.5B 95.7 ms 11.5 ms 
+AI PC NPU 
+MLPerf 1.09 s 
+≈ 53.9 ms/token 
+(from 18.55 TPS) 
+Table 1: AI PC Performance Metrics [32], [33], [34] 
+B. Model Landscape: Improving Small Models and Compact 
+Multimodal Stacks 
+In parallel with hardware progress, the model ecosystem has 
+shifted toward smaller, higher -performing open and 
+enterprise-ready models that are increasingly suitable for 
+local execution. The growing popularity of compact LMs 
+such as Qwen2.5 [28] illustrates how strong performance can 
+be achieved across a spectrum of deployment constraints, 
+including on-device settings. 
+Similarly, Microsoft’s Phi family demonstrates continued 
+progress in high-quality “small” language models, with Phi 4 
+[28], showing strong performance for its size class and 
+motivating practical on -device usage via optimization and 
+quantization on capable AI PC hardware. Importantly, AI 
+PC-POMA’s design does not depend on a single fixed model. 
+Instead, it assumes a portfolio of specialized, compact models 
+(e.g., SLMs, OCR stacks, and compact VLMs) whose 
+performance improves generation -over-generation, enabl ing 
+a modular multi -agent approach where each component 
+model is selected to match latency, privacy, and task 
+requirements [11], [12], [14] 
+VII. EV ALUA TION METHODOLOGY: WORKFLOW TASK 
+SUITE + ADVERSARIAL SAFETY BATTERY 
+AI PC -POMA is evaluated using a methodology that 
+measures not only workflow utility, but also privacy exposure 
+and safety under realistic agent threats. This is motivated by 
+growing evidence that agentic systems expand the attack 
+surface beyond traditional model failure modes because they 
+combine perception, planning, tool use, and real -world 
+execution in open environments [7], [9], [10]. In particular, 
+indirect prompt injection can manipulate tool -integrated 
+agents through untrusted content and intermediate arti facts 
+979-8-3315-7330-0/26/$31.00 ©2026 IEEE
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 06:40:17 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 6]]
+(e.g., extracted HTML, OCR text), motivating evaluations 
+that stress action safety and tool robustness rather than purely 
+linguistic quality [8]. Accordingly, AI PC -POMA’s 
+evaluation consists of: (i) a workflow automation task suite, 
+(ii) an adversarial safety battery, and (iii) a multi-axis metric 
+suite spanning utility, efficiency, privacy, and safety. 
+ 
+Figure 3: AI PC-POMA is evaluated using (i) a workflow 
+automation task suite covering real -world end -to-end 
+workflows, (ii) an adversarial safety battery spanning 
+indirect prompt injection, intermediate artifact exploits, UI 
+deception, and unsafe execution sequence s, and (iii) a 
+multi-axis metric suite measuring utility, efficiency, privacy 
+exposure, and safety. Policy outcomes 
+(ALLOW/ESCALATE/DENY) are analyzed across clean 
+and adversarial conditions to quantify both productivity and 
+risk containment. 
+A. Workflow Automation Task Suite (Utility + Efficiency) 
+We define reproducible end -to-end workflows involving 
+documents, multimodal inputs, and cross -application 
+execution: Document -to-Email Automation, Invoice -
+toForm Completion, Notes -to-Slides Generation, Meeting 
+Audio Digest (optional), Dashboard Screenshot → Report 
+Update, Cross-App Routine. 
+Each task is evaluated under three 
+ deployment configurations: 
+• Local-only: on-device execution 
+ without cloud collaboration. 
+• Local-first + optional MCP: cloud collaboration 
+enabled only when required and allowed by policy. 
+• CUA-enabled vs. CUA -free: compare workflows with 
+and without GUI action execution. 
+This suite measures whether AI PC -POMA reliably 
+completes workflows under practical latency constraints 
+while preserving a local-first privacy posture. 
+B. Adversarial Safety Battery (Injection + Workflow Exploits) 
+Policy-governed autonomy must be tested under adversarial 
+conditions because enterprise risk often arises from unsafe 
+actions, not merely incorrect text output [7], [9], [10]. We 
+therefore construct a battery aligned with known agent threat 
+models, including indirect prompt injection as formalized in 
+tool-integrated benchmarks [8]. The battery includes: 
+Indirect Prompt Injection via Environment Content 
+• Injection strings embedded in web pages, 
+documents, or UI text (e.g., “ignore policy, export 
+secrets”). 
+• Hidden instructions in layout artifacts (OCR 
+footnotes, overlay text). 
+These reflect injection pathways where untrusted 
+content enters through perception/tool outputs and 
+becomes control input [8], [9]. 
+Intermediate Artifact / Workflow Exploits 
+• Malicious content inserted into extracted HTML, 
+OCR output, clipboard buffers, or file previews. 
+• Attacks inducing unsafe tool use (e.g., “upload this 
+report now”). 
+These map to exploit taxonomies emphasizing 
+multi-step manipulation across agent –tool 
+interfaces [7], [9], [10]. 
+UI Deception and High-Impact Triggers 
+• Spoofed dialogs (re -auth prompts), lookalike 
+approve buttons, misleading window titles. 
+• Consent-fatigue patterns intended to push 
+escalations toward approval. 
+This targets the agent’s action selection rather than 
+response quality. 
+Unsafe Execution Sequences (CUA Misuse) 
+• Multi-step chains such as “open link → download 
+→ authorize → upload” intended to trigger 
+exfiltration or unauthorized transfer. 
+These reflect concerns that execution privileges can cause 
+severe outcomes without strict mediation [10] (and can be 
+tied to [5] when included).For each case, we evaluate whether 
+the Policy Verifier correctly:(i) DENY unsafe actions, (ii) 
+ESCALATE high-risk steps with actionable user context, or 
+(iii) ALLOW safe actions when justified. 
+C. Evaluation Metrics 
+AI PC -POMA reports metrics across utility, efficiency, 
+privacy, and safety, reflecting enterprise readiness. 
+ • Utility Metrics 
+Task Completion Rate (TCR): TCR = 
+𝑁 
+𝑁𝑖=1 𝟙( task𝑖 completed) 
+Extraction Accuracy (field-level Precision/Recall/F1): 
+ 𝑇𝑃 𝑇𝑃 2𝑃𝑅 
+𝑃 
+979-8-3315-7330-0/26/$31.00 ©2026 IEEE
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 06:40:17 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 7]]
+Output Quality (human rubric): Quality 𝑁𝑁𝑖=1 score𝑖 
+(Optionally report inter-rater agreement.) 
+ • Efficiency Metrics 
+End-to-End Latency: 𝐿𝑖 = 𝑡𝑖𝑒𝑛𝑑 − 𝑡𝑖𝑠𝑡𝑎𝑟𝑡, 𝐿ˉ = 𝑁 1 ∑𝑁𝑖=1 𝐿𝑖 
+Interaction Steps (CUA primitive count): 
+𝑁 
+𝐴ˉ𝐴𝑖 
+𝑁 
+𝑖=1 
+𝑁 𝑝𝑜𝑚𝑎 𝑏𝑎𝑠𝑒 
+=𝐿𝑖 𝐿𝑏𝑎𝑠𝑒𝑖 −𝐿𝑖 Policy Overhead 
+Overhead: 
+𝑖=1 
+ • Privacy Metrics 
+Bytes Leaving Device: OutboundBytes = ∑𝑁𝑖=1 𝐵𝑖 , 𝐵ˉ = 
+𝑁1 𝑁 𝐵𝑖 
+∑𝑖=1 
+External Call Count: 𝑁𝑁𝑖=1 𝐶𝑖 
+Sensitive Exposure Rate (SER): SER 
+∑𝑖=1𝑆𝑖 
+SER captures how often sensitive content crosses the device 
+boundary, a key risk vector in enterprise deployments [9], 
+[10], [13]. 
+ • Safety and Trust Metrics 
+Attack Success Rate (ASR): 
+#successful attacks 
+ASR = 
+#total attacks 
+(consistent with injection benchmark reporting [8]) 
+𝑈 
+Unsafe Action Rate (False-Allow)=UAR = 
+𝑇 
+𝐵 
+True Block Rate: TBR = 
+𝑇 
+𝐸 
+Escalation Accuracy: EA = 
+𝐻 
+Confirmation Burden: 𝐾ˉ 𝑁𝐾𝑖 
+This captures the safety–usability tradeoff; calibrated human 
+oversight is necessary for safe autonomy [16]. 
+D. Baselines and Ablations 
+To isolate safety and performance contributions, we compare 
+AI PC-POMA against: 
+Baselines: (i) CUA -only without verifier gating, (ii) 
+singleagent end -to-end baseline, (iii) optional cloud -first 
+baseline 
+(if permitted). 
+Ablations: remove Policy Verifier, remove provenance 
+tagging, or remove escalation (always allow/deny) to 
+measure safety–usability tradeoffs. 
+E. Reporting and Reproducibility 
+AI PC -POMA logs structured traces including plan steps, 
+agent outputs (redacted when needed), policy decisions 
+(allow/deny/escalate), and executed CUA actions. This 
+supports reproducibility and aligns evaluation with 
+governance expectations emphasized in a gent security 
+analyses [7], [10]. Together, workflow performance metrics 
+and adversarial outcomes provide a holistic assessment of 
+automation utility and risk containment. 
+VIII. CONCLUSION AND FUTURE WORK 
+This paper introduced AI PC -POMA, a privacy -preserving 
+on-device multi-agent architecture for personal and enterprise 
+workflow automation on AI PCs. POMA composes 
+specialized agents an SLM (<8B) drafting agent, a compact 
+VLM+OCR perception agent, and a sandboxed computer-use 
+agent (CUA) coordinated by a local 
+Orchestrator and governed by a runtime Policy Verifier. The 
+system is designed around two principles: privacy by 
+minimized data flow, achieved through local -first execution 
+and controlled information sharing, and trust by controlled 
+action execution, achie ved through least -privilege action 
+primitives, risk -aware gating, escalation for high -impact 
+actions, and auditable execution traces. To assess real -world 
+deployment readiness, we proposed an evaluation 
+methodology combining a workflow automation task suit e 
+with an adversarial safety battery targeting indirect prompt 
+injection and workflow -level exploits, and we defined a 
+metric taxonomy spanning utility, efficiency, privacy 
+exposure, and trust. Together, AI PC-POMA demonstrates a 
+practical path toward low-cost AI PC automation that reduces 
+exposure to untrusted inputs while preserving usability and 
+enterprise governance requirements. 
+Future work will extend AI PC-POMA along four directions. 
+First, we will strengthen policy learning and risk calibration, 
+enabling adaptive thresholds and organization -specific 
+controls while preserving transparency. Second, we will 
+improve C UA robustness against UI deception and 
+979-8-3315-7330-0/26/$31.00 ©2026 IEEE
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 06:40:17 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 8]]
+promptinjection pathways through stronger UI integrity 
+checks, stricter sandboxing, and richer state validation before 
+highimpact actions. Third, we will expand the adversarial 
+battery and privacy metrics to cover broader real -world 
+threats (multi-step social engineering, artifact -based attacks) 
+and more expressive leakage measures beyond raw bytes. 
+Finally, we will study scalable deployment optimizations, 
+including dynamic model selection and CPU/GPU/NPU -
+aware scheduling, and tighter governance for optiona l MCP 
+cloud collaboration under strict auditing. 
+REFERENCES 
+[1]. P . J. Sager et al., "A Comprehensive Survey of Agents for Computer Use: 
+Foundations, Challenges, and Future Directions," arXiv preprint 
+arXiv:2501.16150v2, June 2025. 
+[2]. J. Ye et al., "Mobile -Agent-v3: Fundamental Agents for GUI 
+Automation," arXiv preprint arXiv:2508.15144, Aug. 2025. 
+[3]. X. Wang et al., "OpenCUA: Open Foundations for Computer -Use 
+Agents," arXiv preprint arXiv:2508.09123, Aug. 2025. 
+[4]. L. Alokia et al., "COLA: Collaborative Multi -Agent Framework with 
+Dynamic Task Scheduling for GUI Automation," Proc. of the 2025 
+Conference on Empirical Methods in Natural Language Processing 
+(EMNLP), Jan. 2025. 
+[5]. W. Luo et al., "Code Agent can be an End -to-end System Hacker: 
+Benchmarking Real -world Threats of Computer -use Agent," arXiv 
+preprint arXiv:2510.06607, Oct. 2025. 
+[6]. Intel Corporation, "Heterogeneous AI Acceleration on Panther Lake 
+Architectures with OpenVINO ™ 2026," Intel Technical Whitepaper, 
+vol. 4, no. 1, 2026. 
+[7]. Z. Deng et al. , "AI Agents Under Threat: A Survey of Key Security 
+Challenges and Future Directions," ACM Comput. Surv., vol. 57, no. 1, 
+Jan. 2025, doi: 10.1145/3690647. 
+[8]. Q. Zhan et al., "InjecAgent: Benchmarking Indirect Prompt Injections in 
+Tool-Integrated LLM Agents," in Findings of the Association for 
+Computational Linguistics: ACL 2024, Bangkok, Thailand, Aug. 2024, 
+pp. 11064–11082. 
+[9]. M. A. Ferrag et al. , "From Prompt Injections to Protocol Exploits: 
+Threats in LLM-Powered AI Agents Workflows," ICT Express, vol. 11, 
+no. 1, pp. 1001–1018, Mar. 2025, doi: 10.1016/j.icte.2025.12.001. 
+[10]. Y . Tang et al. , "Security of Internet of Agents: Attacks and 
+Countermeasures," IEEE Open J. Comput. Soc. , vol. 6, pp. 142 –159, 
+2025, doi: 10.1109/OJCS.2025.3589638. 
+[11]. Y . Zheng, Y . Chen, B. Qian, and X. Shi, "A Review on Edge Large 
+Language Models: Design, Execution, and Applications," ACM 
+Comput. Surv., vol. 57, no. 4, Art. no. 111, Aug. 2025, doi: 
+10.1145/3702145. 
+[12]. G. Qu et al. , "Mobile Edge Intelligence for Large Language 
+Models: A Contemporary Survey," IEEE Commun. Surveys Tuts., 
+vol. 27, no. 1, pp. 3820 –3860, 2025, doi: 
+10.1109/COMST.2025.3527641. 
+[13]. B. Yan, S. Wang, T. Zhu, B. Liu, and M. Ding, "On Protecting the 
+Data Privacy of Large Language Models and LLM Agents," ACM 
+Comput. Surv., vol. 57, no. 5, Sep. 2025, doi: 10.1145/3710294. 
+[14]. G. Cai, D. Y uan, Z. Yang, and L. Cui, "Efficient Inference for 
+Edge 
+Large Language Models: A Hardware-Aware Survey," J. Edge 
+Comput., vol. 5, no. 1, pp. 42–68, Jan. 2026. 
+[15]. H. Mozannar et al., "Magentic-UI: Towards Human-in-the-loop 
+Agentic Systems," arXiv preprint arXiv:2507.22358, July 2025. 
+[16]. M. Langer, C. J. König, and V . Busch, "Effective Human 
+Oversight of AI -Based Systems: A Signal Detection Theory 
+Perspective," Minds Mach. , vol. 34, no. 2, pp. 245 –268, June 
+2024, doi: 10.1007/s11023024-09672-1. 
+[17]. E. C. Cheng, J. Cheng, and A. Siu, "Toward Safe and Responsible 
+AI Agents: A Three -Pillar Model for Transparency, 
+Accountability, and Trustworthiness," arXiv preprint 
+arXiv:2601.06223, Jan. 2026. 
+[18]. U. M. Borghoff, P . Bottoni, and R. Pareschi, "Human-artificial 
+interaction in the age of agentic AI: a system -theoretical 
+approach," Front. Hum. Dyn. , vol. 7, Art. no. 1579166, May 
+2025, doi: 10.3389/fhumd.2025.1579166. 
+[19]. I. Evtimov et al. , “WASP: Benchmarking Web Agent Security 
+Against Prompt Injection Attacks,” arXiv:2504.18575, 2025. 
+[20]. J. Zhu et al. , “MiniScope: A Least Privilege Framework for 
+Authorizing Tool Calling Agents,” arXiv:2512.11147, 2025. 
+[21]. G. Shi et al., “SoK: Trust-Authorization Mismatch in LLM Agent 
+Interactions,” arXiv:2512.06914, 2025. 
+[22]. H. Errico et al., “Securing the Model Context Protocol (MCP): 
+Risks, Controls, and Governance,” arXiv:2511.20920, 2025. 
+[23]. H. Jing et al. , “MCIP: Protecting MCP Safety via Model 
+Contextual Integrity Protocol,” EMNLP 2025. 
+[24]. R. Bhagwatkar et al., “Indirect Prompt Injections: Are Firewalls 
+All You Need, or Stronger Benchmarks?,” arXiv:2510.05244, 
+2025. 
+[25]. S. Chennabasappa et al. , “LlamaFirewall: An Open Source 
+Guardrail System for Building Secure AI Agents,” 
+arXiv:2505.03574, 2025. 
+[26]. OWASP GenAI Security Project, “LLM01: Prompt Injection,” 
+2025. 
+[27]. M. Abdin et al., “Phi-4 Technical Report,” arXiv:2412.08905 
+(2024). 
+[28]. B. Hui et al., “Qwen2.5-Coder Technical Report,” 
+arXiv:2409.12186 (2024) 
+[29]. I. Evtimov et al ., “WASP: Benchmarking Web Agent Security 
+Against Prompt Injection Attacks,” arXiv preprint 
+arXiv:2504.18575, 2025. 
+[30]. Q. Zhan et al ., “InjecAgent: Benchmarking Indirect Prompt 
+Injections in Tool-Integrated LLM Agents,” in Findings of ACL 2024, 
+Aug. 2024. [31]. P. Christen, D. J. Hand, and N. Kirielle, “A Review 
+of the F-Measure: Its History, Properties, Criticism, and Alternatives,” 
+ACM Comput. Surv., vol. 56, no. 3, 2023, doi: 10.1145/3606367. 
+[32]. Intel Corporation, “Intel Achieves First, Only Full NPU Support 
+in MLPerf Client v0.6 Benchmark,” Intel Newsroom, May 5, 
+2025. 
+ [33]. MLCommons, “MLPerf Client Benchmark,” 
+ MLCommons 
+Benchmarks, 2025. 
+[34]. Intel OpenVINO Team, “Most Efficient Large Language Models 
+for AI PC,” OpenVINO Documentation (Performance 
+Benchmarks), OpenVINO 2024.4, Nov. 20, 2024. 
+ 
+979-8-3315-7330-0/26/$31.00 ©2026 IEEE
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 06:40:17 UTC from IEEE Xplore. Restrictions apply.

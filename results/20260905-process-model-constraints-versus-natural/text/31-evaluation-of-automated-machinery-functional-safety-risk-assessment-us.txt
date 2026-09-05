@@ -1,0 +1,1938 @@
+[[page 1]]
+Received 14 October 2025, accepted 6 November 2025, date of publication 13 November 2025,
+date of current version 5 December 2025.
+Digital Object Identifier 10.1 109/ACCESS.2025.3632528
+Evaluation of Automated Machinery Functional
+Safety Risk Assessment Using LLMs
+PADMA IYENGHAR
+ 1,2, ZAHER MANSOUR 2, AND JUERGEN WUEBBELMANN
+ 2
+1innotec GmbH, 70794 Filderstadt, Germany
+2Faculty of Engineering and Computer Science, University of Applied Sciences Osnabrück, 49076 Osnabrück, Germany
+Corresponding author: Padma Iyenghar (padma.iyenghar@hs-osnabrueck.de)
+ABSTRACT Accurate classification of required Performance Level (PLr ) for hazard scenarios in machinery
+functional safety risk assessment demands expert-level interpretation of technical standards (e.g. ISO
+12100 and ISO 13849-1) and functional safety domain knowledge. To address this, a prompt-layered
+architecture is proposed, introducing a structured, multi-stage prompting design that operationalizes
+the ISO 13849-1 risk graph through deterministic Natural Language Processing and Natural Language
+Understanding (NLP–NLU) logic. Building on this architecture, this study develops and evaluates a novel,
+structured, multi-stage, standards-aligned Large Language Model (LLM) prompting framework engineered
+to explicitly map the sequential, conditional decision logic of the ISO 13849-1 risk graph. It represents
+a novel application of deterministic NLP–NLU prompting to non-reasoning LLMs, implementing a
+standards-aligned functional safety workflow that systematically evaluates rule-constrained and retrieval-
+augmented prompts for reproducible PL r classification. The evaluation pipeline systematically tests LLMs
+for PL r determination across modular prompts (zero-shot, rule-based, retrieval-augmented, and hybrid),
+leveraging a 7,800-scenario dataset and three complementary test regimes namely, baseline, robustness,
+and cross-architecture comparison, to characterize model accuracy and stability. Results show that explicit
+ISO rule-based prompting lifts PL r accuracy from less than 50% (zero-shot) to about 99% with mid-scale,
+instruction-tuned models. Retrieval augmentation adds little beyond rules and can increase latency, while
+hybrid prompts do not consistently improve stability. These findings provide clear deployment guidance:
+use rule-based prompting with mid-scale instruction-tuned LLMs for reliable, low-latency industrial safety
+assessments, and consider on-premise or domain-adapted open-source models to maintain data sovereignty
+and regulatory compliance.
+INDEX TERMS Machinery functional safety, PL r classification, large language models, retrieval-
+augmented generation, prompt engineering, industrial AI pipelines, risk assessment.
+I. INTRODUCTION
+Ensuring the functional safety of industrial machinery is
+a legal and engineering obligation within the European
+Union, governed by Regulation (EU) 2023/1230 on machin-
+ery [1]. This regulation outlines essential health and safety
+requirements for machinery and explicitly addresses modern
+challenges such as the integration of digital technologies,
+artificial intelligence, and cybersecurity risks. Manufacturers
+must demonstrate compliance with these requirements to
+obtain CE marking, which is a mandatory declaration
+The associate editor coordinating the review of this manuscript and
+approving it for publication was Jiankang Zhang
+ .
+indicating that machinery meets EU safety standards and
+is permitted for circulation within the European Economic
+Area.
+To fulfill these obligations, manufacturers rely on har-
+monized standards such as ISO 12100 and ISO 13849-1.
+ISO 12100 provides the general methodology for systematic
+hazard identification and risk assessment, while ISO 13849-1
+offers detailed guidance on determining the Required Perfor-
+mance Level (PL r ) of safety functions. This determination
+involves evaluating three core risk parameters: the severity of
+potential harm (S), the frequency and duration of exposure
+(F), and the possibility of avoiding the hazard (P) [2], [3].
+203648
+
+ 2025 The Authors. This work is licensed under a Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 License.
+For more information, see https://creativecommons.org/licenses/by-nc-nd/4.0/ VOLUME 13, 2025
+
+[[page 2]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+In practice, this process is executed through semi-
+quantitative risk graphs and expert judgment, requiring
+trained professionals to interpret diverse hazard scenarios
+in accordance with the standards. While established, this
+expert-driven process is labor-intensive, prone to inter-rater
+variability, and difficult to scale.
+Bridging the gap between labor-intensive expertise and
+scalable automation, recent advances in Large Language
+Models (LLMs) have inspired efforts to apply these systems
+to rule-driven safety tasks. Empirical evidence suggests
+that embedding formal regulatory rules into prompt tem-
+plates can both constrain model outputs thereby reducing
+variance and enhance alignment with technical standards,
+while retrieval-augmented generation (RAG) techniques
+supply relevant precedent cases to bolster factual con-
+sistency and provide clearer, example-grounded reasoning
+paths [4], [5], [6].
+While prototype LLM pipelines [7], [8] have begun to
+integrate domain logic directly into prompts or dynam-
+ically inject curated safety knowledge, these efforts are
+mostly constrained to isolated scenarios or single-model
+demonstrations. However, in machinery functional safety
+where PL r estimation demands strict adherence to ISO
+risk classification logic and deterministic model behav-
+ior, the real challenge lies in evaluating these methods
+holistically. It remains unknown how structured input
+strategies ranging from zero-shot to rule-based, retrieval-
+augmented, and hybrid configurations interact with differ-
+ent model architectures to impact classification accuracy,
+inference stability, and latency under realistic deployment
+conditions.
+Unlike prior demonstrations that apply LLMs to isolated
+safety scenarios or rely on ad-hoc prompting heuristics,
+this work introduces a systematic and standards-aligned
+benchmark for PLr classification grounded in ISO 12100 and
+ISO 13849-1. The proposed framework formalizes prompt
+construction through deterministic ISO rule encoding and
+explicit placeholders, enabling transparent ablation of rule-
+based, retrieval-augmented, and hybrid prompting strate-
+gies. In contrast to qualitative case studies, the evaluation
+adopts a quantitative and reproducible methodology com-
+prising structured datasets, fixed decoding parameters, and
+multi-model comparisons to measure accuracy, robustness,
+and latency under controlled conditions. This integrated
+design bridges empirical AI evaluation with the formal struc-
+ture of functional-safety standards, establishing a repeatable
+protocol for assessing the reliability of LLM-assisted risk
+assessment pipelines.
+Therefore, addressing the aforesaid gaps, this study
+presents a multidimensional evaluation of LLM-based PL r
+estimation. Our contributions include:
+• Structured prompt-layered evaluation framework:A
+reproducible methodology that incrementally integrates
+ISO rules, retrieved precedent hazards, and deterministic
+instructions to quantify their effects on PL r prediction.
+This layered architecture enables transparent ablation
+and is optimized for scene-specific accuracy under
+ISO 13849-1 constraints.
+• Modular framework for multidimensional evalua-
+tion: Incremental use of raw hazard scenario text,
+embedded rule templates, retrieved precedent cases,
+and combined prompts to quantify their effects on PL r
+prediction accuracy and latency.
+• Systematic benchmarking: Application of three test
+regimes comprehensive baseline, repeated-sampling
+robustness, and cross-model comparison across four
+input conditions and three model families (mid-scale
+GPT, instruction-tuned, and open-source LLMs), yield-
+ing a comprehensive, end-to-end performance profile for
+PLr classification.
+• Deployment guidelines: Evidence-based recommenda-
+tions advocating rule-based prompts with mid-scale,
+instruction-tuned models for production throughput and
+accuracy, alongside on-premise inference of fine-tuned
+or open-source LLMs to guarantee data sovereignty and
+regulatory compliance.
+These contributions are explicitly enumerated in Sec-
+tion III to highlight the paper’s technical advances,
+as requested by reviewers.
+The remainder of this paper is organized as follows.
+Following this short introduction, section II provides a
+background on machinery functional safety risk assessment
+as per ISO 12100 and ISO 13849-1 standards and related
+work pertaining to the main scope of the paper. Section IV
+describes the experimental setup and system design for
+the evaluation. Section V presents results and analysis.
+Section VI concludes with practical implications and future
+research directions.
+II. BACKGROUND AND RELATED WORK
+Risk assessment in industrial contexts, particularly in func-
+tional safety, has long relied on expert-led procedures guided
+by standards such as ISO 12100 [2] and ISO 13849 [3].
+However, the emergence of LLMs has opened new opportu-
+nities to automate and augment these tasks through advanced
+natural language understanding and reasoning. This section
+first presents a background on machinery functional safety
+risk assessment in section II-A. Following this, a review of
+prior research and related work on the application of LLMs in
+safety-critical domains, covering their use in hazard analysis,
+prompt engineering, retrieval augmentation, and their role in
+functional safety risk classification is presented.
+A. MACHINERY FUNCTIONAL SAFETY RISK ASSESSMENT
+Machinery safety is a concern for suppliers and manu-
+facturing businesses throughout the world, and there are
+a wide variety of regulations [1] which help to protect
+people, assets and property from harm. Most industrial
+manufacturing environments involve complex assemblies of
+heterogeneous machinery, each requiring compliance with
+applicable safety regulations [9], [10]. The EU Machinery
+VOLUME 13, 2025 203649
+
+[[page 3]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+Directive (2006/42/EC) [1] mandates that such equipment
+meet essential health and safety requirements as a prereq-
+uisite for CE marking a legal obligation for market access
+within the European Union. A core component of this
+compliance process is a structured hazard analysis and risk
+assessment for each machine covered by the Directive.
+ISO 12100 [2] is an international standard which specifies
+basic terminology, principles and methodology for achieving
+safety in the design of machinery. It specifies principles
+of risk assessment and risk reduction to help designers
+in achieving this objective. Procedures are described for
+identifying hazards, estimating and evaluating risks during
+relevant phases of the machine life cycle. For instance,
+a hazard refers to something that potentially causes harm and
+the risk is a combination of the probability and severity of the
+harm. For example, a sharp part is a hazard. When it is in a
+prominent position, it creates a risk.
+1) RISK ASSESSMENT
+The iterative process of risk assessment and reduction is
+shown in Fig. 1. A risk assessment follows a series of logical
+steps to identify and examine any potential hazards associated
+with machinery. The process starts with hazard identification
+in terms of machine space, time, and usage limits. The hazard
+is then estimated by risk elements such as harm severity
+(S), occurrence frequency (F), and avoidance or limitation
+probability (P). Based on the information obtained, this risk
+will be finally evaluated whether it is acceptable. If not, risk
+reduction measures are required. The whole process is called
+FIGURE 1. The iterative process of risk assessment and risk reduction [2],
+[3], [11].
+FIGURE 2. Risk graph from ISO 13849-1:annex A [3].
+risk assessment. Iteration of this process can be necessary
+to eliminate hazards as far as practicable and to adequately
+reduce risks by the implementation of protective measures.
+Protective measures play an important role in risk reduction.
+Such measures include protection devices and safety controls,
+the combination of which is called the Safety-Related Part of
+the Control System (SRP/CS) [3], [11].
+2) SAFETY FUNCTION
+Safety functions (SFs) are the machine functions that cause
+an immediate increase in risk upon failure [3]. A single SF
+can be implemented by multiple SRP/CSs. A single SRP/CS
+may also implement multiple SFs, such as prevention of
+accidental start-up and limits regarding safety parameters in
+temperature and pressure. For example, the control system
+shuts down the furnace fire when the boiler pressure reaches a
+dangerous value. If this function fails, excessive pressure will
+lead to an explosion. In this scenario, safety depends on the
+SRP/CS performing the correct function. Each SF is tasked
+with reducing the risk of one or more hazardous events. It is
+necessary to consider each hazard and its corresponding SF
+in the design. The risk assessment results influence the PL r
+value for the SF.
+B. REQUIRED PERFORMANCE LEVEL-PL R
+PLr is the risk reduction expectation required for the
+implementation of an SF and can be determined by the
+risk graph (cf. Fig. 2). A risk graph is a grading-based risk
+estimation method with parameters S, F and P corresponding
+to the severity of harm, the duration or frequency of operator
+exposure to the hazard area, and the probability of avoiding
+the hazard respectively [11]. The result represents the level of
+risk without protection from the safety system. It is also used
+to determine the performance level of the safety function that
+is needed to reduce the risk to a permissible level. Figure 2
+shows the structure of the risk graph. The severity (S) of
+harm is divided into S1-slight and S2-serious. Only slight
+reversible harm, serious irreversible harm, and fatalities are
+considered when estimating the levels of harms [11]. The
+normal recovery process is generally used as the basis for
+203650 VOLUME 13, 2025
+
+[[page 4]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+evaluating the severity of harm to people. Slight harm is
+usually recoverable, while serious is not. For example, fatigue
+and slipping are categorized as S1, and amputation and death
+are categorized as S2.
+The frequency (F) or time of exposure to the hazard is
+classified as F1-seldom or short time and F2-frequent or long
+time. This parameter is a measure of the time spent in the
+danger zone. As per [3], when the operator is present in
+the area more frequently than once every 15 minutes, it is
+considered as F2 level. If for automated processing machines,
+the operator needs to intervene only once a month, F1 is the
+obvious choice.
+The possibility (P) of avoiding hazards is divided into
+categories P1 and P2, which are determined based on whether
+the hazard can be identified or prevented. If it is possible to
+avoid an accident under certain circumstances, P1 is chosen,
+but if it is almost impossible to avoid, then P2 is chosen.
+Factors that affect parameter P include the speed of the
+hazardous situation leading to harm, any awareness of risk,
+and the human ability to escape. For example, the speed
+of machine operation is limited so that potential accidents
+are delayed, and the operator has the opportunity to react
+and leave the zone. As can be seen from the graph (Fig. 2),
+combining these parameters increases the risks from low to
+high (i.e., PL r -a to PL r -e, where PL r -e is the highest level
+required for SF and the most expensive to implement).
+C. DESIGN RELEASE
+After determining that the risk is unacceptable, the SRP/CS
+is designed as a safety guard. All SFs required to prevent
+the risk are first identified. The properties of each SF are
+clearly defined. For example, the machine is stopped when
+the safety door is opened and automatic restarts are prevented
+during this period. Then the PL r is determined for every SF.
+After implementation and evaluation (e.g. in [12]), the match
+between the actual PL and PL r is verified. The former must
+be higher or equal to the latter. This is the condition under
+which the design can be ‘‘released’’. Please note that the
+entire process of risk assessment and determination of PL and
+PLr are discussed so far.
+However, in the study presented in this paper, the LLM is
+presented with natural language descriptions of machinery
+hazard scenarios that implicitly or explicitly indicate the
+three risk parameters defined in ISO 13849, namely severity
+(S), frequency (F), and possibility of avoidance (P). The
+model is evaluated for its ability to interpret these factors and
+accurately classify the corresponding required Performance
+Level (PL r ), thereby demonstrating its potential to support
+functional safety risk assessment in accordance with ISO
+12100 and ISO 13849-1. This evaluation is essential to deter-
+mine whether general-purpose LLMs can reliably replicate
+expert-level judgment in PLr classification, a prerequisite for
+integrating AI into scalable, standards-compliant functional
+safety workflows where manual assessments are often
+inconsistent, resource-intensive, and difficult to reproduce.
+Building on this background, the following section reviews
+related work on AI-assisted safety assessments, rule-based
+prompt engineering, and retrieval-augmented reasoning in
+the context of structured decision-making and industrial risk
+classification.
+D. LLM APPLICATIONS IN SAFETY-CRITICAL HAZARD
+ANAL YSIS
+LLMs, especially those like GPT-4 [13], have demonstrated
+promising capabilities in automating hazard identification
+and initial risk estimation. Several recent studies illustrate
+how LLMs can accelerate tasks that were previously depen-
+dent on expert input.
+Nouri et al. [14] developed a GPT-4 pipeline to generate
+Hazard Analysis and Risk Assessment (HARA) tables
+for automotive systems. Their approach decomposed the
+analysis into subtasks, hazard identification, scenario gen-
+eration, severity classification, each guided by task-specific
+prompts. While effective at producing draft assessments,
+the approach emphasized the continued necessity of expert
+validation. Qi et al. [15] assessed ChatGPT’s capacity
+for System-Theoretic Process Analysis (STPA) in automo-
+tive braking. Their findings showed that although naive
+prompting yielded poor results, domain-specific prompts and
+human collaboration allowed LLMs to identify hazards more
+effectively than some experts. Similarly, Collier et al. [16]
+found that ChatGPT could enumerate a broad range of failure
+scenarios in consumer product safety but often delivered
+weak or unsupported risk judgments. The study in [8]
+demonstrates that integrating LLMs like ChatGPT within
+a Human-In-The-Loop (HITL) framework can enhance
+functional safety risk assessment under ISO 12100, achieving
+high accuracy and efficiency through expert validation.
+However, it lacks a systematic experimental evaluation using
+a large, standardized dataset on LLMs to independently
+quantify model performance.
+These findings underscore the limits of generic LLM use
+in safety-critical domains and motivate structured prompt
+design and additional context-aware techniques, explored
+next. Effective interaction with LLMs in risk analysis tasks
+often hinges on structured, rule-based prompting. Without
+domain-specific guidance, LLMs may produce inconsistent
+or misleading outputs.
+Nouri et al. [14] employed format-constrained subtasks
+and predefined templates to improve output consistency.
+Diemert and Weber [17] introduced a co-hazard analysis
+(CoHA) framework that combined iterative Q&A with
+ChatGPT and domain rules, enhancing the coverage and
+creativity of hazard identification. Sammour et al. [18]
+further demonstrated that structured prompts significantly
+influenced LLM accuracy and interpretability on safety
+certification questions. However, they also noted that no
+single prompt structure performs optimally across all task
+types. These insights reveal that while prompt engineering
+improves LLM reliability, it does not fully solve the problem
+VOLUME 13, 2025 203651
+
+[[page 5]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+of factual grounding, an issue increasingly addressed by
+retrieval-augmented generation methods.
+E. RETRIEVAL AUGMENTED GENERATION (RAG) FOR
+DECISION SUPPORT
+RAG enhances LLM outputs by supplying relevant, external
+knowledge, improving both accuracy and domain alignment.
+Xue et al. [19] integrated Qwen-2.5 with a curated fire
+safety regulation database to improve factuality in fire
+engineering queries. Meng et al. [20] applied advanced
+RAG pipelines to toxicology assessments, achieving higher
+scientific fidelity through query rewriting and evidence
+grounding. In the automotive domain, Hillen et al. [21]
+developed the LASAR system, which combines scenario
+generation with catalog-based retrieval to guide LLMs in
+Hazard and Risk Assessment (HARA).
+These RAG-based approaches reinforce the need for
+interpretability and traceability in LLM outputs, topics
+that prompt engineering strategies increasingly attempt to
+address.
+F. PROMPT ENGINEERING AND MODEL
+INTERPRETABILITY
+In safety-critical applications, interpretability is as vital
+as accuracy. Well-designed prompts can elicit stepwise
+reasoning, uncertainty estimates, and justifications from
+LLMs, aiding human validation.
+Hillen et al. [21] and Nouri et al. [14] found that instructing
+LLMs to explain their severity ratings improved reviewer
+confidence and auditability. Sammour et al. [18] showed that
+prompt-induced variations could swing model performance
+by over 13%. Y et, the benefits of added prompt complexity
+often depend on the task structure, indicating a need for both
+prompt-task matching and systematic evaluation.
+Prompt strategies, however, are only one component.
+In functional safety, risk classification frameworks such
+as PL r demand end-to-end integration of structured logic,
+thereby necessitating AI systems tailored to such regulatory
+schemes.
+G. AI-BASED RISK ASSESSMENT IN FUNCTIONAL SAFETY
+Functional safety risk assessment in machinery domains is
+typically governed by ISO 12100 and ISO 13849, which
+define a logic-driven method for estimating required Perfor-
+mance Level (PL r ) based on hazard severity, exposure, and
+avoidance. Traditional assessments rely on expert judgment,
+limiting scalability and reproducibility. The work in [22]
+proposed an early AI assistant for PL r estimation using a
+TextCNN-LSTM network. While achieving∼ 80% accuracy
+on internal datasets, the model lacked robustness to diverse
+language formulations. To address benchmarking gaps, the
+work presented in [7] introduced a structured, open-access
+dataset of 7,800 annotated machinery hazard scenarios
+aligned with ISO 12100 and ISO 13849. This enables
+reproducible PL r prediction experiments with state-of-the-
+art LLMs.
+Follow-up studies, such as a short paper in [23] applied
+zero-shot, role-based, and retrieval-augmented rules to the
+dataset. Results showed that rules with retrieval augmentation
+outperformed Zero-shot and role-based prompts, but also
+exposed variability across prompt styles. This motivates
+a deeper investigation of LLM robustness, prompting
+techniques, and hybrid architectures, as undertaken in the
+present work. Earlier work on model-driven automation in
+automotive safety, such as the synthesis and timing analysis
+of AUTOSAR-based embedded systems, demonstrated how
+standardized representations enable deterministic reasoning
+and tool-supported verification across system layers [24],
+[25]. These principles of structured modeling and formal-
+ized logic directly parallel the rule-constrained prompting
+approach explored in this study.
+In summary, despite these advances, current research
+suffers from three key limitations: lack of systematic
+benchmarking on PL r -aligned tasks on general purpose
+LLMs, minimal integration of ISO standard risk classification
+rules (with or without) retrieval augmentation and structured
+prompting and poor generalizability. To address these gaps,
+this paper introduces the first reproducible benchmark for
+LLM-based PL r estimation using a publicly available,
+standards-aligned dataset [7]. Multiple LLMs, spanning
+proprietary, open-access, and open-source architectures, are
+evaluated under diverse prompting and retrieval strategies to
+assess their accuracy, robustness, and sensitivity. In doing
+so, the study aims to inform the development of scalable,
+standards-aligned AI tools for functional safety. Its findings
+are expected to guide the practical integration of LLMs into
+industrial workflows, including machinery risk assessment
+and automated PL r determination.
+III. METHODOLOGICAL FRAMEWORK OVERVIEW
+This study presents the first modular, standards-aligned
+Natural Language Processing (NLP) and Natural Language
+Understanding (NLU) evaluation pipeline designed to bench-
+mark the performance of LLMs in classifying the required
+Performance Level (PL r ) for machinery hazard scenarios
+in accordance with ISO 12100 and ISO 13849-1. The
+framework integrates structured linguistic input (hazard
+descriptions) with domain-specific semantic targets (PL r
+classes), positioning the task as a deterministic text classi-
+fication and comprehension problem rather than a reasoning
+exercise. The proposed configuration constitutes a prompt-
+layered, rule-encoded architecture explicitly optimized for
+deterministic safety classification, transforming conventional
+retrieval-augmented generation (RAG) into a scene-specific,
+standards-constrained evaluation workflow that emphasizes
+syntactic regularity, rule grounding, and reproducibility
+within safety-critical NLP workflows.
+Figure 3 illustrates the complete methodological workflow,
+which constitutes the core methodological contribution of
+this study. On the left, a curated, open-source dataset
+203652 VOLUME 13, 2025
+
+[[page 6]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+FIGURE 3. Overall NLP–NLU evaluation workflow for deterministic PL r classification under ISO 13849-1. The RAG path, highlighted in blue,
+represents the retrieval-augmented component detailed further in Figure 4.
+comprising 7,800 hazard scenarios [7], [26], derived from
+ISO 12100 Annex B and parameterized according to the
+canonical risk graph factors such as the Severity (S),
+Frequency (F), and Possibility (P) which provides structured
+input–output pairs with expert-defined PL r labels. This
+dataset serves as the foundation for reproducible, standards-
+based benchmarking.
+The core task is formulated as structured classification of
+PLr given a hazard scenario, under deterministic decoding,
+using modular prompt variants informed by ISO 13849-
+1. The four prompt configurations tested are listed below
+(elaborated in Section IV -B):
+1) Zero-shot: scenario only,
+2) Rules: scenario + ISO rule logic,
+3) Rules+RAG: adds precedent examples along wtih the
+ISO rules logic,
+4) Rules+RAG+Instructions: adds procedural instruc-
+tions together with rules and retrieved examples.
+Each scenario is processed by a dedicated Prompt Com-
+poser, which systematically injects information into explicit
+placeholders: {description}, {iso_rules_info},
+{rag_examples}, and {analysis_instructions}.
+This mechanism supports controlled ablation of information
+sources across prompt types, while preserving consistency in
+phrasing and scenario semantics.
+As shown in Figure 3, the main inference pipeline
+proceeds horizontally from the dataset through the prompt
+composer to the LLM under test, producing structured
+JSON output with fields for severity, frequency, possibility,
+and predicted PL r . The upper branch, highlighted in blue,
+depicts the optional RAG path, which retrieves semantically
+similar precedent cases, filters them based on relevance and
+parameter alignment (S/F/P), and packages them into the
+{rag_examples} placeholder. This allows the evaluation
+of analogical reasoning effects when combining explicit
+ISO logic with retrieved context. All prompts follow a
+standardized chat-style format comprising a system message
+(rules, examples, or instructions) and a user message (hazard
+scenario) [27]. Decoding parameters are fixed to ensure
+determinism and cross-model comparability across both
+proprietary and open-source LLM families.
+Evaluation spans three quantitative dimensions: (i)
+exact-match accuracy against the ground-truth PL r labels,
+(ii) robustness across repeated runs on stratified subsets,
+and (iii) runtime performance, measuring average per-sample
+latency and total inference time. Together, these components
+form a reproducible and extensible benchmark framework
+that integrates dataset construction, rule-based prompt
+generation, retrieval augmentation, and structured scoring.
+The design provides a transparent foundation for assessing
+the reliability and scalability of LLMs in safety-critical
+PLr classification, representing, to our knowledge, the first
+standards-aligned, quantitatively validated methodology for
+this domain.
+A. RAG IMPLEMENTATION
+Building upon the general pipeline shown in Figure 3, this
+subsection details the retrieval-augmentation mechanism that
+operationalizes the RAG path. The overall RAG pipeline and
+the default retrieval parameters are illustrated in Figure 4.
+RAG is integrated into the PLr evaluation pipeline to examine
+whether augmenting ISO-rule prompts with precedent hazard
+examples improves deterministic classification. The method
+adopts a hybrid retrieval design coupling dense semantic
+search with symbolic domain filtering, thereby ensuring
+both topical relevance and compliance with ISO 13849-1
+semantics. A persistent ChromaDB collection of ≈1,020
+curated hazards, drawn from the 7,800-scenario corpus,
+serves as the retrieval index. For each query scenario, the
+system over-retrieves top-k candidates by vector similarity
+and applies a semantic threshold ssem ≥ 0.70, followed
+by lexical Jaccard filtering (J ≥ 0.30) and optional S/F/P-
+triplet gating to ensure consistency with ISO 13849-1 risk
+parameters. After deduplication and ranking, the top-M
+exemplars (M=3 by default) are compacted into structured
+snippets ({rag_examples}) injected into the prompt
+(cf. Figure 3).
+The parameter settings used throughout the RAG pipeline
+reflect a deliberate balance between over-retrieval and
+precision filtering. The over-retrieval size k=20 ensures a
+sufficiently diverse candidate pool for downstream filtering,
+avoiding early exclusion of semantically relevant but lex-
+ically variant examples. The semantic similarity threshold
+ssem ≥ 0.70 (where ssem=1−d, derived from embedding
+distance) filters candidates that are only loosely related to
+the query scenario. Lexical Jaccard filtering with a threshold
+J (A, B) ≥ 0.30 further removes spurious candidates that
+share minimal token overlap with the input scenario, thereby
+VOLUME 13, 2025 203653
+
+[[page 7]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+FIGURE 4. RAG pipeline used in PL r experiments: semantic retrieval and filtering (top) → ranking, packaging, and prompt injection
+(bottom, leftward flow).
+enforcing topical proximity. The final top-M selection step
+(M=3) reflects a trade-off between injecting sufficient
+precedent context and preserving prompt budget for model
+inference. The approach follows what recent surveys term an
+‘‘advanced hybrid RAG’’ strategy [5], [28], [29], combining
+dense semantic retrieval with symbolic lexical filtering and
+optional domain-structure constraints. Retrieved hazards are
+not only topically similar but also filtered to match ISO
+13849-1 semantics through token-set Jaccard and, optionally,
+S/F/P triplet constraints. Each retained example is serialized
+into a structured snippet encoding the hazard type, user
+task, and description, forming a compact evidence block
+for injection into the prompt. Each exemplar is serialized
+into a compact snippet of the form [EX#] HazardType ·
+Task · Description, ensuring a structured yet concise
+evidence block for prompt injection. Note that, future
+work may explore systematic tuning of retrieval parameters
+to assess sensitivity under different domain conditions or
+embedding models.
+Two RAG-based configurations are evaluated (cf. Experi-
+ments 3 and 4 in section IV -B): (i) theRules+ RAG prompt,
+which appends selected precedent examples to the base ISO
+rules, and (ii) the Rules+ RAG+ Instructions prompt,
+which further includes procedural analysis guidance. In both
+settings, the retrieved examples serve solely as contextual
+evidence to test whether exposure to precedent hazards
+enhances deterministic PL r classification accuracy, without
+invoking explicit chain-of-thought reasoning.
+Thus, for the experiments conducted in this paper, RAG
+is applied exclusively as a controlled prompt-augmentation
+mechanism rather than a reasoning chain. Retrieved exem-
+plars are semantically and structurally filtered to ensure
+ISO 13849-1 consistency and are injected into the prompt
+alongside deterministic rule information.
+B. TASK-SPECIFIC PROMPT LA YERING AND SCENE
+OPTIMIZATION
+The methodological core of this study lies in the struc-
+tured prompt-layering architecture developed specifically for
+deterministic PL r classification in machinery safety scenes.
+Unlike generic prompt-based evaluations, this framework
+explicitly encodes ISO 13849-1 risk-graph rules, integrates
+scene-relevant contextual factors (e.g., hazard type, task,
+and user role), and supports controlled retrieval-augmented
+prompting through structured precedent examples. Optional
+task-decomposition instructions further guide model com-
+prehension toward rule-consistent, context-aware classifi-
+cation. Each prompt configuration builds incrementally,
+from unstructured zero-shot to fully structured rule-based,
+retrieval-augmented, and instruction-guided variants, allow-
+ing systematic ablation and attribution of performance
+gains. This scene-optimized layering enables evaluation
+under both surface-form shift (e.g., paraphrased exposure
+conditions) and rule-conflict conditions, ensuring robustness,
+interpretability, and reproducibility. To the best of our knowl-
+edge, this represents the first prompt-layered NLP–NLU
+architecture specifically engineered for deterministic safety
+classification under ISO 13849-1 compliance.
+IV. EXPERIMENTAL SETUP AND SYSTEM DESIGN
+The evaluation pipeline developed in this study is opera-
+tionalized through a modular system architecture designed
+for reproducibility, real-time assessment, and prompt exper-
+imentation. The core orchestration engine is built using
+LangGraph [30], which enables dynamic flow control for
+prompt routing and evaluation logic. Modular prompting
+strategies such as rule-based, RAG, and hybrid approaches
+are implemented using LangChain chains [31], allowing
+seamless reconfiguration across tests. A vector database
+(ChromaDB) [32] enables high-throughput semantic retrieval
+of domain-specific hazard precedents for RAG-based scenar-
+ios. Retrieved contexts are injected via prompt placeholders
+to test reasoning performance under analogical guidance.
+This modular setup mirrors realistic deployment conditions
+while enabling systematic control over prompting strategies,
+model selection, and input variants.
+A. DATASET DESCRIPTION
+This study utilizes the publicly available Industrial Machin-
+ery Functional Safety Hazard Scenario Dataset [7], [26]
+designed to support reproducible and standards-aligned
+evaluation of automated risk assessment methods in line
+203654 VOLUME 13, 2025
+
+[[page 8]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+with ISO 12100 and ISO 13849-1. The dataset serves as
+a structured benchmark for PL r classification and is used
+consistently across all experiments, including zero-shot, rule-
+based, and retrieval-augmented prompting strategies.
+The dataset is systematically derived from ISO 12100 Annex
+B, which defines ten general hazard categories relevant to
+machinery safety, and applies the risk graph methodology
+from ISO 13849-1 Annex A. Each scenario represents
+a plausible origin–consequence pair, validated through
+expert judgment and filtered for physical and contextual
+feasibility. Scenarios are further parameterized using ISO risk
+graph factors severity (S ), frequency of exposure (F ), and
+possibility of avoidance (P) and the corresponding PL r is
+automatically assigned.
+1) DATASET STRUCTURE AND SCENARIO DISTRIBUTION
+The dataset is generated via an automated script that
+implements this combinatorial methodology and outputs all
+scenarios in a standardized JSON format [7]. Each scenario
+includes:
+• a unique hazard identifier,
+• hazard type, origin, and potential consequence,
+• user type and task,
+• environment,
+• severity, frequency, and possibility,
+• the calculated PL r ,
+• a structured natural language description.
+A total of 7,800 hazard scenarios in the dataset are
+distributed as follows: 2,840 for Mechanical Hazards, 1,640
+for Electrical Hazards, 320 for Thermal Hazards, 640 for
+Noise Hazards, 480 for Vibration Hazards, 320 for Radiation
+Hazards, 400 for Material/Substance Hazards, 320 for
+Ergonomic Hazards, 680 for Environmental Hazards, and
+160 for Combination of Hazards. This distribution reflects the
+differing combinatorial complexity and industrial relevance
+of each category. The dataset’s standards-based construction,
+comprehensive coverage, and scenario diversity enable
+precise and controlled benchmarking. By capturing full risk
+parameterization and detailed scenario context, it provides a
+robust and reproducible foundation for evaluating automation
+in safety-critical classification.
+2) DATASET ENTRY: TEMPLATE AND EXAMPLE
+Listing 1 illustrates a typical scenario entry in the dataset.
+This example describes a mechanical hazard where an
+operator performing normal operation in an industrial setting
+may encounter acceleration or deceleration forces, which
+could lead to being run over. The scenario specifies key
+contextual parameters: user type (Operator), task (Normal
+Operation), environment (Industrial), and the risk graph
+inputs severity (serious), frequency (frequent-to-continuous),
+and possibility of avoidance (scarcely possible). Based
+on these factors, the required Performance Level (PL r )
+is assigned as ‘e’ according to ISO 13849-1: Annex A
+qualitative performance graph method.
+In all experiments, the scenario’s PL r value calculated
+using the ISO 13849-1 risk matrix serves as the ground
+truth for evaluation. Each language model receives the
+scenario’s natural language description as input and is
+tasked with predicting the PL r . Model outputs are then
+compared to this reference value to compute predictive
+accuracy. For example, in Listing 1, only models predicting
+PLr=’e’ are counted as correct. This evaluation protocol
+enables systematic, transparent, and standards-compliant
+benchmarking of automated risk assessment methods across
+diverse safety-critical scenarios.
+The dataset [26] is openly accessible and serves as
+a standardized benchmark for reproducible evaluation of
+AI-based risk assessment methods in machinery safety;
+additional methodological details and construction rationale
+are provided in [7].
+3) DATASET ANNOTATION, QUALITY ASSURANCE, AND
+RETRIEVAL PREPARATION
+The dataset was constructed using a systematic annotation
+and validation workflow to ensure physical, contextual,
+and semantic consistency of all hazard scenarios. Each
+origin–consequence pair was evaluated according to a
+three-step plausibility protocol. First, combinations had to
+comply with fundamental physical laws and mechanical
+feasibility (e.g., eliminating impossible interactions such
+as acoustic noise causing loss of balance). Second, every
+hazard origin required a traceable mechanism of injury
+linking it causally to the stated consequence, ensuring
+that the described energy transfer or exposure process was
+realistic. Third, expert judgment was applied to enforce
+domain-specific common sense, eliminating highly improb-
+able or contextually implausible scenarios even if they were
+not physically impossible [7].
+Each accepted origin–consequence pairing was then
+automatically expanded into multiple contextualized hazard
+scenarios by varying the parameters User Type, Task, and
+Environment. These contextual factors were further combined
+with the standardized ISO 13849-1 risk graph parameters,
+namely Severity (S), Frequency (F), and Possibility of Avoid-
+ance (P). The corresponding Required Performance Level
+(PLr ) was deterministically computed from the qualitative
+ISO 13849-1 risk graph, ensuring that identical S/F/P triples
+yield identical PL r values. This mapping was embedded
+directly in the dataset generation script and cross-validated
+through automated schema and consistency checks.
+Annotation and quality control were performed in two
+complementary phases. During the automated generation
+phase, a validation script verified schema compliance,
+uniqueness of hazard identifiers, and legal S/F/P com-
+binations. During manual review, two domain experts
+independently conducted spot checks across all ten ISO
+12100 hazard categories to verify plausibility and PL r
+consistency. Disagreements were discussed and resolved by
+consensus with a third reviewer. This hybrid process ensured
+that the resulting dataset adhered to both the formal logic of
+VOLUME 13, 2025 203655
+
+[[page 9]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+LISTING 1. Example of a mechanical hazard description in the dataset [7], [26].
+the standards and the tacit engineering knowledge required
+for credible safety analysis.
+For experimental evaluation, (e.g., for the experiment in
+section IV -F), a stratified subset of n=567 scenarios was
+selected to maintain the proportional representation of all
+hazard types within the full corpus of 7,800 records. This
+stratification preserves both hazard-type balance and S/F/P
+diversity, enabling representative and statistically meaningful
+performance estimates. The same sampling policy was
+applied consistently across repeated experiments. For RAG-
+based experiments, a compact index of records was derived
+from the full dataset. Each record contains a short textual
+summary including hazard type, origin, potential conse-
+quence, task, user type, environment, and PLr . Further details
+about RAG implementation in this pipeline is available
+in section III-A. All records conform to a defined JSON
+schema that enforces type safety, controlled vocabularies, and
+completeness of required fields. Continuous integration (CI)
+validation ensures schema compliance, and the PL r mapping
+logic is unit-tested to prevent mislabeling. While extensive
+quality checks were performed, residual threats to validity
+remain and are addressed in the dedicated Threats to V alidity
+discussion presented in section V -E.
+B. EXPERIMENTAL DESIGN
+The experimental evaluation comprises four distinct strate-
+gies for PL r determination, reflecting increasing levels of
+structured input and domain knowledge integration. All
+prompt variants follow the standardized chat-based format
+defined in [27], which distinguishes between a system
+message used to establish the model’s role (e.g., functional
+safety expert) and provide rules, guidance, or reasoning
+instructions and a user (human) message that presents the
+task input, typically a natural language hazard scenario. This
+structured separation enables reproducible prompt design
+and facilitates controlled experimentation on the impact of
+specific prompt components on model outputs.
+1) EXPERIMENT I: ZERO-SHOT PROMPT (BASELINE)
+The model receives only the raw hazard scenario in natural
+language, without any additional guidance or rules. This
+baseline assesses the model’s inherent ability to infer PL r
+using general linguistic and world knowledge.
+Baseline Prompt (Direct)
+System: Y ou are an expert in machinery safety and risk
+assessment following ISO 12100 and ISO
+13849 standards.
+Analyze the following hazard scenario and determine
+the Required Performance Level (PL r ).
+return format: {return_format}
+User: scenario description: {description}
+2) EXPERIMENT II: EXPLICIT ISO RULES INTEGRATION
+Building on the direct prompt, this experiment supplements
+the scenario with explicit PLr determination rules as specified
+in ISO 13849-1 Annex A (cf. Fig. 1). This tests whether
+access to codified safety knowledge enables more accurate
+and consistent classification.
+203656 VOLUME 13, 2025
+
+[[page 10]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+Rules-Integrated Prompt
+System: Y ou are an expert in machinery safety and risk
+assessment following ISO 12100 and ISO
+13849 standards.
+iso 13849-1 risk graph rules: {iso_rules_info}
+Analyze the following hazard scenario and determine
+the Required Performance Level (PL r ) using the ISO
+13849-1 Risk Graph Method.
+return format: {return_format}
+User: scenario description: {description}
+3) EXPERIMENT III: RULE-BASED PROMPT WITH
+RETRIEVAL-AUGMENTED (RAG) EXAMPLES
+In addition to the scenario and rules, representative historical
+hazard examples are retrieved from a curated database and
+included in the prompt. This evaluates the model’s ability
+to generalize from precedent and improve classification
+accuracy through context enrichment.
+Rules + RAG Examples Prompt
+System: Y ou are an expert in machinery safety and risk
+assessment following ISO 12100 and ISO
+13849 standards.
+iso 13849-1 risk graph rules: {iso_rules_info}
+retrieved examples: {rag_examples}
+Analyze the following hazard scenario and determine
+the Required Performance Level (PL r ) using the ISO
+13849-1 Risk Graph Method and considering the
+provided examples.
+return format: {return_format}
+User: scenario description: {description}
+4) EXPERIMENT IV: COMBINED RETRIEVAL AND
+INSTRUCTIONAL GUIDANCE
+This configuration integrates the scenario, explicit rules,
+retrieved examples, and structured analysis instructions. This
+setup examines whether layered prompt enhancements—
+combining knowledge, context, and process guidance—
+further optimize model performance in deterministic PL r
+assignment.
+All four experimental settings are applied consistently
+across all models and datasets, enabling direct comparison
+of the incremental benefits of each input enhancement.
+Please note that, the experimental labels ‘‘RAG’’ (Exper-
+iment III) and ‘‘RAG + Instructions’’ (Experiment IV)
+described in sections IV -B3and IV -B4respectively denote
+composite prompting strategies that build on preceding
+configurations. The RAG prompt encompasses both codified
+ISO rules and retrieved case-based examples (i.e., Rules +
+RAG), while the final configuration (Experiment IV) further
+incorporates structured analysis instructions. This cumulative
+layering enables a controlled investigation of the contribution
+of each contextual enhancement.
+Rules + RAG + Instructions Prompt
+System: Y ou are an expert in machinery safety and risk
+assessment following ISO 12100 and ISO
+13849 standards.
+iso 13849-1 risk graph rules: {iso_rules_info}
+retrieved examples: {rag_examples}
+analysis instructions: {analysis_instructions}
+Analyze the following hazard scenario and determine
+the Required Performance Level (PL r ) using the ISO
+13849-1 Risk Graph Method, considering the provided
+examples and following the analysis methodology.
+return format: {return_format}
+User: scenario description: {description}
+C. PROMPT PLACEHOLDER DESCRIPTION
+To ensure methodological rigor and enable systematic
+ablation analysis, each experimental prompt such as those
+described in sections IV -B1, IV -B2, IV -B3 and IV -B4
+utilizes well-defined placeholders corresponding to key infor-
+mation components. These placeholders not only enforce
+consistency in model evaluation, but also reflect distinct
+strategies for eliciting and constraining LLM behavior in a
+safety-critical classification task.
+• {description}: The central input for each prompt is
+a standardized, natural language description of a
+real-world hazard scenario. This simulates actual indus-
+trial safety assessment tasks and allows direct measure-
+ment of a model’s capacity for context comprehension
+and risk mapping. Example: During maintenance,
+an operator is required to reach inside the moving parts
+of a packaging machine, potentially resulting in severe
+hand injury. The description is part of the scenario
+metadata generated from the dataset and encodes
+contextual parameters such as user type, task, hazard
+origin, and consequence in narrative form, as seen in
+Listing 1.
+• {iso_rules_info}: This placeholder explicitly injects
+structured, deterministic decision logic as codified
+in ISO 13849-1:Annex A, including parameter def-
+initions and the full risk graph mapping rules. Its
+inclusion transforms the LLM task from open-ended
+inference to standards-constrained reasoning, enabling
+analysis of whether direct access to normative safety
+rules improves PL r classification fidelity, consis-
+tency, and explainability. The rules are designed to
+ensure deterministic mapping of natural language
+scenario descriptions into standardized parameters:
+severity (S1/S2), exposure frequency (F1/F2), and
+possibility of avoidance (P1/P2), which then yield
+the appropriate required performance level (PL r ). The
+content supplied via this placeholder is shown in
+VOLUME 13, 2025 203657
+
+[[page 11]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+LISTING 2. Deterministic rules codified under {iso_rules_info} for PL r inference.
+Listing 1, which encodes both the ISO 13849-1:
+Annex A risk graph logic (cf. Fig. 1) and guidance
+for mapping free-form descriptions to structured safety
+attributes.
+• {rag_examples}: RAG populates this field with histor-
+ical precedent, contextually similar hazard scenarios
+and their parameterized ground, truth classifications
+enabling case-based analogical reasoning. Rather than
+relying exclusively on declarative standards or zero-
+shot generalization, this approach equips the language
+model with access to real-world precedents structured
+according to ISO 13849-1. The retrieval process is
+designed to prioritize semantic similarity while preserv-
+ing alignment in core risk parameters: severity of harm
+(S), exposure frequency and/or duration (F), and the
+possibility of avoidance (P). This design allows the LLM
+to draw analogies based on prior classifications where
+the task, context, and risk attributes mirror those of the
+query scenario.
+The examples in Table 1 illustrate how retrieved cases
+can either support or mislead analogical reasoning,
+depending on their structural alignment with the query.
+In the first example, the retrieved scenario mirrors
+the query almost exactly same task type (setup/pro-
+gramming), hazard origin (radiation from heat sources),
+and ISO parameters (S1, F2, P1) resulting in high
+relevance and accurate performance level assignment
+(PLr : b). In contrast, the second example, though
+superficially similar, differs critically in its severity (S2)
+and avoidance (P2) parameters, making it misleading
+for analogical inference. This contrast highlights the
+necessity of carefully curated retrieval pipelines when
+deploying RAG-based prompting for safety-critical
+classification tasks.
+• {analysis_instructions}: This placeholder introduces
+explicit, procedural instructions that guide the LLM
+through a fixed sequence of analytic steps required
+to complete the PL r classification task. Whereas
+{rag_examples} supports analogical generalization
+via example-based learning, the {analysis_instructi
+ons} field constrains the LLM’s decision-making by
+Example (Instructions):
+1. Extract the following ISO 13849-1 parameters
+from the hazard scenario description: - Severity of
+injury (S) - Frequency and/or duration of exposure
+(F) - Possibility of avoidance or limitation of harm
+(P)
+2. Use the ISO 13849-1 risk graph rules to compute
+the required Performance Level (PLr ) based on the
+S, F, and P values.
+3. Return a JSON object using the following
+schema: { ’ ’hazard_id’ ’: <string>, ’ ’severity’ ’:
+‘‘S1’’ or ‘‘S2’’, ’ ’frequency’ ’: ‘‘F1’’ or ‘‘F2’’,
+’ ’possibility’ ’: ‘‘P1’’ or ‘‘P2’’,’ ’PLr ’ ’: ‘‘a’’ to ‘‘e’’
+}
+203658 VOLUME 13, 2025
+
+[[page 12]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+TABLE 1. Illustrative retrieved cases for {rag_examples} placeholder (query: TH_275).
+enforcing a deterministic reasoning pathway aligned
+with ISO 13849-1. This scaffolding improves inter-
+pretability and reduces output variance by minimizing
+the influence of model idiosyncrasies. It also serves
+to disentangle the effects of prior knowledge (learned
+or retrieved) from task-following ability, enabling
+finer-grained attribution of performance gains.
+• {return_format}: This placeholder defines a strict,
+machine-readable JSON schema for model outputs,
+ensuring consistency, interpretability, and automatic
+evaluability. It eliminates ambiguity in responses and
+supports seamless integration into benchmarking and
+industrial pipelines.
+Example:
+{
+‘‘hazard_id’’: ‘‘TH_275’’,
+‘‘severity’’: ‘‘S1’’,
+‘‘frequency’’: ‘‘F2’’,
+‘‘possibility’’: ‘‘P1’’,
+‘‘PLr’’: ‘‘b’’
+}
+The systematic manipulation of prompt placeholders across
+experimental conditions allows for precise attribution of
+model performance to discrete sources of information.
+By isolating or combining these components, the study can
+directly assess their individual and synergistic impacts on
+language model reasoning in functional safety contexts.
+This modular prompt engineering design enables con-
+trolled, hypothesis-driven experimentation. By systemati-
+cally varying the informational scaffolding provided to the
+model, it is possible to quantify the marginal contributions
+of codified standards, empirical exemplars, and structured
+analytic procedures to automated PLr classification accuracy.
+This supports transparent, interpretable benchmarking of
+LLMs for safety-critical risk assessment.
+D. INFERENCE WORKFLOW
+Figure 5 depicts the workflow used for PL r classification
+across all experimental conditions. The system supports
+both zero-shot inference and structured input modes by
+dynamically composing prompts with modular components,
+including ISO 13849-1 rules, retrieved hazard examples, and
+analysis instructions.
+Each evaluation begins with a hazard scenario, pre-
+sented either as a raw narrative or in a structured, field-
+wise template format. Depending on the experimental
+setup, relevant contextual and procedural information, such
+as iso_rules_info, rag_examples, or analysis_instructions,
+FIGURE 5. PLr inference workflow.
+is selectively appended to guide the LLM reasoning. These
+dynamic prompt compositions aim to elicit deterministic,
+standards-aligned outputs.
+Please note that the workflow is designed to support both
+batch-mode inference, crucial for systematic evaluation and
+benchmarking against established PL r baselines in exper-
+imental settings, and interactive inference, enabling direct
+engagement with an end-user for on-demand classification.
+This dual functionality ensures the architecture facilitates
+reproducible ablation studies and directly informs the design
+of robust, AI-assisted functional safety pipelines suitable for
+both research and future deployment.
+The workflow, as depicted in Figure 7, is designed to
+accommodate both interactive inference, enabling direct
+end-user engagement for on-demand classification, and
+batch-mode inference. While the figure illustrates the inter-
+active path, this same processing flow is executed sys-
+tematically in batch mode for comprehensive experimental
+evaluation and benchmarking against PL r baselines from the
+dataset [7]. This dual functionality ensures the architecture
+facilitates reproducible ablation studies and directly informs
+VOLUME 13, 2025 203659
+
+[[page 13]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+the design of robust, AI-assisted functional safety pipelines
+suitable for both research and future deployment.
+E. MODEL SELECTION AND CONFIGURATION
+To ensure robust and generalizable findings, the evaluation
+spans a diverse set of state-of-the-art general-purpose LLMs.
+The primary models include multiple variants from the
+GPT-4 family (e.g., GPT-4.1-nano, GPT-4.1-mini, GPT-4o-
+mini) [13], [33], Meta’s LLaMA 3 (deployed via Ollama)
+[34], and DeepSeek-chat V2 [35]. These models collectively
+represent different architectural families, scaling strategies,
+and deployment paradigms within the current landscape of
+general-purpose LLMs.
+Each model was accessed via public APIs and used in its
+original form without any fine-tuning. All models were con-
+figured with consistent decoding parameters, most notably
+a fixed temperature of 0, to ensure deterministic outputs
+and enable fair, unbiased comparison across experimental
+conditions. Prompt templates were standardized within
+each experiment type, with only minimal model-specific
+adaptations to enforce structured output formats. V ariations
+in decoding settings (e.g., temperature, top-p, max tokens)
+are held constant and considered out of scope for this study,
+in order to isolate the effects of input structure and prompting
+strategy.
+F. TYPES OF EVALUATION TESTS
+To comprehensively assess the capabilities and understand
+the limitations of general-purpose LLMs in automating
+PLr determination for industrial machinery safety, a robust
+and multifaceted evaluation framework was developed. This
+framework facilitated a series of targeted tests, each designed
+to explore distinct aspects of model performance, general-
+ization, and robustness within both realistic and controlled
+environments.
+1) TEST 1: COMPREHENSIVE BASELINE EVALUATION
+This test establishes a foundational performance benchmark
+by applying all experimental configurations across a 567-
+case dataset of hazard scenarios. To ensure representativeness
+and mitigate potential sampling bias, these scenarios were
+selected using a randomized proportional method from the
+entire dataset of 7800 scenarios [7], [26], reflecting the
+distribution of different hazard types within the comprehen-
+sive dataset. The evaluation utilizes three OpenAI models
+namely gpt-4.1-nano, gpt-4.1-mini, and gpt-4o-mini under
+all four prompting strategies. This large sample size and
+comprehensive inclusion of hazard types provide a robust
+statistical basis, reflecting typical real-world deployment
+conditions.
+2) TEST 2: FOCUSED EVALUATION ON ORIGINAL DATASET
+This test evaluates each model-strategy configuration over
+100 hazard scenarios, repeated across three independent runs.
+Each run yields a summary metric (e.g., mean accuracy),
+resulting in three values per configuration. The standard
+deviation across these run-level metrics quantifies the vari-
+ability in model performance due to randomness in sampling
+or inference. While the small number of repetitions limits
+statistical power, this approach supports basic robustness
+assessment.
+3) TEST 3: CROSS-MODEL GENERALIZATION
+This test benchmarks alternative LLMs, specifically
+Llama3.2-8B-Instruct (deployed via Ollama) and DeepSeek-
+Chat, against OpenAI’s models (gpt-4.1-mini) to assess
+the generalizability of observed performance trends across
+diverse model architectures. This evaluation, conducted
+using 100 samples from the original dataset under identical
+experimental setups, aims to probe architectural strengths and
+limitations beyond a single model family.
+Together, these evaluations collectively establish a com-
+prehensive testing matrix that systematically investigates the
+impact of varying model architectures, prompt engineering
+strategies, and input formulations. This integrated framework
+facilitates a principled analysis of LLM performance in struc-
+tured, safety-critical classification tasks, thereby yielding
+critical insights for the development of robust AI-assisted risk
+assessment pipelines.
+4) METRICS AND STATISTICAL PROTOCOL
+The primary evaluation metric is exact-match accuracy on
+PLr ∈ {a,..., e}, computed against ground-truth labels
+derived from ISO 13849-1 Annex A. Accuracy is defined
+as the proportion of correctly predicted PL r classifications
+across all test scenarios. To assess robustness, each exper-
+imental condition (prompt type × model configuration)
+is repeated three times on independent random draws of
+n=100 scenarios, reporting the mean and standard deviation
+across repetitions. For the full stratified test (n=567), 95%
+binomial confidence intervals are also computed to quantify
+the statistical reliability of observed accuracies.
+Runtime performance is reported as both average
+per-sample time and cumulative batch processing time
+to enable comparative efficiency analysis. All evaluations
+are performed under fixed decoding parameters (temper-
+ature = 0, top-p = 1.0, constant max tokens), ensuring
+fully deterministic outputs and isolating the effects of
+prompt design rather than stochastic sampling. This statistical
+protocol provides reproducible and interpretable performance
+estimates across prompt configurations while maintaining
+direct comparability between LLM variants and RAG
+settings.
+V. RESULTS AND ANALYSIS
+This section reports and analyzes the results from various
+evaluation tests, each probing a specific dimension of
+LLM-based automation for PL r determination in machinery
+safety. Each subsection presents the test objective, detailed
+results with reference to the figures, and a discussion of
+findings.
+203660 VOLUME 13, 2025
+
+[[page 14]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+A. TEST 1: COMPREHENSIVE BASELINE EVALUATION
+This evaluation establishes foundational performance bench-
+marks for LLMs applied to PL r classification in machinery
+functional safety. The test involves 567 samples (hazard
+scenarios), selected using stratified random sampling from
+the dataset of 7800 scenarios [7], [26] reflecting the distri-
+bution of different hazard types within the comprehensive
+dataset. The testset used for this test 1 was selected
+using stratified sampling from a larger corpus of 7,800
+annotated hazards, preserving proportional representation of
+hazard types (e.g., mechanical, electrical, environmental).
+This ensures a balanced and industrially relevant test set
+while maintaining computational feasibility. This enables
+realistic assessment of model capabilities in production-like
+conditions. Three generative models of varying scale were
+examined gpt-4.1-nano, gpt-4.1-mini, and gpt-4o-mini, each
+tested under four experimental prompting strategies: zero-
+shot (baseline), rule-based, RAG, and a combined RAG with
+task-specific instructions.
+1) ACCURACY ANALYSIS
+Figure 8 reveals substantial differences in performance across
+models and prompting methods. In baseline (zero-shot)
+mode, all models exhibited limited accuracy: gpt-4.1-nano
+at 0.300, gpt-4.1-mini at 0.450, and gpt-4o-mini at 0.410.
+These results confirm that LLMs struggle with PL r deter-
+mination without explicit domain knowledge or structured
+guidance.
+Rule-based prompting significantly enhanced classifica-
+tion accuracy across all models. gpt-4.1-mini achieved 0.990,
+while gpt-4o-mini and gpt-4.1-nano reached 0.910 and 0.610,
+respectively. Rule based prompting along with RAG (cf.
+section IV -B3) also yielded 0.990 and 0.840 for gpt-4.1-
+mini and gpt-4o-mini models, respectively. The combined
+rules, RAG and instruction strategy (cf. section IV -B4)
+yielded the same highest accuracy of 1.000 for gpt-4.1-mini,
+underscoring that structured prompts are critical for high
+performance.
+However, smaller models exhibited only marginal gains
+or slight degradations with experiment 4 (cf. IV -B4
+rules+ RAG with instructions), likely due to increased
+sensitivity to semantic drift introduced by the retrieved
+hazard cases. Since RAG involves injecting contextually
+similar examples to guide PL r inference, subtle mis-
+matches in risk parameters (S, F, P) can mislead model
+predictions. This highlights the importance of prompt
+consistency and relevance, particularly for lower-capacity
+architectures.
+The heatmap in Figure 6 further emphasizes model-
+prompting interactions. Larger models tend to benefit more
+from retrieval and multi-component prompting strategies,
+whereas the smallest model, gpt-4.1-nano, remains less
+responsive to RAG enhancements and shows its best per-
+formance with static rule-based input (i.e., experiment 2 in
+section IV -B2).
+2) PROCESSING AND RUNTIME ANALYSIS
+Figure 7 illustrates the computational trade-offs associated
+with each configuration. Average processing time per sce-
+nario ranged from 2.42 seconds (gpt-4.1-nano with rules)
+to 4.30 seconds (gpt-4o-mini with rules combined with
+RAG and instructions, i.e., experiment 4 in section IV -B4).
+Total execution time over 567 scenarios followed simi-
+lar trends, with rule-based configurations generally yield-
+ing lower runtime than RAG-enhanced ones (i.e., from
+experiment 3 and 4).
+While gpt-4.1-nano consistently exhibited the shortest
+inference time, its accuracy remained significantly below the
+other models. In contrast, gpt-4o-mini achieved competitive
+accuracy with rules (0.910) but incurred the highest total run-
+time under RAG-enhanced conditions (up to 111 minutes).
+The high total runtime for gpt-4o-mini under RAG-enhanced
+conditions results from longer token sequences introduced
+by retrieval-augmented prompts, which include both ISO
+rules and multiple retrieved hazard examples. As a larger
+model with more complex decoding operations, gpt-4o-
+mini requires more computation per token, making it
+more sensitive to prompt length and structure than smaller
+counterparts.
+3) SUMMARY AND IMPLICATIONS
+The baseline evaluation demonstrates that model scale and
+prompting strategy jointly influence classification perfor-
+mance and efficiency. Rule-based prompting emerged as a
+robust, interpretable method that offers strong performance
+with lower computational overhead. Retrieval-augmented
+prompting was particularly effective for larger models but
+introduced considerable latency.
+Among all configurations, gpt-4.1-mini with either rules
+prompting only (i.e., experiment 2 in section IV -B2) or
+RAG plus rules prompting strategy (i.e., experiment 3 in
+section IV -B3) achieved near-expert accuracy (≥ 0.990)
+with moderate runtime, offering the most favorable balance
+between precision and throughput. These findings identify
+rule-based prompting with a mid-scale LLM as a strong
+candidate for integration into real-world PL r assessment
+pipelines where both accuracy and latency are mission-
+critical.
+4) DATASET SCALE JUSTIFICATION AND STATISTICAL
+CONFIDENCE ANALYSIS
+The evaluation in test 1 described so far in this study were
+conducted on a stratified subset of n=567 hazard scenarios
+drawn from the complete 7 800-scenario corpus [26]. The
+subset was selected to preserve the proportional distribution
+of the ten ISO 12100 hazard categories and the associated PLr
+class frequencies, ensuring representativeness while main-
+taining computational feasibility for repeated deterministic
+decoding across multiple models and prompt variants.
+The statistical adequacy of this sample can be quantified
+using the binomial model for accuracy estimation. The
+VOLUME 13, 2025 203661
+
+[[page 15]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+FIGURE 6. Test 1: Accuracy comparison of LLMs across different PL r prompting strategies. Left: Bar plot of accuracy grouped by model and condition.
+Right: Corresponding heatmap representation.
+FIGURE 7. Test 1: Inference time analysis across models and strategies. Left: Average per-sample processing time. Right: Total
+execution time across the test set.
+100(1−α)% confidence interval (CI) for a measured accuracy
+ˆp is given by
+MoE= zα/2
+√
+ˆp(1−ˆp)
+n , (1)
+where MoE is the margin of error and zα/2 is the critical value
+of the standard normal distribution (1.96 for a 95% CI).
+For typical accuracies observed in this study, the 95% CI
+bounds are:
+• ˆp= 0.99⇒ MoE≈±0.82 percentage points,
+• ˆp= 0.90⇒ MoE≈±2.47 percentage points,
+• ˆp= 0.50⇒ MoE≈±4.12 percentage points.
+The statistical analysis confirms that the evaluated subset
+exhibits performance characteristics equivalent, within sta-
+tistical uncertainty, to those of the complete 7 800-scenario
+corpus. The margin of error remains significantly smaller
+than the observed performance differentials across prompting
+203662 VOLUME 13, 2025
+
+[[page 16]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+strategies (typically 10–60 percentage points), validating that
+the chosen sample size provides sufficient statistical power
+for reliable comparison. Scaling evaluations to the full corpus
+therefore yields comparable accuracy trends, differing only in
+computational runtime rather than outcome reliability.
+In addition to formal estimation bounds, repeated experi-
+ments and stratified resampling confirm stable performance
+rankings across hazard categories, further substantiating that
+the stratified 567-scenario subset faithfully represents the
+statistical behavior of the entire dataset. This ensures that
+derived insights into model behavior, prompt robustness, and
+PLr classification accuracy remain generalizable at corpus
+scale.
+Moreover, this canonical dataset which is constructed
+directly from ISO 12100 Annex B and ISO 13849-1 risk
+parameters serves as a foundational baseline for future
+extensions involving lexical or semantic data augmentation.
+Such augmentation, for instance through paraphrased or
+contextually varied hazard descriptions, can be pursued in
+subsequent studies to evaluate model sensitivity to linguistic
+diversity. However, the present benchmark intentionally
+employs standardized and canonical forms to isolate the core
+performance of models without confounding linguistic vari-
+ation. This design enables reproducible, standards-grounded
+evaluation while providing a stable basis for future research
+into generalized or augmented dataset variants.
+B. TEST 2: FOCUSED EVALUATION WITH STATISTICAL
+CONFIDENCE
+To assess statistical reliability and performance robustness,
+Test 2 employs a targeted evaluation methodology using
+100 hazard scenarios, repeated across three independent
+runs for each model-strategy configuration. This design
+enables the computation of confidence intervals and standard
+deviations, allowing robust comparisons under sampling
+variability and model stochasticity.
+1) ACCURACY ANALYSIS AND VARIABILITY
+Figure 8 presents the classification accuracy results with
+associated statistical variation. On the left, the bar plot shows
+mean accuracy across three runs, accompanied by standard
+deviation. On the right, the heatmap summarizes accuracy
+consistency across all tested model-strategy pairs.
+gpt-4.1-mini achieved the highest and most stable accu-
+racy across conditions, reaching 0.993 ± 0.006 under
+RAG and 0.990 ± 0.010 with rule-based prompting. The
+combined RAG+instruction strategy (i.e., experiment 4 in
+section IV -B4) performed similarly (0.993), confirming the
+reliability of enhanced prompting for mid-scale models.
+In contrast, gpt-4.1-nano displayed both the lowest mean
+accuracy and the highest variance. While rule-based prompt-
+ing improved performance to 0.630±0.044, gains from RAG
+(0.430± 0.015) and combined prompting (0.397 ± 0.021)
+remained modest, suggesting limited benefit from increased
+contextual input.
+gpt-4o-mini showed strong performance under rules
+(0.910) and rules plus RAG (0.840), though with greater
+variability in its baseline setup (0.487 ± 0.067), indicating
+sensitivity to sampling and initialization.
+2) INFERENCE TIME AND RUNTIME STABILITY
+Figure 9 illustrates runtime trends for all configurations. gpt-
+4.1-nano maintained the lowest and most stable per-sample
+processing time (2.4–3.4 seconds), but its limited accuracy
+and high variability reduce its viability for deployment.
+gpt-4o-mini incurred higher average processing times
+(exceeding 4.3 seconds under RAG+instructions) with wider
+fluctuations across runs, especially in RAG-enabled setups.
+In contrast, gpt-4.1-mini maintained a consistent runtime
+profile across all strategies (2.7–3.6 seconds), demonstrating
+reliable inference behavior.
+Total execution times across 100 unique samples (3 runs x
+100 samples) mirrored these patterns. Rule-based prompting
+(i.e., experiment 2 in section IV -B2) yielded shorter runtimes
+overall, whereas RAG-enhanced configurations (i.e., ones
+from experiment 3 and 4 in sections IV -B3 and IV -B4)
+introduced greater latency, particularly for larger models.
+3) SUMMARY AND IMPLICATIONS
+This focused evaluation confirms that enhanced prompting
+strategies not only increase average classification accuracy
+but also improve stability across runs. gpt-4.1-mini emerged
+as the most consistent and performant model, showing narrow
+confidence intervals and low runtime variance.
+Among all tested configurations, RAG prompting with
+gpt-4.1-mini achieved the best balance between predictive
+performance and computational cost. Rule-based prompting
+offered a strong low-latency alternative, particularly in
+latency-constrained environments. These results validate the
+importance of aligning model scale and prompting complex-
+ity with application constraints, especially in safety-critical
+use cases requiring robust and repeatable outputs.
+C. TEST 3: CROSS-MODEL ARCHITECTURE EVALUATION
+This evaluation investigates the generalizability of PL r
+classification performance across language models from dif-
+ferent architectural families. Specifically, we compare three
+representative LLMs: gpt-4.1-mini (OpenAI), deepseek-chat
+(DeepSeek) [35], and llama3.2 (Meta) [36]. All models were
+evaluated using the hazard dataset (100 samples) under four
+prompting strategies: zero-shot (baseline), RAG, rules, and
+combined RAG with task-specific instructions discussed in
+section IV -B.
+The gpt-4.1-mini model was accessed via the OpenAI
+API [33] and serves as a validated high-performance baseline.
+deepseek-chat [35] is an instruction-tuned model with
+open weights, designed for strong alignment performance.
+llama3.2 (4B) was deployed via Ollama and represents
+a lightweight, open-source alternative. All models were
+evaluated with identical prompt templates, ensuring that only
+model architecture influenced outcomes.
+VOLUME 13, 2025 203663
+
+[[page 17]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+FIGURE 8. Test 2: accuracy analysis under repeated sampling. Left: average accuracy with standard deviation. Right: consistency of performance
+across model-strategy combinations.
+FIGURE 9. Test 2: inference time analysis across models and prompting strategies. Left: average per-sample processing time with standard deviation.
+Right: total execution time across 300 scenarios (3 runs × 100 samples). Error bars reflect runtime variability.
+1) CROSS-ARCHITECTURE ACCURACY ANALYSIS
+Figure 10 shows a clear stratification in predictive per-
+formance between the three model families. deepseek-chat
+consistently outperformed the others across all strategies,
+reaching 1.000 accuracy under rules, and scoring 0.970 under
+both RAG and combined prompting. Even in zero-shot mode,
+it achieved 0.530, the highest among all models tested.
+gpt-4.1-mini closely followed, with 0.970 accuracy under
+both RAG and rules, and 0.960 for the combined strategy.
+In zero-shot baseline mode, it achieved 0.470. These results
+203664 VOLUME 13, 2025
+
+[[page 18]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+FIGURE 10. Test 3: accuracy comparison across models and prompting
+strategies. Bars show per-strategy accuracy for each model.
+FIGURE 11. Test 3: accuracy heatmap across models and prompting
+strategies. Color intensity represents average classification accuracy.
+confirm its robustness and generalizability across prompting
+formats.
+llama3.2, by contrast, exhibited significantly lower per-
+formance. It reached a maximum of 0.410 under rules
+and remained below 0.400 across all other strategies.
+In baseline mode, it performed especially poorly (0.090),
+indicating limited zero-shot reasoning capability in safety-
+critical contexts.
+Figure 11 provides a heatmap visualization of classi-
+fication accuracy. The high-performing cluster formed by
+gpt-4.1-mini and deepseek-chat is visually apparent, with
+both models exceeding 96% accuracy in all enhanced
+prompting settings. In contrast, llama3.2 displays a consistent
+low-accuracy band across all strategies, reinforcing its
+unsuitability for PL r tasks under current configurations.
+FIGURE 12. Test 3: Average per-sample processing time across models
+and strategies. RAG prompts induce substantial runtime variation.
+These findings indicate that architectural depth, training
+data diversity, and alignment strategy (e.g., instruction
+tuning) significantly impact domain-specific performance.
+Notably, both gpt-4.1-mini and deepseek-chat appear to
+internalize task structure from the prompt, while llama3.2
+struggles to map inputs to deterministic outcomes.
+2) EFFICIENCY AND LATENCY ANALYSIS
+Figure 12 shows the average processing time per hazard
+scenario. deepseek-chat exhibited the highest latency under
+RAG (56.87s per sample) and showed elevated runtimes
+across all other configurations as well. This renders it
+impractical for time-sensitive applications, despite its high
+accuracy.
+gpt-4.1-mini maintained the most balanced profile, with
+processing times between 2.7 and 3.6 seconds, and minimal
+runtime variance across strategies. This model consistently
+offers a superior trade-off between inference time and
+accuracy, making it highly viable for production systems.
+llama3.2 had moderate latency (up to 8.1 seconds), but its
+limited classification accuracy undermines its deployment
+value. Its computational efficiency does not compensate for
+its poor predictive utility in safety-critical workflows.
+3) FINDINGS AND DOMAIN IMPLICATIONS
+Quantitatively, the results demonstrate that:
+• deepseek-chat achieved the highest accuracy (1.000)
+under rule prompting but incurred high latency.
+• gpt-4.1-mini provided strong accuracy (0.970) with
+moderate inference time, making it a balanced option.
+VOLUME 13, 2025 203665
+
+[[page 19]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+• llama3.2 underperformed across all conditions (maxi-
+mum accuracy 0.410) despite its smaller size and faster
+runtime.
+Qualitatively, the experimental results suggest that LLM
+architecture and pretraining approach profoundly impact
+their ability to support structured industrial tasks. Archi-
+tectural optimizations in deepseek-chat yield high preci-
+sion, while gpt-4.1-mini’s robustness under varied prompt-
+ing strategies indicates strong alignment with human-
+interpretable reasoning. Meanwhile, llama3.2’s poor results
+suggest that minimal instruction tuning and smaller model
+size are insufficient for reasoning-heavy classification tasks
+such as PL r determination.
+4) CONCLUSION AND DEPLOYMENT GUIDANCE
+The architectural comparison highlights that performance
+in PL r assessment tasks is not model-agnostic. Accuracy,
+consistency, and latency must all be weighed in operational
+settings. Across all evaluated configurations, rule-based
+prompting with gpt-4.1-mini achieved near-expert accuracy
+(99%) with an average latency of about 3s per scenario,
+representing the most efficient accuracy-to-latency balance.
+Larger models such as gpt-4o-mini provided comparable
+accuracy at the cost of 4s latency, whereas open-source
+models (e.g., deepseek-chat 57s, llama 3.2 8s) incurred
+substantial timing overheads despite limited accuracy gains.
+• deepseek-chat achieves high offline accuracy but its
+long inference time limits scalability for large design
+datasets.
+• gpt-4.1-mini offers the best trade-off between accuracy
+and computational efficiency, making it the most
+practical option for engineering workflows.
+• llama 3.2 underperforms even for offline analysis
+and would require retraining or fine-tuning to achieve
+acceptable consistency.
+These findings underscore the need for architecture-specific
+benchmarking and transparent validation before integrating
+LLMs into functional-safety engineering workflows.
+D. SUMMARY OF KEY INFERENCES
+Table 2 summarizes the classification accuracy results for
+three key evaluation tests Test 1 (comprehensive baseline),
+Test 2 (statistical reliability), and Test 3 (cross-architecture
+comparison). The table captures the performance of various
+LLMs under four prompting strategies: zero-shot baseline,
+rule-based, retrieval-augmented generation (RAG), and RAG
+with task-specific instructions discussed in sections IV -B1,
+IV -B2,IV -B3and IV -B4respectively. Accuracy values are
+presented as means with standard deviation where applicable.
+Key observations are extracted below with direct reference to
+these results.
+• Rule-based prompting consistently delivers peak
+accuracy. In both Test 1 and Test 2, gpt-4.1-mini
+achieved near-perfect results with rules-only input
+0.988 and 0.990 ± 0.000, respectively. In Test 3,
+deepseek-chat achieved the only perfect score of
+1.000 using rules. These results confirm that domain-
+specific, deterministic rules offer optimal alignment
+with safety-critical classification tasks.
+• RAG enhances accuracy only when model scale per-
+mits. For gpt-4.1-mini, RAG-based prompting matched
+rule performance in Test 1 and Test 3 (both 0.970)
+and even slightly surpassed it in Test 2 with 0.993 ±
+0.006. However, gpt-4.1-nano showed only minor gains
+or regressions, with a drop from 0.630± 0.044 (rules) to
+0.430 (RAG) in Test 2, suggesting RAG’s effectiveness
+is constrained by model capacity.
+• Instruction-tuned models exhibit superior architec-
+tural generalization. In Test 3, both deepseek-chat
+and gpt-4.1-mini maintained high accuracy across all
+enhanced prompts, with no score falling below 0.960.
+By contrast, llama3.2 never exceeded 0.410, even under
+rule-based prompting, highlighting the architectural
+limitations of lightweight models in structured reasoning
+tasks.
+• Zero-shot baseline performance is consistently inad-
+equate. Across all models and tests, baseline prompting
+yielded the lowest accuracy. For instance, in Test 3,
+llama3.2 scored just 0.090, and gpt-4.1-mini only 0.470,
+emphasizing that unstructured inputs are unsuitable for
+autonomous risk classification.
+• Prompt complexity increases latency without pro-
+portional accuracy gains.While RAG and RAG+instructions
+slightly improved accuracy for gpt-4.1-mini, they
+increased runtime substantially (e.g., up to 56.87s
+for deepseek-chat, as discussed in Section V -C). The
+marginal improvement over rules-only prompting does
+not justify the computational cost in latency-sensitive
+deployments.
+• Accuracy variance confirms robustness of mid-scale
+models. gpt-4.1-mini demonstrated minimal standard
+deviation across repeated runs in Test 2 (rules: 0.990 ±
+0.000; RAG: 0.993± 0.006). In contrast, gpt-4.1-nano
+exhibited greater volatility (e.g., RAG: 0.430 ± 0.015),
+underscoring the importance of stability in operational
+safety settings.
+• Performance bottlenecks are model-architecture spe-
+cific. deepseek-chat achieved unmatched accuracy but
+suffered from extreme inference delays. llama3.2 pro-
+cessed faster but failed to deliver usable classification
+accuracy. Only gpt-4.1-mini balanced throughput with
+predictive performance across all configurations.
+Beyond the numerical results, this study establishes a
+reproducible and standards-aligned methodological frame-
+work for evaluating LLMs in functional safety reasoning.
+The approach transcends prior ad-hoc prompting demon-
+strations by formalizing the PL r task as a deterministic
+benchmark grounded in ISO 12100 and ISO 13849-1.
+Through explicit placeholder design, rule encoding, and
+modular ablation of retrieval and instruction components, the
+framework enables systematic isolation of factors influencing
+203666 VOLUME 13, 2025
+
+[[page 20]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+TABLE 2. Summary of accuracy (mean ± std) for Tests 1, 2, and 3 across models and prompting strategies.
+reasoning fidelity, latency, and robustness. The combination
+of fixed-temperature inference, structured JSON outputs,
+and multi-model replication provides a quantitative founda-
+tion for reproducible comparison across architectures. This
+methodology therefore represents a generalizable blueprint
+for certifiable AI evaluation in safety-critical domains—
+linking empirical model benchmarking directly with the
+procedural rigor of industrial standards.
+E. THREATS TO VALIDITY
+Despite the rigor of the experimental design, several potential
+threats to validity are recognized. These do not undermine the
+study’s conclusions but define the scope of their applicability.
+• Internal Validity:The dataset was generated through an
+ISO 12100/13849-1–compliant process and validated by
+domain experts, yet subjective decisions in plausibility
+filtering may persist. Deterministic schema validation
+and rule-based PL r assignment reduce inconsistencies,
+though templated natural-language descriptions could
+limit lexical diversity and induce minor recognition bias.
+Repeated stratified evaluations confirm stable results
+across hazard types.
+• External Validity: The dataset represents industrial
+machinery hazards aligned with ISO 12100 Annex B;
+hence, results generalize primarily within this domain.
+Broader applicability to non-industrial or hybrid systems
+remains to be validated. Nevertheless, consistent model
+rankings across architectures indicate robustness of the
+underlying reasoning patterns.
+• Construct Validity: PLr classification accuracy serves
+as an operational proxy for expert safety reasoning.
+While objective and standard-aligned, it abstracts away
+contextual nuances such as control-system design or
+human–machine interaction. Misclassifications may
+thus reflect incomplete contextual cues rather than
+reasoning errors.
+• Statistical Conclusion Validity: The stratified subset
+(n=567) preserves the distribution of hazard categories
+and PL r levels from the full 7 800-scenario corpus.
+Confidence-interval analysis (MoE≤ 2.5 pp) confirms
+equivalence of results within statistical uncertainty.
+Remaining variance may arise from retrieval quality or
+prompt–model coupling, warranting future sensitivity
+analysis.
+• Reliability and Reproducibility: Experiments were
+executed with deterministic decoding (temperature=0),
+fixed random seeds, and uniform API configurations.
+Minor reproducibility differences may occur due to
+version drift in proprietary LLMs. All data, prompts, and
+scripts are released to support independent replication.
+• Dataset Representation and Augmentation: Canon-
+ical, standards-based phrasing was used to isolate
+reasoning performance from linguistic variability. While
+ensuring comparability, this limits lexical and semantic
+diversity. Controlled paraphrasing or generative aug-
+mentation can extend this benchmark in future work
+to assess generalization under varied linguistic and
+contextual conditions.
+These considerations delineate the empirical scope of the
+presented results and establish a foundation for future studies
+on larger, linguistically diversified, and uncertainty-aware
+safety datasets. Future work will extend this benchmark
+through lexical and semantic augmentation to test linguistic
+generalization, complemented by independent expert valida-
+tion to externally confirm reasoning fidelity.
+F. IMPLICATIONS FOR INDUSTRIAL SAFETY PIPELINES
+For embedded or production-grade deployment, rule-based
+prompts used with a mid-scale, instruction-tuned model like
+gpt-4.1-mini are the most viable. They ensure near-expert
+accuracy (0.990–0.993), low variance, and fast inference.
+However, models like gpt-4.1-mini and deepseek-chat are
+typically accessed via commercial APIs, which poses a
+risk to data confidentiality and violates many industrial
+data protection policies especially in regulated sectors (e.g.,
+manufacturing, rail, or medical devices).
+To address this, organizations must ensure that safety-related
+data is never transmitted to third-party servers. This requires
+the deployment of models locally or within air-gapped
+environments. In this context, open-source LLMs such
+as llama3.2 offer a privacy-preserving alternative but fall
+short of safety-grade accuracy thresholds (≤ 0.410) unless
+extensively fine-tuned on domain-specific corpora.
+A hybrid strategy may be viable: using commercial
+models like deepseek-chat for non-sensitive offline audits
+and internal evaluations, while investing in fine-tuning open
+models (e.g., llama3.2 or DeepSeek variants, if available for
+local deployment) for real-time safety inference. DeepSeek’s
+VOLUME 13, 2025 203667
+
+[[page 21]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+architecture demonstrates strong instruction-following capa-
+bilities and high accuracy (1.000 with rules in Test 3),
+indicating its potential contingent on the availability of
+licensablele, on-premise variant. This balance between data
+sovereignty and model performance must be explicitly
+considered when integrating LLMs into industrial AI safety
+pipelines.
+Overall, the experiments demonstrate that prompt structure
+exerts a greater influence than model scale alone on PL r
+classification accuracy. Although instruction-tuned models
+consistently yield superior performance under structured
+input, their practical deployment is constrained by latency
+and data privacy requirements. These findings underscore
+the need for lightweight, instruction-aligned models that
+can be deployed on-premise in safety-critical industrial
+environments.
+VI. CONCLUSION
+This study presents the first systematic and benchmark-driven
+evaluation of LLMs for automating PL r classification in the
+context of industrial machinery functional safety, applying
+deterministic NLP–NLU prompting to non-reasoning LLMs
+for standards-compliant risk interpretation. It establishes a
+reproducible, standards-aligned evaluation framework that
+integrates empirical AI benchmarking with the formal rigor
+of ISO 12100 and ISO 13849-1 functional safety processes.
+The results demonstrate that model scale, architectural
+alignment, and prompt engineering are critical determinants
+of classification accuracy, inference latency, and deployment
+viability. Together, these contributions establish a founda-
+tional pathway toward certifiable and explainable AI systems
+for industrial functional safety.
+Rule-based prompting consistently achieved the highest
+accuracy with minimal variance, especially for instruction-
+tuned, mid-scale models like gpt-4.1-mini. Compared to zero-
+shot prompting, rule-based prompts improved PL r classifi-
+cation accuracy by over 50 percentage points, highlighting
+the essential role of structured input for deterministic safety
+tasks. RAG provided marginal gains but incurred increased
+latency, reducing suitability for real-time deployments. Zero-
+shot prompting proved consistently inadequate and should
+not be used in safety-critical assessments.
+gpt-4.1-mini offered the best trade-off between predictive
+accuracy and inference time, making it a strong candidate
+for embedded safety applications. deepseek-chat achieved
+perfect accuracy with rule-based prompts but suffered from
+extreme latency under RAG limiting its practical utility.
+In contrast, llama3.2 offered faster runtime but consistently
+underperformed, underscoring the limitations of small,
+unaligned open-source models in regulated domains.
+Reliance on API-based commercial models poses sig-
+nificant barriers in sectors governed by strict data protec-
+tion regulations, such as manufacturing, rail, and medical
+devices. Compliance with standards such as IEC 61508
+[37], ISO 12100 [2], ISO 13849-1, and emerging EU
+regulations like the Cyber Resilience Act [38] requires that
+safety-related data remain within controlled infrastructures.
+This mandates the use of on-premise deployments. Although
+current open-source models fall short, instruction-aligned
+fine-tuning and architectural refinement (e.g., DeepSeek
+variants, if made available for local deployment) could enable
+privacy-preserving alternatives without sacrificing accuracy.
+Future research should prioritize: (i) instruction-tuned
+fine-tuning of lightweight open models specifically for func-
+tional safety domains; and (ii) explainability enhancements
+to support traceability and certifiability of LLM decisions in
+safety audits.
+REFERENCES
+[1] European Parliament and Council. (Jun. 2023). Regulation (EU)
+2023/1230 of the European Parliament and of the Council of 14 June
+2023 on Machinery and Repealing Directive 2006/42/EC of the European
+Parliament and of the Council and Council Directive 73/361/EEC.
+[Online]. Available: https://eur-lex.europa.eu/eli/reg/2023/1230/oj/eng
+[2] Safety of Machinery: General Principles for Design: Risk Assessment
+and Risk Reduction, ISO Standard 12100:2010, 2010. [Online]. Available:
+https://www.iso.org/standard/51528.html
+[3] Safety of Machinery—Safety-Related Parts of Control Systems—Part
+1: General Principles for Design, ISO Standard 13849-1:2023, 2025.
+[Online]. Available: https://www.iso.org/standard/69883.html
+[4] L. Reynolds and K. McDonell, ‘‘Prompt programming for large language
+models: Beyond the few-shot paradigm,’’ 2021, arXiv:2102.07350.
+[5] P . Lewis, E. Perez, A. Piktus, F. Petroni, V . Karpukhin, N. Goyal,
+H. Küttler, M. Lewis, W.-T. Yih, T. Rocktäschel, S. Riedel, and
+D. Kiela, ‘‘Retrieval-augmented generation for knowledge-intensive NLP
+tasks,’’ in Proc. Adv. Neural Inf. Process. Syst. , vol. 33, 2020,
+pp. 9459–9474. [Online]. Available: https://proceedings.neurips.cc/paper/
+2020/hash/6b493230205f780e1bc26945df7481bc-Abstract.html
+[6] J. Wei, X. Wang, D. Schuurmans, M. Bosma, B. Ichter, F. Xia, Q. Le,
+and D. Zhou, ‘‘Chain of thought prompting elicits reasoning in large
+language models,’’ in Proc. Adv. Neural Inf. Process. Syst., vol. 35, 2022,
+pp. 24824–24837. [Online]. Available: https://proceedings.neurips.cc/
+paper/2022/hash/5e3a1b50890333f8b6a2dc2802ec2f80-Abstract.html
+[7] P . Iyenghar, ‘‘On the development and application of a structured dataset
+for data-driven risk assessment in industrial functional safety,’’ in Proc.
+IEEE 21st Int. Conf. Factory Commun. Syst. (WFCS), Rostock, Germany,
+Jun. 2025, pp. 1–8, doi: 10.1109/WFCS63373.2025.11077569.
+[8] P . Iyenghar, ‘‘Clever Hans in the loop? A critical examination of ChatGPT
+in a human-in-the-loop framework for machinery functional safety risk
+analysis,’’Engineering, vol. 6, no. 2, p. 31, Feb. 2025. [Online]. Available:
+https://www.mdpi.com/2673-4117/6/2/31
+[9] TÜV SÜD: Partner for Safety Solutions. Accessed: May 5, 2025. [Online].
+Available: https://www.tuvsud.com/en
+[10] Innotec: Partner for Safeware Engineering . Accessed: May 7, 2025.
+[Online]. Available: https://www.innotecsafety.com/
+[11] IF A Report 2/2017e Functional Safety of Machine Controls—Application
+of EN ISO, German Statutory Accident Insurance (DGUV), Germany,
+2019.
+[12] Software-Assistent SISTEMA: Safety Integrity Software Tool for the
+Evaluation of Machine Applications. Accessed: May 5, 2022. [Online].
+Available: https://www.dguv.de/ifa/praxishilfen/practical-solutions-
+machine-safety/software-sistema/index.jsp
+[13] J. Achiam et al., ‘‘GPT-4 technical report,’’ 2023, arXiv:2303.08774.
+[14] M. Nouri, D. Karakostas, L. Hummel, and A. Pretschner, ‘‘Automating
+automotive hazard analysis and risk assessment with large language
+models: Opportunities and limitations,’’ 2024, arXiv:2401.07791.
+[15] Z. Qi, C. Wang, M. Zhang, Y . Ma, and B. Xie, ‘‘Can ChatGPT help
+with system theoretic process analysis? A pilot study,’’ in Proc. IEEE Int.
+Symp. Softw. Rel. Eng. Workshops (ISSREW), Apr. 2025, pp. 1–7.
+[16] D. Collier, K. Vincent, J. King, D. Griffiths, Y . Marshall, and K. Wronska,
+‘‘Evaluating large language models for consumer product safety risk
+assessment,’’ Saf. Sci., vol. 176, Feb. 2024, Art. no. 107083.
+[17] E. Diemert and G. Weber, ‘‘COHA: Collaborating with ChatGPT for
+hazard analysis,’’ in Proc. IEEE Int. Conf. Softw. Test., V erification
+V alidation Workshops (ICSTW), Mar. 2023, pp. 139–146.
+203668 VOLUME 13, 2025
+
+[[page 22]]
+P. Iyenghar et al.: Evaluation of Automated Machinery Functional Safety Risk Assessment
+[18] M. Sammour, W. C. Kreahling, J. Padgett, and P . Ammann, ‘‘Performance
+of GPT-3.5 and GPT-4 on the certified safety professional exam: An
+exploratory study,’’Saf. Sci., vol. 182, Jan. 2024, Art. no. 108002.
+[19] Z. Xue, X. Wu, J. Li, P . Zhang, and X. Zhu, ‘‘Improving fire safety
+engineering with retrieval-augmented large language models,’’ Fire
+Technol., vol. 61, no. 2, pp. 1281–1301, 2025.
+[20] Y . Meng, F. Jiang, and Z. Qi, ‘‘Retrieval-augmented generation for human
+health risk assessment: A case study,’’ in Proc. Int. Conf. Artif. Intell.
+Toxicology (AITOX), Jan. 2025, pp. 101–110.
+[21] T. Hillen and M. Eisenhauer, ‘‘Lasar: LLM-augmented hazard analysis for
+automotive risk assessment,’’ in Proc. SAFECOMP, 2024, pp. 143–154.
+[22] P . Iyenghar, Y . Hu, M. Kieviet, E. Pulvermüeller, and J. Wuebbelmann,
+‘‘AI-based assistant for determining the required performance level for
+a safety function,’’ in Proc. 48th Annu. Conf. IEEE Ind. Electron. Soc.,
+Oct. 2022, pp. 1–6, doi: 10.1109/IECON49645.2022.9969007.
+[23] P . Iyenghar, ‘‘Evaluating LLM prompting strategies for industrial
+functional safety risk assessment,’’ in Proc. IEEE 8th Int.
+Conf. Ind. Cyber-Phys. Syst. (ICPS), May 2025, pp. 1–4, doi:
+10.1109/ICPS65515.2025.11087881.
+[24] P . Iyenghar, L. Huning, and E. Pulvermueller, ‘‘Early synthesis of timing
+models in AUTOSAR-based automotive embedded software systems,’’
+in Proc. 8th Int. Conf. Model-Driven Eng. Softw. Develop., Feb. 2020,
+pp. 26–38, doi: 10.5220/0009095000260038.
+[25] P . Iyenghar, L. Huning, and E. Pulvermueller, ‘‘Automated end-to-end
+timing analysis of AUTOSAR-based causal event chains,’’ in Proc. 15th
+Int. Conf. Eval. Novel Approaches Softw. Eng., 2020, pp. 477–489, doi:
+10.5220/0009512904770489.
+[26] P . Iyenghar. (2025). Comprehensive Curated Dataset of Hazard
+Scenarios Systematically Generated Based on Annex B of ISO 12100
+and PLR Assigned Based on ISO. GitHub Repository. Accessed:
+Jul. 4, 2025. [Online]. Available: https://github.com/piyenghar/
+hazardscenariosISO12100AnnexB
+[27] OpenAI. (2024). OpenAI API—Chat Completions
+F ormat. Accessed: Jul. 2025. [Online]. Available:
+https://platform.openai.com/docs/guides/chat
+[28] Y . Gao, Y . Xiong, X. Gao, K. Jia, J. Pan, Y . Bi, Y . Dai, J. Sun, M. Wang, and
+H. Wang, ‘‘Retrieval-augmented generation for large language models: A
+survey,’’ 2023,arXiv:2312.10997.
+[29] P . Zhao, H. Zhang, Q. Y u, Z. Wang, Y . Geng, F. Fu, L. Y ang, W. Zhang,
+J. Jiang, and B. Cui, ‘‘Retrieval-augmented generation for AI-generated
+content: A survey,’’ 2024, arXiv:2402.19473.
+[30] LangChain Inc. (2024). LangGraph: Agentic Workflows for
+LLM Applications. Accessed: Jul. 3, 2025. [Online]. Available:
+https://www.langchain.com/langgraph
+[31] H. Chase. (2022). LangChain: Building Applications With LLMs
+Through Composability. Accessed: Jul. 3, 2025. [Online]. Available:
+https://www.langchain.com
+[32] Chroma Team. (2023). Chroma: The AI-Native Open-Source
+V ector Database. Accessed: Jul. 3, 2025. [Online]. Available:
+https://www.trychroma.com
+[33] OpenAI. (2024). GPT-4.1-Mini Model. [Online]. Available:
+https://platform.openai.com/docs/models/gpt-4
+[34] H. Touvron et al. (2024). Llama 3: Open F oundation and Instruction
+Models. Accessed: Jul. 2025. [Online]. Available: https://llama.meta.com/
+[35] A. Liu et al., ‘‘DeepSeek-v2: A strong, economical, and efficient mixture-
+of-experts language model,’’ 2024, arXiv:2405.04434.
+[36] Meta. (2024). Llama 3.2 Models. [Online]. Available:
+https://www.llama.com/docs/model-cards-and-prompt-formats/llama3_2/
+[37] Functional Safety of Electrical/Electronic/Programmable Electronic
+Safety-Related Systems, IEC Standard 61508-1:2010, 2022. [Online].
+Available: https://www.vde-verlag.de/iec-normen/217177/iec-61508-1-
+2010.html
+[38] (Dec. 10, 2024). Regulation (EU) 2024/2847 of the European Parliament
+and of the Council of 13 March 2024 on Horizontal Cybersecurity
+Requirements for Products With Digital Elements and Amending Regula-
+tion (EU) 2019/1020. [Online]. Available: https://eur-lex.europa.eu/legal-
+content/EN/TXT/?uri=CELEX:32024R2847
+PADMA IYENGHAR received the B.E. degree
+in computer science in India, in 2003, the M.S.
+degree in computer science from Technische
+Universität Hamburg (TUHH), Germany, in 2006,
+and the Ph.D. degree in computer science from
+Osnabrück University (UOS), Germany, in 2012.
+In October 2020, she was a Postdoctoral
+Researcher at UOS, where she led and contributed
+to several publicly funded research and innovation
+projects in collaboration with industry partners.
+Since 2020, she has been a Senior Functional Safety and Cybersecurity Con-
+sultant at innotec GmbH–TÜV Austria Group. From 2021 to 2024, she also
+held a Development Professorship (Entwicklungsprofessur) at the University
+of Applied Sciences Osnabrück, supported by German Federal Ministry of
+Education and Research (BMBF) through the ‘‘Professorinnenprogramm
+III.’’ During this period, she held a 50% academic role in teaching and
+research alongside her continuing industry position at innotec, where she
+now works full-time. She has over 14 years of research and development
+experience in model-based software development and embedded systems
+engineering, and more than eight years of teaching experience across
+various computer science subjects. She has supervised numerous theses
+and has published in leading conferences and journals. At innotec GmbH,
+she has contributed across all phases of the functional safety lifecycle in
+sectors, including machinery, industrial automation, railway systems, and
+automotive. She leads projects at the intersection of AI, functional safety,
+and cybersecurity.
+Dr. Iyenghar is an Active Member of the DKE/AK technical committees
+on AI and functional safety (e.g., DKE 914.11: TS 22440). Her academic
+honors include the Best Outgoing Student Award and the University Medal
+for Excellence in Academics during her undergraduate studies. She is
+actively engaged in academic and professional communities, serving as a
+guest editor, organizing special sessions at international conferences, and
+contributing as a reviewer and editorial board member for several journals.
+ZAHER MANSOUR received the bachelor’s degree in computer science.
+He contributed significantly to the experimental implementation of the
+LLM-based pipeline evaluated in this work. His research interests include
+artificial intelligence, large language models, and their application in
+industrial automation.
+JUERGEN WUEBBELMANN received the degree
+in electrical engineering from the University of
+Hannover, Germany, in 1993, and the Ph.D. degree
+in engineering, in 2000. From 1993 to 1998,
+he conducted research at the Institute for Power
+Electronics, University of Hannover. Since 1998,
+he has been an Embedded Software Developer
+with Alcatel and Keymile, Hanover, and Bern,
+Switzerland. Since 2006, he holds the position of
+a Professor of embedded systems and operating
+systems at University of Applied Sciences Osnabrück. His research interests
+include embedded systems with limited resources, software engineering for
+embedded systems, simulation techniques, and AI systems.
+VOLUME 13, 2025 203669

@@ -1,0 +1,2427 @@
+[[page 1]]
+FRAMES: Guarded and Dual-Objective Skill Evolution for Agents in
+Policy-Governed Enterprise Workflows
+Xuhui Wang, Ruoqi Shu, Chen Dan, Tianhua Xu, Mengxi Luo, Yanming Mai, Bo Wan
+BMO Financial Group
+{xuhuieric.wang, ruoqi.shu, chendaisy.dan, TianhuaMatthew.Xu,
+Mengxi.Luo, yanming.mai, bo.wan}@bmo.com
+Abstract
+LLM agents increasingly run policy-bound en-
+terprise workflows such as document audit-
+ing, where they must apply rules consistently,
+ground every value, and stay auditable. Im-
+proving these agents is hard: operational feed-
+back is sparse and unlabeled, edits to one
+rule can regress unrelated cases, and accuracy
+must improve without inflating inference cost
+or losing auditability. We presentFRAMES,
+a closed-loop framework that cold-starts de-
+ployable skills from existing assets and then
+evolves them through consensus-based muta-
+tion, Pareto selection over accuracy and cost,
+and a per-category non-regression guard—all
+while preserving auditability. Deployed on our
+internal production system, FRAMES attains
+the best accuracy–cost trade-off among base-
+lines, with the same gains reproduced on τ-
+bench.
+1 Introduction
+Large language models now enable structured plan-
+ning and multi step reasoning (Wei et al., 2022).
+With agents that invoke tools for end to end execu-
+tion (Yao et al., 2023) and skills as explicit, branch-
+ing procedures with built in checks (Wang et al.,
+2024; Li et al., 2026), they bring programmable
+business automation within reach.
+Agents already run policy-bound workflows
+such as document auditing, case validation, and
+customer service (Shu et al., 2025; Zwerdling et al.,
+2025). Yet in regulated production, agents can-
+not reliably apply rules consistently, ground every
+value, and avoid stalling in loops (Yao et al., 2025).
+The obvious fixes may fail: rechecking outputs by
+hand undoes the automation, fine-tuning is expen-
+sive and data-hungry, and tuning a flat prompt gives
+too little control. Editing the agent’s skills is more
+controllable, but reliable skill improvement is it-
+self an open problem. Failure feedback is sparse
+and unlabeled. Fixes interact so patching one case
+breaks another. Cost matters as much as accuracy at
+high volume. Changes must stay auditable and de-
+ployable without a rebuild. Existing skill-evolution
+methods (Alzubi et al., 2026; Yang et al., 2026; Xia
+et al., 2026a) struggle to meet these requirements.
+We introduceFRAMES(Feedback-driven
+Reasoning withAdaptiveMutation andEvolution
+ofSkills), a closed-loop framework that contin-
+uously evolves an agent’s skills under the gov-
+ernance constraints of regulated enterprise work-
+flows. It takes as input the enterprise’s policies and,
+when available, operational feedback from exist-
+ing business-process systems (past case outcomes,
+reviewer notes, or failure logs), and improves the
+skills without retraining models. It operates in
+two phases (Figure 1): acold startturns existing
+enterprise assets into a deployable skill bank and
+an evaluation benchmark, and anevolution loop
+periodically re-improves the responsible skills un-
+der a per-category non-regression guard, deploying
+to agents with no human re-authoring. Because
+FRAMES evolves the agent’s skills rather than its
+interface, the same framework applies whether the
+agent operates autonomously or through dialogue.
+Its contributions are built along two lines.Mech-
+anisms.FRAMES evolves skills via four designs.
+Feedback structuringturns feedback into scorable
+cases that serve as both diagnostic signal and eval-
+uation benchmark.Consensus mutationruns a
+population of independent diagnosers and retains
+fixes by their agreement, filtering out noise.Dual-
+objective evolutionPareto-optimizes accuracy and
+cost, yielding a configurable deployment menu.
+Andper-category anti-regressionholds every cat-
+egory at its baseline and turns each newly fixed
+case into a permanent regression test.Deployment.
+FRAMES fits real enterprises: itcold-startsfrom
+policies, even without feedback; every change is
+aversioned, auditablenatural-language diff for
+compliance review; and it automaticallyplugs into
+existing agent systems without a rebuild.
+1
+arXiv:2608.01772v1 [cs.AI] 3 Aug 2026
+
+[[page 2]]
+We deploy and evaluate FRAMES on our inter-
+nal financial document-auditing system (FinDAS)
+in real production. On production cases, FRAMES
+delivers the best accuracy-cost trade-off; the trend
+is reproduced on the public τ-bench, confirming
+the approach generalizes beyond our deployment.
+2 Related Work
+The closest methods improve an agent’s behavior
+with skills built from its own execution, and fall
+into two families. One keeps the model frozen:
+since prompting a model to write its own skills in
+one pass barely helps (Li et al., 2026), later frame-
+works analyze execution traces and failures to re-
+fine skill files iteratively (Alzubi et al., 2026; Yang
+et al., 2026; Ni et al., 2026; Wang et al., 2026a;
+Memento Team, 2026), including for financial rea-
+soning (Yim et al., 2026). The other treats skills
+as scaffolding for reinforcement learning, updat-
+ing model weights (Xia et al., 2026a,b; Lu et al.,
+2026) but yielding opaque parameters costly to
+audit and roll back. However, neither line is de-
+signed for regulated deployment where policy com-
+pliance and auditability are required. Concurrently,
+GEPA (Agrawal et al., 2026) and GRASP (Moll
+et al., 2026) advance frozen-model prompt/skill op-
+timization with reflective mutation and regression-
+aware gating, while a recent survey (Xu and Yan,
+2026) flags skill selection at scale and skill reusabil-
+ity as open challenges. These methods optimize a
+fixed artifact against a static development set; they
+do not target cold start from policy, continuous pro-
+duction feedback, cost as a co-objective, or lifetime
+anti-regression memory—the deployment-lifecycle
+requirements FRAMES addresses (§A.10). Prior
+compliant systems enforce symbolic rules over doc-
+uments (Shu et al., 2025), compile policy into run-
+time guards (Zwerdling et al., 2025), adapt under
+human oversight (He et al., 2025), or harvest pro-
+duction signals into improvement flywheels (Zhao
+et al., 2025)—but none improve the skills them-
+selves. FRAMES bridges this gap: it grounds skill
+evolution in operational feedback, adds cost as a co-
+objective and a per-category non-regression guard,
+and turns policy and feedback into better skills
+offline—unique in the frozen-model family.
+3 Method
+3.1 Problem Formulation
+We pose skill evolution as a dual-objective opti-
+mization over the skill bankS={s 1,...,s L} that
+Continuous Upate
+Cold Start
+Inputs for evolution
+Structured
+Cases
+Skill Bank
+Policy
+Documents
+Raw
+Operational
+Feedback Evolution Loop
+Refines and evolves
+skills based on the
+operational feedback
+Fresh Operational
+Feedback
+Fresh notes from failure
+logs and policy update
+Policy AI Agent
+Executes cases using
+the current skill bank
+and generates results
+Skill Bank
+Final Output
+Best Skill 
+Set
+Resolved 
+Cases
+Regression 
+Pool
+Deploy to agent
+Merge into skill bank and regression pool
+Figure 1: Overview of the FRAMES pipeline. Thecold
+start(§3.2) turns the policy corpus and any operational
+feedback into a skill bank and a set of structured cases
+for learning and evaluation. Theevolution loop(§3.3–
+§3.6) then improves the skills implicated by the current
+cases and writes them back into the skill bank. Subse-
+quent runs fire periodically on feedback accumulated
+since the last run, or on policy changes; the skill bank
+persists across runs.
+backs the agent at serving time. Because the under-
+lying model is fixed, the correctness and cost of ex-
+ecuting real business cases are mainly determined
+byS. We evaluate S on a set of cases, running
+eachn times to absorb LLM stochasticity, which
+yields pass rate PR(S) scored with the unbiased
+pass@k estimator (Chen et al., 2021a) and cost
+Cost(S) as the average LLM token consumption
+per case. Cases are partitioned into operational cat-
+egoriesC that reflect heterogeneous business risks
+(e.g., routine validation vs. high-impact escalation),
+and pass rate is reported per category as PRc(S)
+forc∈C . FRAMES jointly maximizes pass rate
+and minimizes cost, subject to aper-category non-
+regressionconstraint:
+max
+S
+ 
+PR(S),−Cost(S)
+
+s.t. PR c(S)≥PR c(S0)∀c∈C
+(1)
+whereS0 is the skill bank at the start of evolution.
+Because pass rate and cost can conflict, FRAMES
+optimizes in the Pareto sense during evolution
+(§3.6). In practice, each run edits notS as a whole
+but a working scopeP⊆S relevant to current op-
+erational signals; improvedP∗ is committed back,
+and asS0 advances with each successful run, the
+constraint locks in gains over the system’s lifetime.
+The following sections detail the full system.
+3.2 Cold Start from Enterprise Assets
+Skill generation.An LLM splits policy docu-
+ments Π along procedural boundaries and rewrites
+2
+
+[[page 3]]
+Retrieval & 
+Evaluation1
+Structured 
+Cases
+Skill Bank
+Baseline Skill Set
+2 Skill Set 
+Selection
+Candidate Skill Set 
+Frontier
+Selected Skill Set
+3 Population 
+Diagnosis
+Proposal 1
+Proposal 2
+Feedback
+Batch
+Diagnoser
+(Parallel)
+Proposal N
+4 Consensus 
+Consolidation
+5 Skill 
+Improvement
+Skill Edit Space
+A ll Propo s al s {1, 2, ..., N}
+Add Delete Refine
+D enoi s e & 
+D ed u plicate
+One Improved
+Skill Set
+Merged Editing 
+Plan
+Next Iteration: Update Skill Set Frontier
+Candidate 
+Evaluation 
+6
+Sampled 
+Regression Pool
+Structured 
+Cases
+Evaluation
+$
+Pass Rate Cost
+7 Regression 
+V alidation
+R egre ss ion 
+Protection G at e
+P er - C ate g or y
+Pass
+Pareto Selection 
+Pass Rate Cost
+Pass Rate Pareto 
+Frontier Not Improved
+Improved
+Cost
+Stopping 
+Criteria
+
+Max iteration or 
+Reach patience
+Promoted C andidat e
+Skill Set
+Fail
+No
+Final Output 
+Best 
+Skill Set
+Y e s
+Resolved 
+Cases
+Figure 2: The evolution loop of FRAMES, which maintains a Pareto frontier of candidate skill sets trading off pass
+rate and cost. Each iteration draws a parent from the frontier and lets a population of diagnosers analyze feedback
+against it in parallel; their proposals are consolidated into a single edit plan that rewrites the parent into a child set.
+The child must first clear a per-category non-regression gate (Eq. 2), evaluated against both current cases and a
+subset of regression pool that accumulates previously resolved cases, and then survive Pareto dominance (Eq. 3) to
+enter the frontier; the loop then proceeds to the next iteration. Once stopping criteria are met, the best skill set is
+committed back to the skill bank, and its resolved cases join the regression pool.
+Algorithm 1FRAMES Evolution Run
+Require: Skill bankS, structured casesF, regression pool
+R, iteration budgetT, populationN, patienceτ
+1:P 0←RETRIEVE(S,F)▷Working scope fromS
+2:E 0←EVALUATE(P 0,F)▷Anchor non-regression
+3:frontier←{(P 0,E 0)}
+4:fort= 1,...,Tdo
+5:P←SELECTPARENT(frontier,t)▷Non-greedy
+6:{B i}N
+i=1←PARTITION(F,N,t)▷Reshuffled per
+iteration
+7:{δ i}N
+i=1←DIAGNOSE(P,{B i}N
+i=1)▷Parallel
+8: ˆδ←CONSOLIDATE({δ i}N
+i=1)▷Consensus
+9:P ′←REWRITE(P, ˆδ)
+10:E ′←EVALUATE(P ′,F∪SAMPLE(R))
+11:ifGATE(E ′,E 0)then
+12:frontier←PARETOUPDATE(frontier,P ′,E′)
+13:end if
+14:ifno improvement forτiterationsthen break
+15:end if
+16:end for
+17:P ∗←SELECTFROMFRONTIER(frontier)
+18:R ∗←{f∈F:P ∗ passesf}▷Cases resolved byP ∗
+19:returnP ∗,R∗
+each segment into a self-contained skillsl aligned
+with one verifiable business activity, yielding a
+skill bankS={s 1,...,s L} (prompts in §A.4.1).
+The bank isflat-stored, tag-indexed, and reference-
+composed: skills sit at one level, are indexed by
+free-form tags for soft grouping, and express cross-
+skill dependencies as references. This avoids the
+cascading re-review that hierarchical edits impose
+under regulated change management. Eachsl fur-
+ther carries a description dl (the field retrieval
+scores against, §3.3) and a back-link to its authorita-
+tive clause in Π, making any agent action traceable
+to source policy.
+Feedback triage and bootstrap.FRAMES first
+synthesizes a baseline case set from Π: an LLM
+identifies policy clauses whose expected behavior
+is not yet exercised byS and drafts a case for each
+(prompt in §A.4.2). Every casefi = (mi,ti) cou-
+ples adiagnostic record mi—a natural-language
+description of the targeted failure mode together
+with any annotation of root cause—with anevalu-
+ation taskti, an executable scenario whose rubric
+encodes the ground-truth outcome. When raw oper-
+ational feedbackFraw̸=∅ , an LLM classifier splits
+it by executability:experiential knowledgeK (ad-
+vice without a reproducible setup) is attached to the
+relevant skill as supplementary context (details in
+A.4.3); the remainder is structured into additional
+cases of the same (mi,ti) form and merged with
+the synthetic baseline to yieldF={f i}.
+Continuous feedback ingestion.The triage
+above is a one-time event at system introduction,
+sorting through the mixed backlog of cases and
+free-form lessons that legacy systems leave behind.
+Between successive evolution runs, new cases are
+ingested intoF from three channels:human review
+(reviewer notes, overrides, annotations on agent
+decisions);automated trajectory analysis(inspec-
+tion of agent execution traces); andpolicy updates
+(amendments to Π diffed againstS to surface un-
+covered clauses). Each channel has its specific
+LLM-driven converter that refines its raw artifacts
+into cases of the same (mi,ti) form (see prompt in
+§A.4.4 and §A.5.2 for a worked example).
+3.3 Skill Retrieval and Baseline Anchoring
+We now detail the evolution loop (Figure 2; Al-
+gorithm 1), which begins by retrieving a working
+skill setP0⊆S from the skill bank given the cur-
+rent case setF. Each case’s diagnostic recordmi
+serves as a retrieval query against skill descriptions
+{dl} via hybrid semantic–lexical scoring (BM25).
+Skills are ranked by aggregated relevance across
+all cases; the top-k formP0, frozen for the run so
+3
+
+[[page 4]]
+cross-iteration comparisons reflect content quality
+rather than scope drift. P0 is scored on {ti} to
+obtain baselineE0 = (PR(P0),Cost(P 0)), which
+anchors the non-regression gate for admitting sub-
+sequent children (§3.5) and seeds the Pareto fron-
+tier for retaining non-dominated candidates across
+iterations (§3.6), as{(P 0,E 0)}.
+3.4 Guarded Mutation
+Each evolution iteration produces a childP′ in four
+steps.Parent selection.A parent skill set P is
+drawn round-robin over current frontier members
+so every member gets equal turns at producing chil-
+dren; this non-greedy schedule prevents the search
+from collapsing onto one end of the accuracy–cost
+trade-off.Distributed diagnosis.FRAMES parti-
+tions the diagnostic records{mi} intoN disjoint
+batchesB1,...,B N, reshuffled every iteration, and
+runs one LLM-based diagnoser per batch. Each
+diagnoser sees the full parentP plus itsBi, local-
+izes skill-level root causes, and emits a proposal
+δi = (targetsi,root_causei,plansi). This batch-
+ing exploits two complementary axes of diversity:
+across diagnosers, disjoint{Bi} yield independent
+diagnoses that consolidation aggregates—akin to
+bagging; across iterations, regrouping lets corre-
+lated failures co-occur in fresh combinations, ex-
+posing root causes a fixed partition would obscure—
+an exploration over case groupings that comple-
+ments the frontier search.Consolidation.A con-
+solidator first applies a vote filter, then makes one
+LLM call to merge the retained proposals into a
+unified plan ˆδ. The three modes trade breadth for
+precision: none passes all proposals through; the
+defaultper-skill voting( section) drops any skill
+edit proposed by fewer than q diagnosers; and
+cluster additionally requires agreement on the
+exact target set.Skill improvement.For each
+targetedsj∈P , FRAMES retrieves fromR, the
+regression pool, a small set ofanchor caseswhose
+resolution depends onsj, and includes them in the
+rewrite prompt as behavioral constraints to prevent
+catastrophic forgetting. An LLM then rewrites the
+procedure under ˆδ to obtain s′
+j. The prompt ex-
+poses the target’s full SKILL.md, its anchor cases,
+sibling skills as one-line summaries, and its auxil-
+iary file inventory—preventing duplication, bound-
+ary violations, and catastrophic forgetting of pre-
+viously learned behavior. Untouched skills carry
+over:P′ = (P\{s j}j∈ ˆδ)∪{s ′
+j}j∈ ˆδ Because the
+edit unit is a natural-language procedure, every
+change is a readable diff a compliance officer can
+approve and is versioned, leaving a full audit trail.
+The resulting childP′ then proceeds to scoring to
+determine whether it joins the frontier.
+3.5 Scoring and Admission
+FRAMES evaluatesP′ on{ti} plus a sampled sub-
+set of the regression pool—sized at 50% of the cur-
+rent evaluation set to keep per-iteration cost stable
+as the pool grows (Appendix A.9)—with an agent
+blind to{mi}. The per-category non-regression ad-
+mission gate is a safety filter, not a competition: it
+asks only whether the child preserves a hard quality
+floor anchored atP 0. The child clears the gate if
+PRc(P′)≥(1−ϵ)PR c(P0)∀c∈C,(2)
+whereϵ absorbs evaluation noise. The bound is per-
+category to defeat themasking effect: a flat total can
+hide a regression in one category offset by a gain
+in another, and in regulated workflows, categories
+carry asymmetric business risk. Anchoring atP0
+rather than the running parent matters because the
+latter would let the worst-case floor decay as (1−
+ϵ)t overtiterations, eroding the gate’s protection.
+3.6 Dual-Objective Frontier
+A gate-clearing child does not enter the frontier
+automatically; it must win a Pareto competition.
+Because accuracy and cost can trade off, produc-
+tion deployments need a range of operating points:
+high-value cases justify expensive skill sets while
+bulk screening needs cheap ones. FRAMES there-
+fore maintains a frontier of skill sets that are non-
+dominated under
+a≻b⇐⇒o(a)≥o(b)∧o(a)̸=o(b),(3)
+where o= (PR,−Cost) is the objective vector,≥
+is componentwise. Each iteration, a gate-clearing
+child enters the frontier only if no incumbent dom-
+inates it; any members it dominates are then re-
+moved, and the frontier is capped at a fixed size.
+Evolution stops when no child has beenpro-
+motedfor τ consecutive iterations, leaving the fron-
+tier as adeployment menuspanning the accuracy–
+cost trade-off. Operators select the operating point
+matching a workload’s risk and budget; the chosen
+P∗ is committed back toS in place ofP0, and its
+resolved cases are merged intoR.
+4 Experiments
+4.1 Experimental Setup
+Datasets & Environments.FRAMES is evalu-
+ated on FinDAS, a production system that audits
+4
+
+[[page 5]]
+the financial documents—i.e., income documents,
+tax forms, and financial statements—submitted
+with mortgate applications. The evaluation output
+of each case is a verdict with supporting evidence.
+Public document-QA benchmarks (Mathew et al.,
+2021; Opsahl-Ong et al., 2026; Chen et al., 2021b)
+pose static questions with fixed per-document gold
+answers over relatively clean documents; there,
+feedback from a wrong answer is a local cor-
+rection to that case, with no global policy to
+reuse. By contrast, FinDAS spans heterogeneous,
+noisy enterprise-level documents and applies cross-
+cutting policies across all of them. Rules de-
+rived from these policies chain fields across pages
+with conditional, cross-field, and arithmetic checks,
+making the policy agent prone to missing edge
+cases under ambiguous wording and hallucinating
+ungrounded values (Shu et al., 2025). In deploy-
+ment, experts flag a wrong case and its expected
+output but not the abstract edit it implies, which
+the system must generalize into a reusable rule
+without breaking previously-correct decisions. Per-
+document QA therefore cannot test what FRAMES
+is built to do—turn case-by-case feedback into
+global policy edits under regression control.
+Cases from the FinDAS production workflow
+fall into three categories: general covers routine
+cases with both correct outputs and minor errors;
+hallucination refers to responses not grounded in
+source documents; and special captures edge cases
+not explicitly covered by policy (§A.5.1). We sam-
+ple two disjoint sets of 210 cases each (70 per cate-
+gory) so that each category supplies an equal learn-
+ing signal: an evolution set and a held-out test set
+(§A.7.1). All experiments are run on τ-bench (Yao
+et al., 2025) for consistency: we port FinDAS into
+the benchmark as a new domain, and additionally
+evaluate on its original retail and airline domains as
+a generalization probe under a similar setup; details
+are in §A.8. Agent execution and evaluation are
+both built on DeepAgents (LangChain, 2024);
+Default Configuration.All FRAMES modules
+run on Claude Sonnet 4.6 (Anthropic, 2026) with
+thinking enabled, including the policy agent for
+candidate evaluation, which is the same one used
+in FinDAS. FRAMES’s full default settings and
+hyperparameters are listed in §A.6.
+Metrics.We instantiate PR as average pass@k,
+reported over all cases with 95% bootstrap con-
+fidence intervals ( B=10,000) and per category
+(PRc), and Cost as average inference cost in to-
+Quality (avg. pass@k) Inf. Cost
+Method Gen↑Hall↑Spec↑Total↑k tok / case↓
+Raw LLM 0.59 0.04 0.00 0.21[.16,.27]375.63 | 4.28
+LLM skills 0.66 0.04 0.00 0.23[.18,.29]341.47 | 4.22
+Human skills 0.71 0.66 0.43 0.60[.53,.67]412.34 | 4.41
+Batch update 0.74 0.71 0.51 0.66[.59,.72]332.15 | 4.23
+AutoSkill 0.79 0.80 0.54 0.71[.65,.77]337.82 | 6.48
+FRAMES 0.86 0.91 0.63 0.80[.74,.85]349.16 | 4.06
+Table 1: Main comparison on the held-out FinDAS test
+set (pass@k,k=3).Totalis the average across the three
+equally sized categories. Inference cost is in thousands
+of tokens (k), input | output.Boldmarks our method.
+kens over all cases and all k runs (Eq. 1). Every
+baseline and FRAMES pay this inference cost at
+deployment; only evolution-loop methods pay an
+additional one-time evolve cost, reported in abla-
+tion (Section 4.3).
+4.2 Main Results
+We compare five baselines.B1Raw LLM: the pol-
+icy agent with policies Π supplied in its prompt
+and no skill bankS.B2LLM skills: Π converted
+intoS by an LLM.B3Human skills: the same
+convertedS with domain experts reviewed and
+edited.B4Batch update: F processed together
+in a single evolve step.B5AutoSkill(Yang et al.,
+2026), a prior skill-evolution method. B3–B5 and
+FRAMES all start from the same B2 seed S,F,
+and base policy agent, differing only in howS is
+improved—human editing (B3), or skill evolution
+(B4, B5, FRAMES). We do not include a baseline
+that processes feedback one item at a time, since
+its O(|F|) re-evaluation passes are infeasible at
+production scale.
+Table 1 shows B1 and B2 collapse on halluci-
+nation and special cases (to≤0.04 ). The policy
+agent fails because the source policies, written for
+human auditors, neither abstract rules into a gen-
+eral, non-conflicting form nor make edge cases
+and grounding explicit. B3’s manual edits recover
+much of hallucination and special, but relying on
+intuition rather than systematic re-scoring, leave
+coverage uneven and unscalable, at the highest
+input cost of any method. The feedback-driven
+methods (B4, B5) evolve B2 further, improving
+monotonically, with the largest gains on halluci-
+nation. FRAMES reaches the best overall pass
+rate, leading the strongest baseline B5 in every cat-
+egory by 0.07–0.11 (paired McNemarp=0.0026;
+§A.7.2). Figure 3 (left) shows the same ordering
+acrossk=1→3, not just at the reportedk=3. Input
+5
+
+[[page 6]]
+Quality (average pass@k,∆vs. default) Cost (k tokens)
+Hyperparameter Setting General↑Hallucination↑Special↑Total↑Inference/case↓Evolution/iter↓
+Default 0.857 0.829 0.600 0.762[.70,.82]354.632 | 4.063 80.213 | 24.183
+S1 Batch
+Size
+1 0.829−.0280.829±.0000.514−.0860.724−.038[.66,.78]402.347 | 4.252 379.264 | 63.418
+4 0.571−.2860.757−.0720.457−.1430.595−.167[.53,.66]349.285 | 4.524 113.847 | 29.847
+20 0.657−.2000.543−.2860.457−.1430.552−.210[.49,.62]365.423 | 3.942 48.315 | 15.312
+40 0.814−.0430.786−.0430.571−.0290.724−.038[.66,.78]453.216 | 4.418 36.124 | 10.847
+S2 Selection
+Strategy Greedy 0.857±.0000.771−.0580.514−.0860.714−.048[.65,.77]342.817 | 4.214 79.437 | 22.418
+S3 Consensus
+Filter
+Cluster 0.771−.0860.843+.0140.543−.0570.719−.043[.66,.78]361.847 | 4.038 77.834 | 22.637
+None 0.829−.0280.771−.0580.600±.0000.733−.029[.67,.79]360.124 | 3.904 82.541 | 24.712
+S4 Regression
+Tolerance
+0% 0.800−.0570.829±.0000.614+.0140.748−.014[.69,.80]372.918 | 4.298 79.184 | 21.234
+100% 0.829−.0280.800−.0290.600±.0000.743−.019[.66,.78]382.564 | 3.978 78.912 | 23.574
+Table 2: Hyperparameter ablations on the FinDAS test set (pass@ k,k=3), each block varying one knob from
+FRAMESDefaultsettings (top row). Quality cells show the change ( ∆ vs. default)—green gain, red drop; cost
+columns report input | output tokens in thousands (k).
+1 2 3
+k
+0.2
+0.4
+0.6
+0.8Average Pass@k
+B1: Raw LLM
+B2: LLM Skills
+B3: Human Skills
+B4: Batch Update
+B5: AutoSkill
+FRAMES
+1 2 3
+k
+0.45
+0.50
+0.55
+0.60
+0.65
+0.70
+0.75
+S1 (B=1)
+S1 (B=4)
+S1 (B=20)
+S1 (B=40)
+S2: Greedy
+S3: Cluster
+S3: None
+S4: T ol. 0%
+S4: T ol. 100%
+Default
+Figure 3: Average total pass@k over all cases (k=1 to
+3) on the held-out FinDAS test set.Left: baselines and
+FRAMES (Table 1).Right: ablation settings (Table 2).
+FRAMES with its default setting stay on top at everyk.
+cost stays in the same band across methods, while
+FRAMES has the lowest output cost; B5 spends
+60% more. Since output tokens dominate per-call
+latency, FRAMES holds an advantage on both ac-
+curacy and deployment latency.
+4.3 Ablation Study
+To quantify the contribution of each module and
+setting, we sweep four hyperparameters (S1–S4)
+one at a time from the default configuration, re-
+sampling only the evolution set to 40 cases (same
+category ratio) to keep the sweep affordable and
+evolve costs comparable across S1.S1Batch size
+|Bi|: from 1 (finest) to 40 (coarsest, whole set
+in one batch).S2Selection strategy: the default
+Pareto frontier (|frontier|≤3) versus greedy single-
+incumbent search (|frontier|≤1).S3Consensus
+filter: section (default),cluster (stricter),none
+(no filter).S4Regression tolerance ϵ: 0% (strict),
+5%(default),100%(unconstrained).
+Table 2 shows no variant dominates the default:
+every alternative lowers total pass@k, and the two
+that beat it in a single category give up more else-
+where. Figure 3 (right) shows the default stays
+ahead acrossk=1→3.(S1)Batch size is the most
+sensitive knob, yet no alternative improves total
+pass@k; the finest batching multiplies evolve cost
+4.7× in input tokens, and the coarsest, cheapest to
+evolve, carries the highest inference input cost.(S2,
+S3)Greedy selection and both directions of the con-
+sensus filter—stricter (cluster) and off (none)—all
+lower total pass@k, so frontier search contributes
+andsection sits at the better operating point; clus-
+ter buys hallucination at a larger loss on general
+and special.(S4)Both ends fail: 0% rejects useful
+intermediate edits, while 100% lets any category
+drop without limit. Selection sees only total accu-
+racy and cost, so a badly regressed child can still
+enter the frontier, steering later iterations into that
+branch and leaving the frontier points unsafe to de-
+ploy. Inference cost per case otherwise varies little,
+so the default’s lead does not come from spending
+more at inference, and the remaining spread falls
+on the one-time evolve cost.
+5 Conclusion
+FRAMES shows that agent skills, evolved under a
+per-category non-regression guard, are a practical
+unit of continuous improvement for regulated agent
+deployments. Every change is a reviewable diff,
+and the Pareto frontier offers a cost–accuracy menu
+rather than a single take-it-or-leave-it upgrade. The
+only requirement is a policy corpus and feedback,
+making the framework applicable beyond the finan-
+cial domain we evaluate on. The dominant scaling
+bottleneck is per-iteration evaluation cost; smarter
+sampling and proxy scoring are the clear avenues
+for future work.
+6
+
+[[page 7]]
+6 Ethical Considerations
+This research was conducted on a proprietary
+dataset of financial documents, with all data fully
+anonymized and handled under strict institutional
+privacy protocols. We acknowledge the poten-
+tial for algorithmic bias in automated financial
+decision-making. FRAMES is deliberately de-
+signed to reduce this risk: every behavioral change
+it makes is a versioned, human-readable natural-
+language diff that a compliance officer can re-
+view and approve, and its non-regression guard
+prevents an update from silently degrading any
+risk category—together enhancing transparency
+and preserving human accountability. Neverthe-
+less, any production deployment would still require
+rigorous, ongoing audits for demographic bias to
+ensure fair and equitable outcomes.
+7 Limitations
+Evaluation limited by benchmark scarcity.No
+public benchmark tests what FRAMES targets, the
+closest option, document-QA, only asks fixed ques-
+tions over documents and does not test skill exe-
+cution (§4.1). We therefore use two sources: real
+cases from our production system (FinDAS), and
+the public τ-bench adapted to this setting. Both
+are limited—FinDAS cases must be anonymized
+and pass compliance review before being used, and
+τ-bench needs nontrivial adaptation and offers few
+cases. FRAMES improves consistently on both, so
+what limits our evaluation is the lack of suitable
+benchmarks, not the method; we leave larger-scale
+evaluation to future work.
+Dependence on feedback quality.FRAMES
+learns from operational feedback, so its gains
+scale with feedback quality—large under accurate,
+domain-specific feedback, smaller under sparse or
+noisy signal (e.g.,τ-bench retail). Consensus mu-
+tation and the per-category gate discard unreliable
+edits: this keeps quality safe but accepts fewer ed-
+its, so improvement is slower. A dedicated agent
+that curates feedback before evolution could ease
+this dependence; we leave it to future work.
+No model fine-tuning.Because FRAMES
+freezes the model and edits only skills, it cannot
+add capabilities the base model lacks. This is de-
+liberate: it avoids the training cost and labeled
+data that fine-tuning needs (often substantial in
+enterprise settings), and keeps every change an au-
+ditable natural-language diff that deploys where
+fine-tuning is impractical.
+Evaluation dominates loop cost.Re-scoring ev-
+ery case across multiple trials through a full agent
+run makes evaluation one to two orders of mag-
+nitude costlier than all other modules combined,
+which currently caps the loop at a few hundred
+cases. This cost buys the non-regression guard—
+real re-scoring, not heuristics, holds each cate-
+gory’s floor—and is paid once during evolution,
+never at deployment. Cheaper surrogate evaluators
+are a natural way to relax it.
+7
+
+[[page 8]]
+References
+Lakshya A Agrawal, Shangyin Tan, Dilara Soylu,
+Noah Ziems, Rishi Khare, Krista Opsahl-Ong, Arnav
+Singhvi, Herumb Shandilya, Michael J Ryan, Meng
+Jiang, Christopher Potts, Koushik Sen, Alexandros G.
+Dimakis, Ion Stoica, Dan Klein, Matei Zaharia, and
+Omar Khattab. 2026. Gepa: Reflective prompt evolu-
+tion can outperform reinforcement learning.Preprint,
+arXiv:2507.19457.
+Salaheddin Alzubi, Noah Provenzano, Jaydon Bingham,
+Weiyuan Chen, and Tu Vu. 2026. EvoSkill: Auto-
+mated skill discovery for multi-agent systems.arXiv
+preprint arXiv:2603.02766.
+Anthropic. 2026. Claude sonnet 4.6. https://www.
+anthropic.com/news/claude-sonnet-4-6 . Ac-
+cessed: 2026-06-16.
+Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan,
+Henrique Ponde de Oliveira Pinto, Jared Kaplan,
+Harri Edwards, Yuri Burda, Nicholas Joseph, Greg
+Brockman, and 1 others. 2021a. Evaluating large
+language models trained on code.arXiv preprint
+arXiv:2107.03374.
+Zhiyu Chen, Wenhu Chen, Charese Smiley, Sameena
+Shah, Iana Borova, Dylan Langdon, Reema Moussa,
+Matt Beane, Ting-Hao Huang, Bryan Routledge, and
+William Yang Wang. 2021b. FinQA: A dataset of nu-
+merical reasoning over financial data. InProceedings
+of the 2021 Conference on Empirical Methods in Nat-
+ural Language Processing, pages 3697–3711, Online
+and Punta Cana, Dominican Republic. Association
+for Computational Linguistics.
+Soheil Feizi. 2026. Continual learning
+for AI agents: How to actually build it.
+RELAI Blog, https://relai.ai/blog/
+continual-learning-for-ai-agents . Accessed:
+2026-07-30.
+Yufei He, Ruoyu Li, Alex Chen, Yue Liu, Yulin
+Chen, Yuan Sui, Cheng Chen, Yi Zhu, Luca Luo,
+Frank Yang, and Bryan Hooi. 2025. Enabling self-
+improving agents to learn at test time with human-
+in-the-loop guidance. InProceedings of the 2025
+Conference on Empirical Methods in Natural Lan-
+guage Processing: Industry Track, pages 1625–1653,
+Suzhou (China). Association for Computational Lin-
+guistics.
+LangChain. 2024. Deep agents. https://github.
+com/langchain-ai/deepagents. Accessed: 2026-
+06-15.
+Xiangyi Li, Wenbo Chen, Yimin Liu, Shenghan
+Zheng, Xiaokun Chen, Yifeng He, Yubo Li, Bin-
+gran You, Haotian Shen, Jiankai Sun, and 1 oth-
+ers. 2026. SkillsBench: Benchmarking how well
+agent skills work across diverse tasks.arXiv preprint
+arXiv:2602.12670.
+Zhengxi Lu, Zhiyuan Yao, Jinyang Wu, Chengcheng
+Han, Qi Gu, Xunliang Cai, Weiming Lu, Jun Xiao,
+Yueting Zhuang, and Yongliang Shen. 2026. Skill0:
+In-context agentic reinforcement learning for skill
+internalization.arXiv preprint arXiv:2604.02268.
+Minesh Mathew, Dimosthenis Karatzas, and C. V . Jawa-
+har. 2021. DocVQA: A dataset for VQA on docu-
+ment images. InProceedings of the IEEE/CVF Win-
+ter Conference on Applications of Computer Vision
+(WACV), pages 2200–2209.
+Memento Team. 2026. Memento-Skills: Let agents
+design agents.arXiv preprint arXiv:2603.18743.
+Johannes Moll, Jean-Philippe Corbeil, Jiazhen Pan,
+Martin Hadamitzky, Daniel Rueckert, Lisa Adams,
+and Keno Bressem. 2026. Grasp: Gated regression-
+aware skill proposer for self-improving llm agents.
+Preprint, arXiv:2605.29668.
+Jingwei Ni, Yihao Liu, Xinpeng Liu, Yutao Sun,
+Mengyu Zhou, and 1 others. 2026. Trace2Skill: Dis-
+till trajectory-local lessons into transferable agent
+skills.arXiv preprint arXiv:2603.25158.
+Krista Opsahl-Ong and 1 others. 2026. OfficeQA pro:
+An enterprise benchmark for end-to-end grounded
+reasoning.arXiv preprint arXiv:2603.08655.
+Ruoqi Shu, Xuhui Wang, Isaac Wang, Yanming Mai,
+and Bo Wan. 2025. LA V A: Logic-aware validation
+and augmentation framework for large-scale financial
+document auditing. InProceedings of The 10th Work-
+shop on Financial Technology and Natural Language
+Processing, pages 75–92, Suzhou, China. Associa-
+tion for Computational Linguistics.
+Chenxi Wang, Zhuoyun Yu, Xin Xie, Wuguannan Yao,
+Runnan Fang, and 1 others. 2026a. SkillX: Automat-
+ically constructing skill knowledge bases for agents.
+arXiv preprint arXiv:2604.04804.
+Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Man-
+dlekar, Chaowei Xiao, Yuke Zhu, Linxi Fan, and
+Anima Anandkumar. 2024. V oyager: An open-ended
+embodied agent with large language models.Trans-
+actions on Machine Learning Research (TMLR).
+Jiongxiao Wang, Qiaojing Yan, Yawei Wang, Yijun
+Tian, Soumya Smruti Mishra, Zhichao Xu, Megha
+Gandhi, Panpan Xu, and Lin Lee Cheong. 2026b. Re-
+inforcement learning for self-improving agent with
+skill library. InProceedings of the 64th Annual Meet-
+ing of the Association for Computational Linguistics
+(ACL). ArXiv:2512.17102.
+Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten
+Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou,
+and 1 others. 2022. Chain-of-thought prompting elic-
+its reasoning in large language models.Advances
+in neural information processing systems, 35:24824–
+24837.
+Peng Xia, Jianwen Chen, Hanyang Wang, Jiaqi Liu, and
+1 others. 2026a. SkillRL: Evolving agents via recur-
+sive skill-augmented reinforcement learning.arXiv
+preprint arXiv:2602.08234.
+8
+
+[[page 9]]
+Peng Xia, Jianwen Chen, Xinyu Yang, Haoqin Tu, and
+1 others. 2026b. MetaClaw: Just talk – an agent that
+meta-learns and evolves in the wild.arXiv preprint
+arXiv:2603.17187.
+Renjun Xu and Yang Yan. 2026. Agent skills for large
+language models: Architecture, acquisition, security,
+and the path forward.Preprint, arXiv:2602.12430.
+Yutao Yang, Junsong Li, Qianjun Pan, Bihao Zhan, and
+1 others. 2026. AutoSkill: Experience-driven life-
+long learning via skill self-evolution.arXiv preprint
+arXiv:2603.01145.
+Shunyu Yao, Noah Shinn, Pedram Razavi, and Karthik
+Narasimhan. 2025. τ-bench: A benchmark for tool-
+agent-user interaction in real-world domains. InIn-
+ternational Conference on Learning Representations
+(ICLR).
+Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak
+Shafran, Karthik Narasimhan, and Yuan Cao. 2023.
+ReAct: Synergizing reasoning and acting in language
+models. InThe Eleventh International Conference
+on Learning Representations.
+Tik Yu Yim, Wenting Tan, Sum Yee Chan, Tak-Wah
+Lam, and Siu Ming Yiu. 2026. ASDA: Automated
+skill distillation and adaptation for financial reason-
+ing.arXiv preprint arXiv:2603.16112.
+Cen Zhao, Tiantian Zhang, Hanchen Su, Yufeng Zhang,
+Shaowei Su, Mingzhi Xu, Yu Liu, Wei Han, Jeremy
+Werner, Claire Na Cheng, and Yashar Mehdad. 2025.
+Agent-in-the-loop: A data flywheel for continuous
+improvement in LLM-based customer support. In
+Proceedings of the 2025 Conference on Empirical
+Methods in Natural Language Processing: Industry
+Track, pages 1919–1930, Suzhou (China). Associa-
+tion for Computational Linguistics.
+Naama Zwerdling, David Boaz, Ella Rabinovich, Guy
+Uziel, David Amid, and Ateret Anaby Tavor. 2025.
+Towards enforcing company policy adherence in
+agentic workflows. InProceedings of the 2025 Con-
+ference on Empirical Methods in Natural Language
+Processing: Industry Track, pages 595–606, Suzhou
+(China). Association for Computational Linguistics.
+9
+
+[[page 10]]
+A Appendix
+A.1 Sample FinDAS Documents
+Figure 4 shows two synthetic document examples,
+a paystub and a tax slip, constructed to resemble
+documents processed by the FinDAS. All contents
+are fictitious and are included solely for illustrative
+purposes. Real-world documents exhibit greater
+diversity in layout, formatting, visual quality, and
+content complexity.
+(a) Sample tax slip
+(b) Sample paystub
+Figure 4: Synthetic paystub and tax slip samples used
+to illustrate the audit skills in §A.2.1 and §A.2.2.
+A.2 FinDAS Skill Corpus and Representative
+Examples
+FinDAS is governed by78 policy documentsspan-
+ning loan underwriting, payroll auditing, tax com-
+pliance, and fraud detection, from which a library
+ofover 100 executable skillsis derived across23
+document types(e.g., paystubs, tax slips, bank
+statements, employment letters, and property ap-
+praisals). Policy documents vary widely in length
+and complexity, collectively specifying thousands
+of compliance requirements at varying levels of
+granularity — from single-field validation rules to
+complex cross-document consistency checks.
+To provide concrete insight into skill structure
+and evolution, we present two representative ex-
+amples for paystub and tax slip audit. For each,
+we provide the initial skill derived from policy
+documentation and the evolved version produced
+by FRAMES, illustrating how iterative feedback-
+driven optimization refines grounding rules, edge-
+case handling, and audit precision while preserving
+the underlying compliance structure.
+A.2.1 Paystub Auditing Skill
+Below is the initial skill and its evolved successor
+for paystub auditing. Both follow the same vali-
+dation structure and output schema; the evolved
+skill adds more precise grounding rules: an explicit
+printed-line contract for the stated field, a salary-
+vs-hourly skip branch, flexible-subset gross-pay
+reconciliation, and a no-derivation rule for all total
+fields. The tool groups are sketched in §A.3.
+SKILL.md — initial
+namepaystub-audit-initial
+description Verify a paystub for payroll fraud indica-
+tors. Triggers on user request and paystub
+auditing.
+Paystub Audit
+This skill identifies document inconsistencies, missing fields,
+calculation anomalies, and payroll compliance issues.
+Inputs
+•application_id
+•document_type = "paystub"
+•documents(images + OCR results)
+Step 1— Parse Query and Resolve Paths
+Extractapplication_id anddocument_type. Call
+‘get_document_paths(...)‘; stop and report if retrieval fails.
+Step 2— Prepare Audit Context
+Initialize the fixed-key output skeleton and extract document
+representations:
+10
+
+[[page 11]]
+extract_table_structure(image_path)
+read_document_image(image_path)
+Check 1— Field Presence
+A document omitting key fields (employer, payment
+date, regular pay) may signal manipulation. Call
+‘extract_document_fields(..., doc_type="paystub")‘;
+store each result as{valid, value}. . . .
+Check 2— Arithmetic Consistency
+Fraudulent edits often update one value without adjusting derived
+totals. Verify:
+current_base_pay = rate x hours_worked
+current_net_pay = gross_pay - deductions
+Skip sub-checks where an operand is missing or non-numeric. . . .
+Check N— Employment Insurance Ceiling
+A YTD EI value above the statutory ceiling is impossible under a
+legitimate payroll run. Use‘check_ei‘. . . .
+Output
+Fixed-schema JSON, one keyed section per check:
+{
+"expected_fields": {...},
+"current_base_pay": {...},
+...,
+"ei": {...}
+}
+SKILL.md — evolved
+namepaystub-audit-evolved
+description Verify a paystub for fraud signals using
+image and OCR data. Triggers on: “check
+paystub”, “verify pay stub”, “paystub fraud”,
+or any paystub fraud-detection request.
+Paystub Auditing
+Verify a paystub for fraud signals. Work through the checks in
+order; write each result to the output file before proceeding.
+Inputs
+•application_id
+•document_type = "paystub"
+•documents(images + OCR results)
+Step 1— Parse Query and Resolve Paths
+Extractapplication_id anddocument_type. Call
+‘get_document_paths(...)‘; stop and report if retrieval fails.
+Step 2— Prepare Audit Context
+Initialize the fixed-key output skeleton and extract document
+representations:
+extract_table_structure(image_path)
+read_document_image(image_path)
+Check 1— Field Presence
+Call‘extract_document_fields(..., doc_type="paystub")‘,
+then read image and OCR.
+Field extraction rules (evolved):
+•ytd_regular_pay : YTD on thefirst/primary earnings line
+(“Regular”). Do NOT use the YTD Gross Earnings total.
+• EI zero vs. absent: printed zero→"0"; absent→"".
+. . .
+Check 2— Arithmetic Consistency
+Sub-check A (evolved): stated MUST be read from the printed
+Regular/Base Pay line. Do NOT compute rate×hours forstated;
+that goes incalculationonly.
+Salary skip (evolved):If rate is periodic (“Weekly”, “Monthly”,
+“Salary”) or operands missing:calculation: "",equal: null—
+but still recordstatedfrom the printed line.
+Sub-checks B & C (evolved):Try different subsets of earnings
+lines before flagging a gross-pay mismatch.
+Sub-checks D to G (evolved):Confirm the labeled total is
+explicitly printed. If absent: calculation: "",stated: "",
+equal: null. Never inferstated.
+. . .
+Output
+Fixed-schema JSON, one keyed section per check:
+{
+"expected_fields": {...},
+"current_base_pay": {...},
+...,
+"ei": {...}
+}
+A.2.2 Tax Slip Audit Skill
+Below we show the initial skill and its evolved suc-
+cessor for tax slip auditing. Unlike the paystub
+skill, whose checks are largely arithmetic (recom-
+puting a stated total from its components), a tax
+slip follows a fixed layout and its policy is rela-
+tively structural: the checks turn on whether spe-
+cific fields are present or absent rather than on nu-
+meric comparison. The evolved skill adds a single-
+pass efficiency requirement and normalization rules
+targeting field-extraction failures: monetary value
+normalization, employer name extraction, stan-
+dardized address formatting, and a strengthened
+exemption-conditional box logic grounded solely
+in the checkbox status.
+SKILL.md — initial
+nametax-slip-audit-initial
+description Verify a tax slip for fraud indicators. Triggers
+on “verify tax slip”, “check tax slip”, or when
+a tax slip needs fraud review.
+Tax Slip Audit
+This skill identifies document inconsistencies, missing information,
+structural anomalies, and compliance issues.
+Inputs
+•application_id
+•document_type = "tax_slip"
+•documents(images + OCR results)
+Step 1— Parse Query and Resolve Paths
+Extractapplication_id anddocument_type. Call
+‘get_document_paths(...)‘; stop and report if retrieval fails.
+Step 2— Prepare Audit Context
+Initialize the fixed-key output skeleton and extract document
+representations:
+extract_document_fields(image_path,doc_type="
+tax_slip")
+read_document_image(image_path)
+Check 1— Required Fields
+Every legitimate tax slip must contain: tax year, employer
+identity, employment income, and income tax deducted. Call
+‘extract_document_fields(...)‘; store each result as{valid,
+value}.
+Check 2— Exemption Consistency
+Tax slips carry three exemption checkboxes. When an exemption
+is active the corresponding deduction box must be absent or zero.
+11
+
+[[page 12]]
+Call‘extract_exemption_status(image_path)‘; flag any box
+that carries a value despite the exemption being checked. . . .
+Check N— Rounding Pattern
+Payroll systems generate values with cents; all-whole-
+dollar amounts may indicate manual entry. Call
+‘check_rounding(monetary_values)‘.
+Output
+Fixed-schema JSON, one keyed section per check:
+{
+"expected_fields": {...},
+"exemption_expected_fields": {...},
+...,
+"box_14": {...},
+"rounding": {...}
+}
+SKILL.md — evolved
+nametax-slip-audit-evolved
+description Verify a tax slip for fraud signals using image
+and OCR data. Triggers on: “check tax slip”,
+“verify tax slip”, “tax slip fraud”, or any tax
+slip fraud-detection request.
+Tax Slip Audit
+Verify a tax slip for fraud signals and compliance. Work through
+the checks in order.
+Inputs
+•application_id
+•document_type = "tax_slip"
+•documents(images + OCR results)
+Step 1— Parse Query and Resolve Paths
+Extractapplication_id anddocument_type. Call
+‘get_document_paths(...)‘; stop and report if retrieval fails.
+Step 2— Prepare Audit Context
+Initialize the fixed-key output skeleton and extract document
+representations:
+extract_document_fields(image_path,doc_type="
+tax_slip")
+read_document_image(image_path)
+Single-pass requirement (evolved):All checks MUST complete
+in a single pass. Reuse extract_document_fields results across
+checks; do not re-read the image unnecessarily.
+Check 1— Required Fields
+Use‘extract_document_fields(image_path,
+doc_type="tax_slip")‘.
+Monetary value normalization (evolved):Apply to every
+monetary value: (1) strip thousands-separator commas (“91,999.96”
+→ “91999.96”); (2) if OCR returns a whole number but image
+shows decimal cents, use the image value.
+Employer name extraction (evolved):Record organization name
+only. Strip from the first street number onward: “Acme Corp, 123
+Main St”→“Acme Corp”.
+Employee address format (evolved):street, city, province,
+postal-code. Province as printed; postal code with one internal
+space; no country code.
+. . .
+Check 2— Exemption-Conditional Boxes
+Use‘extract_exemption_status(image_path)‘; reuse Check 1
+results for box amounts.
+Exemption box logic (evolved):Validity of each conditional
+deduction box is determinedsolelyby whether the corresponding
+exemption checkbox is checked. Do not infer exemption from
+income amount or employment type.
+. . .
+Output
+Fixed-schema JSON, one keyed section per check:
+{
+"expected_fields": {...},
+"exemption_expected_fields": {...},
+...,
+"box_14": {...},
+"rounding": {...}
+}
+A.3 Tools for FinDAS Agents
+The policy agents call into a fixed FinDAS toolkit
+(fifteen tools) organized into four functional groups.
+The groups are described at a high level to convey
+the toolkit’s role concisely, rather than reproducing
+each tool’s full signature and implementation.
+• Path resolution and I/O:locate an application’s
+document files (image, OCR) and persist each
+checkpoint write to the output file.
+• Document understanding:parse raw document
+images into structured representations, using
+tools such as extracting nested table layouts into
+HTML format for numeric reads, resolving field
+values into JSON key-value pairs, and detecting
+discrete binary states (e.g., checkbox fields) via
+a fine-tuned vision model.
+• Arithmetic checks:recompute a stated total
+from its components and report whether the
+two are consistent, skipping gracefully when an
+operand is missing or non-numeric.
+• Statutory and structural checks:rule-based
+functions enforce hard compliance constraints,
+including deduction ceiling checks, field-value
+digit limits, and pattern-based anomaly detec-
+tion, producing deterministic valid/invalid ver-
+dicts. By delegating such decisions to spe-
+cialized tools instead of the LLM, the system
+reduces the likelihood of hallucinated compli-
+ance judgments and ensures that decisions are
+grounded in explicit, auditable validation crite-
+ria.
+A.4 FRAMES Module Prompts
+Below we present the system prompt and user-
+message template for each FRAMES module, cov-
+ering both the cold start (§3.2) and the evolu-
+tion loop (§3.3–§3.4); placeholders are written as
+{variable}.
+A.4.1 Policy-to-Skill Splitter and Rewriter
+The first cold-start module (§3.2, “Skill genera-
+tion”): it consumes the policy corpus Π and pro-
+duces the initial skill bank S={s 1,...,s L}. It
+runs as two passes.Pass 1(Segmenter) splits each
+12
+
+[[page 13]]
+policy document along procedural boundaries—
+oneverifiable business activityper segment, de-
+fined as one complete audit workflow for one doc-
+ument type (paystub, tax slip, bank statement); in-
+dividual checks within that workflow are ordered
+steps inside the same segment, not separate seg-
+ments.Pass 2(Skill Rewriter) rewrites each seg-
+ment into a self-contained SKILL.md skillsl with
+a descriptiondl and a back-link to its authoritative
+clauses in Π. The two-pass split keeps each LLM
+call within one audit workflow’s scope, which is
+what makes the resulting SKILL.md self-contained
+and the segment boundaries auditable.
+System prompt — Segmenter (Pass 1)
+You are a policy segmenter agent. You receive ONE policy docu-
+ment and split it along procedural boundaries into segments, where
+each segment corresponds to one self-contained unit of verifiable
+work.
+What a “verifiable business activity” (one segment / one skill)
+is.Define the segment boundary by the natural unit of verifiable
+work in your domain — typically the artifact / entity / document
+type that a single end-to-end procedure operates on. Each self-
+contained procedure corresponds to one such unit. A segment is the
+COMPLETE procedure for one unit: it bundles every individual
+step or check that the procedure performs into one ordered whole.
+Do NOT treat an individual step as its own segment, and do NOT
+merge two distinct procedures into one segment. Decision rule: if
+the material is handled as one unit of verifiable work, it is exactly
+one segment.
+Boundary rules.
+• Never split one procedure across two segments; never
+merge two distinct procedures into one.
+• A segment may span multiple sections of the document;
+record every section id it covers (across all of its steps).
+• List the individual steps the procedure contains inside the
+segment summary so the rewrite pass knows which ordered
+steps to author.
+• Preserve the document’s own ordering; segments are
+emitted in reading order.
+Output schema (JSON only).
+•doc_id: the id of the input document.
+•segments : ordered array; each item is { segment_id:
+“{doc_id}-{n}” ({n} starts at 1, reading order),activity:
+one short noun phrase naming the single procedure,
+included_section_ids: non-empty array of section
+identifiers from THIS document that the segment covers
+(used as the policy back-link),summary: 1–2 sentences
+describing what the procedure does and its outcome }.
+Output rules.JSON only, no prose outside the JSON. segments
+must be non-empty.
+User message — Segmenter (Pass 1)
+Policy document
+doc_id:{doc_id}
+{policy_document_text}
+Task
+Split this document into procedural-boundary segments per your
+instructions. Return JSON only.
+System prompt — Skill Rewriter (Pass 2)
+You are a skill author. You receive ONE policy segment and the
+catalog of tools the procedure may call. You rewrite the segment
+into a self-contained, executable SKILL.md procedure. The whole
+workflow is ONE skill.
+Author the SKILL.md content body with ALL of these
+sections, in order.
+•name: name the skill.
+•description : one sentence stating what the skill audits
+(inconsistencies, missing fields, calculation anomalies,
+compliance).
+•Inputs : the fields the procedure consumes, one per line
+(default isapplication_id,document_type = “<type>”,
+documents (images + OCR results); if the skill needs more
+inputs to operate, add them here and prepare them in the
+setup steps below).
+•Setup steps (Step 1 — Parse Query and Resolve Paths;
+Step 2 — Prepare Audit Context; and Step N for any
+additional input setup): resolve the document paths, resolve
+any extra inputs the skill needs to operate, and load the
+document representations the checks read from, before any
+check runs; stop and report if path resolution fails.
+• OneCheck <n> — <name> per check, in reading order.
+Each check states (a) the fraud/consistency rule it enforces,
+grounded in a specific included section; (b) the tool call(s)
+it makes, by exact name; (c) how it records its result (e.g.
+as {valid,value}); and (d) any skip condition (e.g. a
+missing or non-numeric operand).
+•Output : a fixed-schema JSON block with exactly one
+keyed section per check, in the same order as the checks.
+Grounding and auditability requirements.
+• Every check must trace to a specific section in the loaded
+segment source text. Do not invent rules that are not in the
+segment.
+• Values, choices, and claims the procedure emits
+must be grounded in the document, a tool result, or a
+deterministically-derived source — never fabricated.
+• Record the authoritative section ids as the skill’s policy
+back-link so any agent action is traceable to source policy.
+Tool usage.Call ONLY tools from the tool catalog provided in the
+user message; reference each by its exact name and never invent a
+tool, path, or signature.
+Output schema (JSON only).
+•name:skill_id.
+•description : the frontmatter trigger line (“Verify a
+paystub for . . . . Triggers on . . . ”). This is the ONLY field
+retrieval scores against, so write concrete trigger phrases,
+not prose.
+•content : the full SKILL.md markdown body with all
+required sections in order (name, description, Inputs, setup
+steps, ordered checks, Output).
+Output rules.JSON only. Keep the skill self-contained and
+runnable. Do not add rules the segment does not contain, and do
+not call tools absent from the catalog.
+User message — Skill Rewriter (Pass 2)
+Policy segment (rewrite this into one skill)
+segment_id:{segment_id}
+activity:{activity}
+summary:{summary}
+loaded source text (the full text of every included section):
+{segment_source_text}
+Available tools (call ONLY these; reference each by its exact
+name)
+{available_tools}
+Task
+Rewrite this segment into one self-contained SKILL.md procedure
+per your instructions. Return JSON only.
+13
+
+[[page 14]]
+A.4.2 Baseline Coverage-Gap Surfacer
+The second cold-start module (§3.2, “Feedback
+triage and bootstrap”). It compares the policy cor-
+pus against the current skill bank and emits one
+base feedback record per uncovered clause; these
+records are then refined into structured cases by the
+converter in §A.4.4.
+System prompt — Baseline Coverage-Gap Sur-
+facer
+You are a baseline coverage-gap surfacer of a skill-evolution
+system. You receive the enterprise policy corpus (as clauses) and
+the current skill bank (each skill’s id, description, and body). Your
+job is to find policy clauses whose expected behavior is NOT
+yet exercised by any skill, and emit ONE feedback record per
+uncovered clause.
+What to emit per uncovered clause.
+•clause: the uncovered clause cited from the policy corpus.
+•feedback : a natural-language description of the expected
+behavior the clause requires and why the current skill bank
+leaves it unexercised. This is the raw diagnostic seed the
+converter will expand into the diagnostic record. Do NOT
+write a rubric, scenario, task, or expected_output — those
+are the converter’s job.
+Grounding requirement.The feedback text must trace to the
+clause: describe only behavior the clause states. Do not invent
+requirements the clause does not express.
+Output schema (JSON only). feedback_records: array; each
+item is {clause: string,feedback: string}.
+Output rules.JSON only, no prose outside the JSON. One base
+feedback record per uncovered clause. If no uncovered clause
+exists, emitfeedback_records: [].
+User message — Baseline Coverage-Gap Surfacer
+Policy corpus (clauses)
+{policy}
+Current skill bank
+{skill_bank}
+Task
+Identify clauses whose expected behavior is not yet exercised by
+the skill bank, and emit one base feedback record per uncovered
+clause per your instructions. Return JSON only.
+A.4.3 Feedback Executability Classifier and
+Experiential Knowledge
+Classifier prompt.The executability classifier is
+a one-time cold-start module (§3.2) that splits a raw
+feedback backlog into executable items (forwarded
+to the converter in §A.4.4) and experiential items
+(appended toK).
+System prompt — Feedback Executability Classi-
+fier
+You are a feedback executability classifier. You receive a backlog
+of raw operational feedback items and the current skill bank
+(each skill’s id and description). Your job is to label each item by
+EXECUTABILITY .
+The executability test.Ask: could a fresh agent be handed a
+self-contained scenario derived from this item, run it end-to-end,
+and be scored pass/fail against a deterministic rubric?
+• YES→ label"executable". The item names a concrete,
+reproducible behavior or failure on a specific case/docu-
+ment/scenario.
+• NO→ label"experiential". The item is general advice,
+a heuristic, a preference, or a lesson with no replayable
+setup. It cannot be turned into a scored case, but it is useful
+as supplementary skill context.
+Match experiential item with skill.For "experiential" items:
+pick the single most relevantskill_id to attach the advice to, by
+matching the advice against skill descriptions. If nothing is a good
+match, settarget_skill_idtonull.
+Output schema (JSON only).
+•items : array; each item is { item_index: the input
+item’s index,label: "experiential"|"executable" ,
+rationale: one short sentence justifying the label via the
+executability test,target_skill_id: skill_id to attach
+Kto (when label="experiential"), elsenull}.
+Output rules.JSON only, no prose outside the JSON. Every input
+item must appear exactly once.
+User message — Feedback Executability Classifier
+Skill bank (id + description)
+{skill_descriptions}
+Raw operational feedback backlog
+{numbered_raw_feedback_items}
+Task
+Label each feedback item by executability and map each
+"experiential" item to its most relevant skill. Return JSON
+only.
+Experiential knowledge lifecycle.Items classi-
+fied as"experiential" are stored in a dedicated
+knowledge library keyed by skill_id. When a
+skill is loaded at inference time, its correspond-
+ingK entries are injected into the agent’s context
+alongside the skill body; if the skill is not loaded,
+itsK is absent from context.K is append-only and
+is never subject to the automatic evolution loop,
+which treats it as read-only context—this prevents
+unvalidated content from being mutated by the loop
+or from silently altering scored behavior.
+In its current form,K constitutes a small fraction
+of feedback (∼3%) and is mostly side guidance, so
+items are simply appended without further process-
+ing. As a skill’s K grows, a conflict-resolver or
+summarizer could be added to reconcile contradic-
+tory entries, surface the latest guidance, and cap
+per-skill length.
+K does not affect the reported experimental re-
+sults. The evolution loop is driven and scored en-
+tirely by the structured cases (mi,ti);K carries
+no rubric and is never scored. Given its small vol-
+ume and read-only role, it did not materially enter
+the evaluated skill sets—it is a deployment conve-
+nience for preserving human advice that cannot be
+turned into a test, rather than a contributor to the
+measured accuracy–cost numbers.
+A.4.4 Feedback-to-Case Converter (Human
+Review Channel)
+The converter for thehuman reviewchannel (§3.2,
+“Continuous feedback ingestion”), which refines
+each groundable reviewer artifact into one struc-
+14
+
+[[page 15]]
+tured casefi = (mi,ti) of the form illustrated in
+§A.5.2. The converters for the other two channels
+(automated trajectory analysis and policy updates)
+follow the same schema, differing only in the input
+artifacts they parse; we omit their prompts here for
+space.
+System prompt — Feedback-to-Case Converter
+(Human Review)
+You are the converter in a skill-evolution system. You receive raw
+operational-feedback artifacts and refine each groundable artifact
+into ONE structured evaluation case.
+How to build the case.
+•diagnostic_record : natural-language description of the
+failure mode (or the newly required behavior).
+•evaluation_task : an executable scenario the agent can
+run:
+–category : one of general,hallucination,
+special.hallucination— an ungrounded / fabri-
+cated value;special— a goal the agent escalated,
+refused, or halted on instead of reaching via an
+in-policy path, or an edge case not covered by
+policy;general— a largely-correct case with a
+minor correction.
+–description : the user-facing task statement,
+reusing the artifact’sapplication_id where one
+exists.
+–task : { task_id,evaluation_criteria } —
+the rubric must encode the corrected / amended
+behavior precisely enough to score a fresh agent
+run pass/fail.
+–expected_output : the ground truth; if the exact
+key and value are not provided by the raw feedback,
+returnnull.
+Grounding requirement.Every rubric criterion and
+expected_output value must trace to the artifact. Do not in-
+vent requirements the artifact does not state. If an artifact’s ground
+truth cannot be reconstructed, SKIP it — do not guess.
+Output schema (JSON only).
+•cases : array; each item is { diagnostic_record: string,
+evaluation_task: { category,description,task: {
+task_id,evaluation_criteria},expected_output} }.
+•skipped : array of { feedback_id: reason } for artifacts
+that are not groundable into a scorable case.
+Output rules.JSON only, no prose outside the JSON. Emit at
+most one case per artifact.
+User message — Feedback-to-Case Converter (Hu-
+man Review)
+Operational-feedback artifacts
+{numbered_feedback_artifacts}
+Task
+Refine each artifact into a structured case, or skip it if it is not
+groundable into a scorable rubric. Return JSON only.
+A.4.5 Diagnoser (per Feedback Batch)
+System prompt — Diagnoser
+You are one of N parallel diagnoser agents in an evolution loop.
+You will receive a parent skill program (a set of skills) and a batch
+of feedback items (failed and/or passed cases executed against that
+program).
+Your job.(1) Extract generalizable success patterns from passing
+baseline items (general); these are what the program already
+gets right and must be preserved. (2) Analyze the dominant root
+cause(s) across the failing items (special andhallucination).
+(3) Propose one short paragraph of edit plan per skill that should
+be edited to fix those root causes without breaking the success
+patterns.
+Inputs.Parent Program:a list of skills’ main content (SKILL.md),
+each withskill_id,description, and full markdown body.
+Feedback Batch:a numbered list with category,description,
+evaluation (per-check outcomes: db_check,action_checks,
+communicate_checks, andstatic_json verdict with field-level
+mismatches), optionalincomplete flag (set when the agent hit
+max_steps), andannotationfor non-generalitems.
+Output schema (enforced by JSON schema).
+•categories : subset of {special,hallucination} ad-
+dressed by the proposed edit.
+•root_cause : short paragraph identifying the dominant
+failure pattern, grounded in failing items and contrasted
+againstgeneralsuccess patterns.
+•plans : object mapping each target skill_id to one short
+paragraph describing what sections to add, change, or
+remove, and why. Keys must be a subset of the parent’s
+skill_ids.
+Per-category guidance.
+• special— the agent escalated, refused, or halted (including
+running out of step budget) before reaching the user’s
+underlying goal through the in-policy paths available. Push
+the SKILL.md toward completing the user’s goal through
+in-policy paths: restate the goal in policy terms, enumerate
+every in-policy branch that could advance it, attempt those
+options in policy-prescribed order, prefer batch tool forms
+over repeating the single-item form, escalate or refuse only
+the residual portion that has no in-policy path.
+• hallucination— the agent’s actions or outputs diverge
+from what the user, policy, or available sources actually
+specified. Push the SKILL.md toward grounding behavior
+in explicit, traceable sources before acting or replying:
+every value, choice, and claim should trace to a specific
+user utterance, policy clause, or deterministically-derived
+source; user-given values should override policy defaults
+when policy permits; qualitative or referential expressions
+should be resolved into concrete values; when grounding is
+missing, ask or verify rather than fill the gap.
+• general— standard routine cases that are primarily correct,
+with only minor errors. The errors still warrant repair, but
+correct ones supply success patterns to preserve: extract
+what the SKILL.md already gets right and ensure the
+edits proposed for the other categories do not regress this
+behavior.
+Targets.An edit plan can target either the SKILL.md prose (add
+a fallback/retry loop, verification checkpoint, edge-case rule,
+workflow step) or a bundled script the skill invokes (fix a bug, add
+error handling, harden a network call) referenced by its existing
+path.
+Output rules. plans must be non-empty (an empty object is
+rejected); be concise but specific; do not output reasoning outside
+the JSON.
+User message — Diagnoser
+Parent Program
+{rendered_parent_skills}
+Feedback Batch
+{rendered_feedback_batch}
+Task
+Produce ONE proposal in the schema above. JSON only.
+A.4.6 Consolidator
+System prompt — Consolidator
+You are a consolidator agent in an evolution loop. You receive
+N peer-reviewed proposals from parallel diagnoser agents who
+each analyzed a different feedback batch from the same parent
+skill program. A consolidation strategy has already filtered the
+proposals down to a “surviving” set you must synthesize over.
+Your job.Produce ONE consolidated edit plan per surviving
+skill_id that captures the agents’ consensus while dropping
+idiosyncratic / one-off suggestions.
+15
+
+[[page 16]]
+Inputs. surviving_skill_ids (the exact set of skills you must
+produce plans for); per agent: root_cause andplans entries
+restricted to surviving skills.
+Output schema.
+•categories : non-empty subset of {special,
+hallucination,general}, reflecting the union addressed
+across the agents.
+•root_cause : a concise paragraph summarizing the dom-
+inant failure pattern the agents agree on; no idiosyncratic
+claims.
+•plans : object whose keys equal surviving_skill_ids
+(no extras, no omissions); each value is one focused
+paragraph that merges concrete suggestions from multiple
+agents (preserving tool names, file paths, conditional
+logic), drops one-off / contradictory suggestions, and is
+self-contained enough that a downstream LLM can rewrite
+the SKILL.md from this paragraph alone.
+Output rules.JSON only, no prose outside the JSON.
+User message — Consolidator
+Surviving skill_ids
+{surviving_skill_ids_json_array}
+Agents’ proposals (restricted to surviving skills)
+{rendered_proposals_filtered}
+Task
+Synthesize a single consolidated proposal. JSON only.
+A.4.7 Skill Builder (Rewriter)
+The skill-rewriting stage (§3.4), applied to one tar-
+get skill at a time. Sibling skills are passed as
+context-only (frontmatter description only, not
+full bodies) so the rewriter knows what other skills
+are responsible for and avoids duplication. Aux-
+iliary files in the skill folder are listed by relative
+path so the rewriter can reference them without
+inventing paths.
+System prompt — Skill Builder
+You are a skill rewriter in an evolution loop. Skills are STRUC-
+TURED PROCEDURES, not free text. They typically contain
+if-then branching for input variants, explicit tool calls (e.g.
+table_to_html,find_evidence,verify_claim), multi-step
+pipelines with intermediate checks, and verification / grounding
+steps before final output.
+Inputs.The target skill (frontmatter + full markdown body —
+rewrite this); sibling skills in the parent program (context only, do
+not edit them); a consolidated edit plan describing the change to
+apply.
+Auxiliary files.Aux files (scripts/,references/,agents/,
+assets/) live alongside SKILL.md on disk and are copied to
+the new skill folder unchanged. You may reference them in the
+rewritten content using their existing relative paths; do not invent
+paths that do not exist in the parent.
+Versioning.The skill is being versioned. If the parent’s markdown
+body references theparent_skill_id anywhere (H1 title, sec-
+tion headings, self-references), replace those occurrences with
+new_skill_id.
+How to edit.Apply the edit plan precisely. Preserve the skill’s
+overall structure (section headings, ordering, existing tool calls)
+unless the plan explicitly says otherwise. Keep the skill self-
+contained and runnable.
+Output.Return ONE JSON object with: description (the trigger
+/ when-to-use line for the frontmatter) andcontent (the full
+updated markdown body). No YAML frontmatter, no outer code
+fences, no commentary or reasoning text outside the JSON.
+User message — Skill Builder
+Target skill (rewrite this)
+{rendered_target_skill}
+Versioning
+parent_skill_id:{parent_skill_id}
+new_skill_id:{new_skill_id}
+Replace any occurrence of{parent_skill_id} in the body (H1
+title, headings, self-references) with{new_skill_id}.
+Auxiliary files in target skill folder (do not invent new paths)
+{aux_file_list}
+Sibling skills (context only)
+{sibling_skill_descriptions}
+Consolidated edit plan (for{target_skill_id})
+categories:{categories}
+root_cause:{root_cause}
+plan:{plan_for_target}
+Task
+Rewrite the target skill to fully apply the edit plan above. Respond
+with JSON only.
+A.5 From Operation Feedback to Structured
+Cases
+A.5.1 Raw Feedback Corpus Samples
+These samples are drawn from the operational feed-
+back that FinDAS accumulates as its policy agents
+execute skills on real cases. As described in §3.2,
+feedback enters through three channels — human
+review, automated trajectory analysis, and policy-
+update diffs — and each is converted into a diagnos-
+tic record that states the failure mode in free-form
+natural language. Below we show representative
+records from each category.
+Special
+• When an exemption box is checked, the corre-
+sponding value should be either blank or zero.
+• When no YTD Net Pay line appeared on the doc-
+ument, the agent attempted to derive the figure
+from other fields rather than treating the absence
+as a skip condition — if the relevant printed line
+does not exist, the check should be omitted en-
+tirely.
+Hallucination
+• The stated base pay was computed as rate ×
+hours rather than read from the printed Reg-
+ular/Base Pay line. Even when rate or hours
+are absent, the printed line value should still
+be recorded; only the arithmetic cross-check is
+skipped.
+• The stated value for total deductions was re-
+summed from individual line items rather than
+read from the printed “Total Deductions” line.
+On documents that separate Taxes from Payroll
+Deductions into distinct subtotals, the relevant
+figure is the Payroll Deductions subtotal, not the
+combined amount.
+16
+
+[[page 17]]
+• Gross pay was flagged as a mismatch after try-
+ing only one combination of earnings lines. Dif-
+ferent documents include different subsets of
+earnings components; all plausible combinations
+should be explored before flagging a discrep-
+ancy.
+General
+• Monetary values containing thousands-separator
+commas (e.g., "90,169.00") were not normal-
+ized — the comma should be stripped before any
+numerical comparison.
+• The employee address included a country suffix
+(e.g., “CAN”) that should be omitted, and the
+postal code was missing the required internal
+space (e.g.,"M5V 2T6", not"M5V2T6").
+A.5.2 Structured Case Example
+Below we show a single structured case fi =
+(mi,ti) converted from human review notes drawn
+from the FinDAS. Heremi is the natural-language
+diagnostic record identifying the failure mode, and
+ti is the executable evaluation task.
+Structured casef i
+mi = “The base pay stated value must be read directly from the
+printed Regular/Base Pay line. The formula rate× hours serves
+only as a cross-check and must not substitute the printed value.
+When rate or hours are absent, the check is skipped but the printed
+value is still recorded. YTD net pay must likewise come from the
+printed YTD Net Pay line; if absent, the field is left blank.”
+ti = {
+"category":“hallucination”,
+"description": “Verify application{ID}’s paystub documents
+for potential fraud . . . ”,
+"task":{
+"task_id":2,
+"evaluation_criteria":{
+. . .
+// criteria by which task success is determined
+}
+},
+"expected_output":{
+. . .
+// ground-truth output the agent must produce to earn reward
+}
+}
+A.6 Experiment Setting
+Operating-point selection.Because FinDAS op-
+erates in a high-stakes financial setting, a wrong
+verdict carries far greater downstream cost than
+a few extra tokens; we therefore prioritize accu-
+racy (PR) over inference cost when selectingP∗
+in experiments, breaking ties toward lower cost (Ta-
+ble 3). A live deployment may instead pick any
+frontier point to match its risk and budget (§3.6).
+The baselines carry no such setting. B1-B3 perform
+no evolution, B4 runs a single evolve step with one
+output, and B5 emits the final skill set of its own
+mechanism.
+Table 3 reports the default FRAMES configura-
+tion used throughout the experiments, except where
+an ablation in §4.3 varies a single knob.
+A.7 Experiment Discussion
+A.7.1 Data Sources and Sampling Design
+Evaluating what FRAMES targets requires more
+than a set of scored tasks: a governing policy the
+skills are derived from and traced back to, multi-
+step tool-using execution scored on the final verdict,
+a record of how a deployed agent actually failed,
+independent of the method under test, and enough
+cases twice over—one set for the loop to evolve
+from, and a disjoint held-out set, large enough per
+risk category, to validate what it produces. No pub-
+lic resource we are aware of provides all these to-
+gether, which is what makes an internal system nec-
+essary here rather than preferred. Document-QA
+benchmarks supply tasks as document–question
+pairs but no governed workflow to execute, and no
+ground truth over an agent’s actions to score that
+execution against (§4.1). Policy-governed agent
+benchmarks supply the policy and the workflow—
+enough for FRAMES to cold-start— but their cases
+carry gold answers rather than failure histories, and
+a method scored on signal it synthesized for itself
+cannot demonstrate that real corrections general-
+ize into reusable rules. Among the latter,τ-bench
+is the closest match and the harness we build on
+(§A.8); its domains probe generality rather than
+substituting for FinDAS, their pools ( 110 and 50
+cases) being thin once split into an evolution set and
+a per-category held-out set. FinDAS supplies the
+missing combination: 78 policy documents across
+23 document types (§A.2), reviewer feedback ac-
+cumulated from real audits, and a case pool deep
+enough to fill three equal categories twice over at
+the size used below.
+The evolution set and the held-out test set are
+both drawn from the FinDAS case pool and strat-
+ified into equal category cells (70 general, 70 hal-
+lucination, 70 special each) rather than sampled at
+operational incidence, under which hallucination-
+type risk dominates. Each case carries the category
+its converter assigns from the reviewer’s annota-
+tion (§A.4.4), verified by a domain expert. The
+balance is a measurement choice: the reported unit
+is the per-category pass ratePRc and the gate holds
+a floor in each category independently (§3.5), so
+17
+
+[[page 18]]
+Parameter Default value
+Models
+Diagnoser, Consolidator, Skill Builder . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . Claude Sonnet 4.6 (thinking enabled)
+Cold-start Segmenter, Rewriter, Surfacer, Converter . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . Claude Sonnet 4.6 (thinking enabled)
+Embedder (cold-start retrieval) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . Titan Embed Text v2
+Policy agent (FinDAS evaluation) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . Claude Sonnet 4.6 (thinking enabled)
+Policy agent & user simulator (τ-bench evaluation) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . Claude Sonnet 4.5 (thinking enabled)
+Evolution loop
+Top-k. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .5
+Diagnoser batch size|B i|. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .8(N=⌈|F|/8⌉parallel diagnosers)
+Max iterationsT. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .10
+Convergence patienceτ. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .3iterations without improvement
+Maximum frontier size|frontier|. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .≤3(Pareto non-dominated set)
+P∗ Selection . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .arg maxP∈frontier(PR,−Cost)(accuracy-first)
+Consolidation strategy . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .section(default); options:section,cluster,none
+V oting threshold . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .40%of diagnosers
+Regression toleranceϵ. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5% (relative, per category)
+Regression pool sample per iteration . . . . . . . . . . . . . sized in proportion (50%) to the task size in the current evolution round
+Batch shuffle seed . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . per-iter=base+iter (base= 0)
+Table 3: Default configuration of FRAMES in the §4
+unequal cells would estimate the categories at dif-
+ferent resolutions and let the most frequent one
+carry the total. With equal cells one case moves
+a category rate by 1/70≈0.014 and the total by
+≈0.005, so the differences we report are not single-
+case artifacts. The cell size stops at 70 because
+each case is a full multi-trial agent run and the evo-
+lution set is re-scored for every candidate at every
+iteration, making evaluation—not sampling—the
+binding cost (see Limitations). The two sets are
+disjoint and the held-out set takes no part in the
+loop: diagnosis, the non-regression gate, and the
+frontier selection ofP∗ all read the evolution set
+and the regression pool only, and the held-out set
+is scored once per method in experiments.
+A.7.2 Significance and Structure of the
+Improvement
+FRAMES leads the strongest baselineB5in ev-
+ery category (Table 1) and on total at everyk (Fig-
+ure 3), and its widest margin falls on hallucination—
+the dominant safety risk in this financial setting—
+where it also attains its highest absolute pass rate.
+In Table 1 the interval for FRAMES ([.74,.85] )
+overlaps that of the strongest baselineB5
+([.65,.77] ). These intervals are marginal—each
+computed for one method on its own—so their
+overlap does not imply that the difference between
+the two is zero, and we test that difference directly.
+The comparison here is paired: both methods are
+scored on the same 210 held-out cases, and with
+n=k=3 each case yields a binary pass@3, so the
+two runs can be compared case by case. Pairing
+is what makes the test sharp. Of the 210 cases,
+173 resolve identically under both methods, leav-
+ing 37 discordant cases to carry the signal; varia-
+tion in case difficulty moves both methods together
+and cancels in the difference. We test H0, that
+the two methods have equal pass@ 3 on the test
+distribution, againstH1, that they differ. The ob-
+served gap is ∆=+0.090 (0.800 vs. 0.710, or 19
+additional cases passed), and a paired bootstrap
+over cases (B=10,000) puts its 95% interval at
+[+0.038,+0.148] , which excludes zero. McNe-
+mar’s exact test reaches the same verdict from the
+discordant cases alone: 28 of them are won by
+FRAMES and 9 byB5, whereas under H0 each
+should fall either way with equal probability, and
+a split this lopsided or more has two-sided proba-
+bilityp=0.0026. We therefore rejectH0 at the 5%
+level: the lead over the strongest baseline is not
+attributable to sampling. It is also not an artifact of
+the reportedk—the paired interval excludes zero
+atk=1, 2, and 3 (∆=+0.144, +0.111, +0.090)—
+nor specific toB5: againstB4, the next strongest
+baseline, the margin is larger and the evidence
+stronger (∆=+0.143, two-sidedp=2.8×10 −6).
+That the lead is broad rather than concentrated
+is what the per-category gate produces (§3.5). Be-
+causeB5is itself an evolved skill bank from the
+18
+
+[[page 19]]
+same seedS, feedbackF, and policy agent, this
+margin measures what FRAMES adds over a prior
+skill-evolution method rather than whether skill
+evolution helps at all; Table 2 separates the indi-
+vidual contributions of frontier search, consensus
+filtering, and the gate. The gain carries no cost
+premium: FRAMES posts the lowest output cost
+of any method, at an input cost within the range
+spanned by the baselines.
+A.7.3 Robustness to Pipeline Stochasticity
+The sweep in Table 2 is built to isolate hyperparam-
+eters, but it doubles as a repeated-run study. Every
+stage of the loop is stochastic (diagnosis, consoli-
+dation, skill rewriting, and the agent runs that score
+each candidate), so each row is an independent end-
+to-end execution that re-rolls all of it. Each also
+runs under a handicap: a configuration deliberately
+moved off the default, and a smaller evolution set,
+so sparser signal to improve skills from. Although
+none of these settings matches the default, their to-
+tals average pass@k—outside the two intermediate
+batch sizes—stay close to one another and match
+or exceed that of the strongest baseline, which was
+evolved on the full set. That exception is the sen-
+sitivity S1 characterizes, not a random excursion:
+outside it, quality holds under both configuration
+and execution randomness.
+A.7.4 Cost Stability and Deployment
+Overhead
+Read as repeated runs (§A.7.3), the same sweep
+settles what the reported costs are worth. Cost is
+reported in tokens throughout: billing is a fixed rate
+per token and output tokens are generated one at a
+time, so monetary cost is linear in the counts below,
+and per-call latency close to linear in the output
+count.
+Inference cost.This is paid on every case for
+as long as the skills are deployed. Across the ten
+runs it holds a narrow band— 3.90–4.52k output
+tokens per case, and 343–383k input apart from the
+two extreme batch sizes, which move input to402k
+at|Bi|=1 and 453k at 40: at either extreme the
+edits come out unusually fine-grained or unusually
+broad, and both leave the agent extra work to apply
+(§4.3).B5spends 6.48k output tokens per case,
+above every run in that band, so its gap to FRAMES
+is wider than the spread our own runs produce.
+Evolution cost.This is paid once when the skill
+bank is built, and does not recur on the cases the
+deployed agent serves. Holding batch size at its
+default, the six runs that vary selection, consen-
+sus, and tolerance spend 78–83k input and 21–25k
+output tokens per iteration. Batch size is the one
+setting that moves this figure—from379k input per
+iteration at|Bi|=1 down to 36k at 40— but the set-
+ting cheapest to evolve is also the most expensive
+to serve (§4.3). The default takes the other side
+of that trade: evolution is paid once, inference on
+every case thereafter.
+A.8τ-bench Experiment
+Beyond the internal FinDAS domain, FRAMES is
+evaluated on two public domains ofτ-bench (Yao
+et al., 2025), keepingτ-bench’s original cases, tool
+APIs, and environment configuration unchanged,
+with FRAMES run under the same default settings
+as the FinDAS experiments (§4.1, shown in Ta-
+ble 3). In each domain, theτ-bench policy is con-
+verted into skills to form theB2(LLM skills) seed,
+from whichB3,B4,B5, and FRAMES all derive:
+B3(Human skills) is the same seed after expert
+review and editing, whileB4,B5, and FRAMES
+evolve it automatically. The policy agent and user
+simulator run on Claude Sonnet 4.5 with thinking
+enabled, and every case is manually classified into
+the three categories (general, hallucination, special)
+with matching feedback. Because τ-bench pro-
+vides few cases per domain, the evolution/test split
+is chosen per domain to keep both sides usable: the
+evolution set must cover all three categories with
+enough feedback for the loop to learn from, and
+the held-out set must remain large enough to give
+reliable per-category estimates.
+A.8.1 Retail Domain
+Setting.This domain provides 110 cases, which
+we manually classify by their outcome into 78 gen-
+eral, 15 hallucination, and 17 special. A 65/35
+evolution/test split then leaves 70 cases for evolu-
+tion (49 general, 10 hallucination, 11 special) and
+a 40-case held-out test set (29 general, 5 hallucina-
+tion,6special).
+Results.Table 4a reports average pass@ k on this
+held-out test set. The publicτ-bench retail policy
+is compact and already well covered by the seed, so
+scores are high across the board and the headroom
+is small—a near-saturated regime that leaves little
+room to separate methods on accuracy alone. Even
+here, FRAMES comes out ahead: it ties for the best
+overall quality (0.98), is the only method to handle
+19
+
+[[page 20]]
+Quality (average pass@k) Inference Cost
+Method General↑Hallucination↑Special↑Total↑k tok / case↓
+B1 Raw LLM 0.90 1.00 0.67 0.88 80.90 | 1.52
+B2 LLM skills 0.97 0.80 0.83 0.93 112.03 | 2.93
+B3 Human skills 0.97 0.80 1.00 0.95 155.55 | 3.01
+B4 Batch update 0.97 1.00 1.00 0.98 123.59 | 2.88
+B5 AutoSkill 0.97 1.00 0.83 0.95 109.16 | 2.69
+FRAMES (ours) 1.00 1.00 0.83 0.98 109.68 | 2.14
+(a) Baseline comparison on the publicτ-benchretaildomain.
+Quality (average pass@k) Inference Cost
+Method General↑Hallucination↑Special↑Total↑k tok / case↓
+B1 Raw LLM 1.00 0.71 0.67 0.84 93.69 | 1.82
+B2 LLM skills 1.00 0.71 0.83 0.88 129.74 | 3.51
+B3 Human skills 0.92 0.71 0.67 0.80 180.15 | 3.61
+B4 Batch update 1.00 0.86 0.67 0.80 143.13 | 3.45
+B5 AutoSkill 1.00 0.86 0.83 0.92 126.42 | 3.23
+FRAMES (ours) 1.00 1.00 0.83 0.96 127.02 | 2.57
+(b) Baseline comparison on the publicτ-benchairlinedomain.
+Table 4: Baseline comparison on the publicτ-bench domains (pass@k,k=3; Claude Sonnet 4.5 agent).Totalis the
+case-weighted average across categories; inference cost is in thousands of tokens (k), input | output.
+the general category perfectly (1.00), and matches
+the best on hallucination (1.00); on special, where
+scores rest on few cases and move in coarse steps,
+it remains competitive (0.83). What sets FRAMES
+apart is reaching this at no cost penalty—among
+the skill-bearing methods, it posts the lowest cost
+and sits at the high-quality end of the cost–quality
+frontier, while the raw LLM (B1) is cheaper only by
+attaching no skill and is the weakest overall. The
+pattern echoes FinDAS—top-tier accuracy at no
+cost penalty—indicating the approach generalizes
+beyond our internal domain.
+A.8.2 Airline Domain
+Setting.Airline provides only 50 cases in to-
+tal—the smallest of our three domains—so we
+adopt an even 50/50 evolution/test split rather than
+the 65/35 used for retail. This keeps enough cases
+in every category on both sides for a meaningful
+per-category estimate. The 50 cases comprise 24
+general, 14 hallucination, and 12 special. The split
+yields 25 cases for evolution (12 general, 7 hallu-
+cination, 6 special) and a 25-case held-out test set
+(12general,7hallucination,6special).
+Results.Table 4b reports average pass@k on the
+held-out test set. FRAMES achieves the highest
+overall quality (0.96) among all methods. On the
+hallucination subset, which is the primary target
+of our approach, FRAMES attains 1.00, whereas
+the strongest baseline reaches only 0.86 (B4and
+B5). On general cases, FRAMES remains at the
+ceiling shared by the strongest automatic methods
+(1.00), while on special cases it achieves a compet-
+itive 0.83. Because the Airline benchmark contains
+only 50 total cases, with 7 held-out hallucination
+cases and 6 held-out special cases, these category-
+level estimates are necessarily coarse and should
+be interpreted with appropriate caution. Neverthe-
+less, the qualitative pattern is consistent with both
+FinDAS and Retail: FRAMES remains among the
+highest-quality methods while avoiding any cost
+penalty.
+A.9 Supplementary Method Details
+A.9.1 Non-Regression Gate: Semantics and
+Scope
+The per-category admission gate (Eq. 2) serves as
+the primary mechanism for preventing regression
+during skill evolution. We detail its semantics be-
+low.
+What the gate enforces.Every candidate child
+P′ must satisfy PRc(P′)≥(1−ϵ) PR c(P0) for
+all categoriesc, evaluated over the current evolu-
+tion setF plus a sampled subset of the regression
+poolReval⊂R . The tolerance ϵ= 0.05 absorbs
+stochastic evaluation noise (pass rates are estimated
+fromk=3 independent trials per case) and encour-
+ages exploration of candidates that trade marginal
+accuracy in one category for gains elsewhere. If no
+candidate clears the gate in a given iteration, the
+baselineP 0 is retained unchanged.
+Deterministic vs. probabilistic coverage.The
+gate provides adeterministicguard on the evalu-
+ated subsetF∪R eval: every case in this set has been
+executed and scored, and the per-category floor is
+enforced exactly (up to ϵ). For the remainder of
+R not sampled in a given iteration, the protection
+isprobabilistic—it relies on the cumulative cover-
+age achieved by repeated stratified sampling across
+iterations (quantified below).
+A.9.2 Regression-Pool Sampling Strategy
+Pool composition and per-iteration sample size.
+The regression poolR accumulates all previously
+resolved cases across the system’s lifetime. At each
+evolution iterationt, we draw a regression sample
+Reval sized at50%of the current-round evaluation
+set (i.e., proportional to the task size rather than to
+|R|). This keeps per-iteration evaluation cost stable
+and predictable as the pool grows. Sampling is
+stratified by category to ensure minority categories
+(e.g.,special) are never under-represented.
+20
+
+[[page 21]]
+Sampling mechanics.The evaluation budget
+|Reval| is allocated in two layers.(i) Skill-targeted
+priority:cases associated with skills modified in
+the current iteration (identified via the same case-
+skill associations used for anchor-case retrieval;
+§3.4) are sampled first, directly testing whether the
+edit introduced a regression on its primary depen-
+dents. Cases already supplied as anchor constraints
+in the rewrite prompt are excluded from the sam-
+pling pool, so the gate never credits behavior the
+rewriter was explicitly conditioned on.(ii) Strat-
+ified random:the remaining budget is filled by
+category-stratified random sampling from the rest
+ofR, covering potential side-effects where editing
+one skill indirectly affects cases governed by other
+skills. The split between the two layers is con-
+figurable per deployment. Within each iteration,
+sampling is without replacement; across iterations,
+sampling is independent, so the gate re-checks a
+different cross-section on each round and progres-
+sively builds cumulative coverage.
+A.9.3 Coverage Under Pool Growth
+A natural concern is that as R grows across the
+system’s lifetime, a fixed-size sample provides di-
+minishing per-case coverage. We show that, under
+mild assumptions, the two-layer sampling design
+(§A.9.2) maintains a high probability ofdetecting
+a regression—i.e., sampling at least one case that
+exhibits the failure—independent of pool size.
+Assumptions.
+A1 (Skill-level clustering.)We denote by
+skills(x)⊆S the set of skills associated with
+casex (the same association used for anchor-
+case retrieval; §3.4), and byRj ={x∈R|
+sj∈skills(x)} the cases whose resolution de-
+pends on skill sj. If a rewrite to sj causes
+regression, at least a fractionα>0 of cases in
+Rj will exhibit that regression. This is a rea-
+sonable expectation given that skills are shared
+procedural abstractions: cases resolved by the
+same skill share overlapping governing logic,
+so a regression-inducing edit typically mani-
+fests across a non-negligible subset rather than
+a single isolated case.
+A2 (Sub-linear skill bank growth.)The skill bank
+size|S| grows over time (as new policies are in-
+troduced or evolution creates new skills) but at
+a rate much lower than the pool:|S|=o(|R|) .
+This holds because each skill encodes a gen-
+eral paradigm for solving a class of problems
+and thus covers many cases, whereas the pool
+grows with every resolved feedback instance.
+A3 (Positive skill share.)For any actively main-
+tained skillsj, its pool fractionpj =|R j|/|R|
+remains bounded away from zero as|R|→∞ ;
+formally, lim inf|R|→∞pj >0 . This doesnot
+require uniform distribution across skills—it
+only requires that a skill in active use continues
+to accumulate resolved cases at a rate that keeps
+pace with overall pool growth. A2 ensures that
+the number of skills does not grow fast enough
+to dilute every skill’s share to zero.
+Primary defense: Targeted-layer detection.
+The skill-targeted layer (layer i in §A.9.2) sam-
+ples directly from Rj when skill sj is modified.
+Under A1, a fractionα of those cases exhibit the re-
+gression. If the targeted layer drawsnt cases from
+Rj, the single-iteration detection probability is:
+ptargeted
+detect (sj) = 1−(1−α) nt (4)
+wherent = min(|R (i)
+eval|,|R j|) and|R(i)
+eval| is the
+targeted-layer budget. Crucially, this expression
+containsneither |R| norpj—it isinherently pool-
+independent.
+Secondary defense: Random-layer detection.
+The stratified-random layer (layer ii) covers side-
+effects: when skillsk is edited, the targeted layer
+checks cases inRk, but the edit may indirectly af-
+fect cases governed by adifferentskill sj (j̸=k ).
+Letβ >0 denote the fraction of cases inRj that
+exhibit such a side-effect regression (analogous
+to A1 for indirect effects; typically β≤α since
+indirect effects are weaker). Drawing nr cases
+fromR (modeled as uniform for a conservative
+lower bound; stratification only improves minority-
+category coverage), the probability of sampling at
+least one affected case fromRj is:
+prandom
+detect (sj) = 1−(1−βp j)nr (5)
+Approximation note.Both Eq. 4 and Eq. 5 use
+the with-replacement (binomial) model. Since
+actual sampling is without replacement, the true
+detection probabilities are at least as high (nega-
+tive correlation only helps). The approximation is
+tight when the pool is much larger than the sample
+(|Rj|≫n t for the targeted layer;|R|≫n r for
+the random layer), which holds in practice.
+21
+
+[[page 22]]
+Pool-independence of detection.Neither Eq. 4
+nor Eq. 5 contains|R| directly. The targeted layer
+depends only on α andnt; the random layer de-
+pends on β, pj, and nr. Under A3, pj remains
+bounded away from zero, soβpj does not vanish
+as the pool grows. Detection probability is there-
+fore stable regardless of pool scale.
+Contrast with naive per-case coverage.Under
+uniform random sampling without skill structure,
+the probability that aspecificcase is sampled at
+least once acrossTiterations is:
+pcase = 1−
+
+1− |Reval|
+|R|
+T
+,(6)
+which degrades as|R|grows. The skill-level anal-
+ysis avoids this degradation: detecting a regression
+onsj requires hittingany oneof the α|Rj| affected
+cases (targeted layer) or sampling any case whose
+regression probability is βpj per draw (random
+layer), rather than a specific individual case.
+Rate of degradation.The only scenario where
+detection degrades is if pj drifts toward zero for
+a skill still being edited. Under A2, the num-
+ber of skills grows sub-linearly, so the average
+share 1/|S| shrinks slowly; A3 further ensures that
+any actively maintained skill’s share stays positive.
+Thus any degradation is driven by the slow pace
+of skill-bank expansion—substantially slower than
+pool growth. For skills that become dormant (no
+new cases),pj may shrink, but dormant skills are
+not edited and therefore do not require regression
+detection.
+A.10 Positioning Relative to Concurrent
+Skill-Evolution Methods
+We provide a detailed comparison between
+FRAMES and the closest concurrent methods—
+GEPA (Agrawal et al., 2026), GRASP (Moll et al.,
+2026), and SAGE (Wang et al., 2026b)—to clarify
+the scope distinction raised in review. Table 5 sum-
+marizes the comparison; the text below elaborates.
+Scope distinction.The recently released
+skill/prompt-evolution methods share a narrower
+framing: given afixed skill/prompt set and a
+fixed test set, evolve the artifact toward higher
+benchmark accuracy under a single scalar objective.
+FRAMES instead addresses the full lifecycle a reg-
+ulated production system demands: it cold-starts a
+multi-skill bank directly from business policy (no
+curated skill set or test set to begin with), treats
+policy as the governing compliance guide, and then
+improves the bank continuously from real, arriving
+production feedback—subject to a per-category
+no-regression gate, a cost–performance Pareto
+evolution objective, and a lifetime anti-regression
+memory. The deliverable is amenuof deployable,
+compliance-safe operating points that keeps
+improving over the system’s lifetime, not a single
+artifact tuned once against a frozen test set.
+GEPA (Agrawal et al., 2026).GEPA maintains
+an instance-level Pareto frontier for diversity in par-
+ent selection, optimizes a single scalar objective
+(accuracy), and returns one best-aggregate candi-
+date. It is a one-time optimization routine against
+a fixed development set: it does not address cold
+start from policy, continuous ingestion of produc-
+tion feedback, cost as a first-class objective, or
+lifetime anti-regression memory.
+GRASP (Moll et al., 2026).GRASP validates
+each skill edit against a held-out probe before com-
+mitting, iterating over a fixed development split for
+a bounded number of epochs. Its regression gate
+aggregates over all probe examples into one global
+decision; it does not enforce per-category floors. It
+is likewise a one-time optimization routine: no cold
+start from policy, no continuous feedback ingestion,
+no cost objective, no lifetime memory.
+SAGE (Wang et al., 2026b).SAGE trains model
+weights via Skill-Augmented GRPO. FRAMES
+deliberately restricts itself to a frozen model and an
+authored, human-readable skill bank—an auditable,
+roll-back-friendly path better suited to regulated
+deployment.
+Why these gaps matter in production.A global
+gate can mask compliance-critical regressions in
+minority categories; a one-time fit does not survive
+continuous policy updates and feedback ingestion;
+and a single operating point cannot serve work-
+loads with different risk–cost profiles. These are
+precisely the gaps FRAMES is built to close.
+Industrial context.The concurrent RELAI plat-
+form (Feizi, 2026) articulates closely aligned prin-
+ciples (replayable environments, lifelong improve-
+ment without forgetting, efficient token use) but to
+our knowledge has not published an algorithm, for-
+mal problem statement, or reproducible evaluation.
+We read it as independent evidence that continual,
+cost-aware agent improvement is an industrially im-
+portant problem—supporting our motivation rather
+22
+
+[[page 23]]
+than serving as a baseline.
+On the survey (Xu and Yan, 2026).The
+survey organizes skill acquisition into multiple
+paradigms—reinforcement learning with skill li-
+braries (SAGE), autonomous discovery (SEAgent),
+and compositional synthesis—along with security
+and governance concerns, and flagsskill selec-
+tion at scale(Challenge 2) andevaluation of skill
+reusability/maintainability(Challenge 7) as un-
+solved. FRAMES occupies a cell the survey does
+not populate: frozen-model lifecycle optimization
+of an authored, human-readable skill bank driven
+by production outcomes.
+What is new in FRAMES.Five elements, im-
+posed by regulated enterprise workflows, sepa-
+rate FRAMES from prior methods. The first is
+apipelinecontribution, the second is asearch-
+mechanismcontribution, and the remaining three
+areoptimizationconstraints.
+1. End-to-end lifecycle pipeline (cold start →
+continuous update).Prior methods assume a
+curated skill set and a fixed test set already ex-
+ist. FRAMES cold-starts a skill bank and eval-
+uation cases directly from business policy (no
+seed skills or labels required), then re-improves
+on each new batch of production feedback—
+committing gains back to the bank across the
+system’s lifetime. No prior skill/prompt opti-
+mizer covers this full cold-start-to-continuous-
+update arc.
+2. Consensus-filtered evolution operator.Pro-
+duction feedback is sparse and unlabeled, so
+a single diagnosis pass can latch onto noise.
+FRAMES’s search procedure is designed for
+this regime: each iteration runs a popula-
+tion of independent diagnosers over disjoint,
+per-iteration-reshuffled feedback batches and
+consolidates their proposals by agreement—a
+bagging-style denoising step that suppresses
+spurious single-diagnoser editsbeforeany eval-
+uation budget is spent. Reshuffling across iter-
+ations lets correlated failures co-occur in fresh
+combinations, surfacing root causes a fixed par-
+tition would hide. Candidate skill sets are ex-
+plored by non-greedy, round-robin selection
+over a maintained Pareto frontier, so the search
+cannot collapse onto one end of the accuracy–
+cost trade-off.
+3. Per-category regression floor.In regulated
+workflows, categories carry asymmetric risk:
+a regression on a compliance-critical cate-
+gory cannot be compensated by fixing low-risk
+cases. A single aggregate score—the standard
+in prior skill optimizers—structurally permits
+this masking. We enforce a per-category floor
+(PRc(P′)≥(1−ϵ)PR c(P0) for every cate-
+gory c), which we are not aware of any pub-
+lished skill-optimization method providing.
+4. Explicit accuracy–cost Pareto menu.At pro-
+duction volume, token cost is first-class: a skill
+set 2 points more accurate but 3× costlier may
+be undeployable at bulk. Prior methods opti-
+mize accuracy toward one artifact (GEPA re-
+ports that evolved prompts tend to shorten but
+does not optimize cost as an objective). We
+make cost an explicit second objective and re-
+turn a menu of non-dominated operating points,
+chosen per workload by risk and budget.
+5. Lifetime regression memory.Prior methods
+optimize once against a fixed test set. In produc-
+tion, a fix must survive future updates. We keep
+a persistent regression pool of previously re-
+solved cases and, on each round, re-check every
+candidate against a sample of this pool sized in
+proportion to the current evolution batch. This
+bounds evaluation cost as the pool grows while
+turning past fixes into recurring regression tests
+(§A.9 proves that detection capability does not
+degrade with pool size). Crucially, anchor cases
+from this pool are also injected into each rewrite
+as explicit behavioral constraints, so regressions
+are avoided at proposal time rather than merely
+rejected after evaluation.
+23
+
+[[page 24]]
+Capability GEPA GRASP SAGE FRAMES (ours)
+Cold start from policy (no seed skills/labels)✗ ✗ ✗ ✓
+Continuous ingestion of production feedback✗ ✗ ✗ ✓
+Per-category regression floor✗ ✗ ✗ ✓
+Explicit accuracy–cost Pareto menu✗ ✗ ✗ ✓
+Lifetime anti-regression memory✗ ✗ ✗ ✓
+Consensus-filtered multi-diagnoser search✗ ✗ ✗ ✓
+Frozen model / auditable skill bank✓ ✓ ✗ ✓
+Regression awareness (any form)✗ ✓ ✗ ✓
+Table 5: Feature comparison of FRAMES against concurrent skill/prompt-evolution methods. GEPA (Agrawal
+et al., 2026) and GRASP (Moll et al., 2026) are frozen-model text-space optimizers; SAGE (Wang et al., 2026b)
+updates model weights via RL. FRAMES is the only method addressing the full cold-start-to-continuous-update
+lifecycle under compliance constraints.
+24

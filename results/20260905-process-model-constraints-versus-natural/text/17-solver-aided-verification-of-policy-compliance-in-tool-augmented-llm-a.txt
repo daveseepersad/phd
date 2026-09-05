@@ -1,0 +1,552 @@
+[[page 1]]
+Solver-Aided Verification of Policy Compliance in
+Tool-Augmented LLM Agents
+Cailin Winston
+University of Washington
+Seattle, USA
+Claris Winston
+University of Washington
+Seattle, USA
+René Just
+University of Washington
+Seattle, USA
+Abstract
+Tool-augmented Large Language Models (TaLLMs) extend LLMs
+with the ability to invoke external tools, enabling them to interact
+with real-world environments. However, a major limitation in de-
+ployingTaLLMs in sensitive applications such as customer service
+and business process automation is a lack of reliable compliance
+with domain-specific operational policies regarding tool-use and
+agent behavior. Current approaches merely steer LLMs to adhere
+to policies by including policy descriptions in the LLM context, but
+these provide no guarantees that policy violations will be prevented.
+In this paper, we introduce an SMT solver-aided framework to en-
+force tool-use policy compliance inTaLLMagents. Specifically, we
+use a LLM-assisted, human-guided approach to translate natural-
+language-specified tool-use policies into formal logic (SMT-LIB-2.0)
+constraints over agent-observable state and tool arguments. At
+runtime, planned tool calls are intercepted and checked against the
+constraints using the Z3 solver as a pre-condition to the tool call.
+Tool invocations that violate the policy are blocked. We evaluated
+on the 𝜏-bench benchmark and demonstrate that solver-aided pol-
+icy checking reduces policy violations while maintaining overall
+task accuracy. These results suggest that integrating formal reason-
+ing intoTaLLMexecution can improve tool-call policy compliance
+and overall reliability.
+1 Introduction
+Tool-augmented Large Language Models (TaLLMs) enable LLMs to
+invoke external tools that allow them to interact with and act in
+real-world environments. Such advancements have accelerated the
+deployment of LLMs in autonomous agents. Tool planning and tool
+use capabilities allow LLM agents to retrieve up-to-date information
+and autonomously take actions beyond text responses. For example,
+a customer service agent for an airline company may be backed
+by an LLM enabled to invoke tools to query a user database and to
+book or cancel flight reservations. While this capability increases
+autonomy, it also introduces risks around the correctness and safety
+of actions taken, especially in domains where strict adherence to
+a set of operational policies is critical. Incorrect or unauthorized
+tool calls may lead to policy violations or irreversible consequences.
+Hence, ensuring that tool calls invoked by the LLM agent comply
+with domain-specific tool-use policies prior to execution is critical
+for safe and reliable deployment.
+Although much prior work has focused on improving the tool
+planning and usage capabilities of TaLLMs as well as the overall
+end-to-end task accuracy, safeguarding against policy violations re-
+mains an open question. Existing policy enforcement mechanisms
+Policy
+Text 
+Policy
+Checker 
+SAT
+UNSAT
+LLM
+Tool Call
+Response
+Tool Response
+ToolsUser
+Message
+Min Unsat Core
+Figure 1: Tool-augmented LLM with tool-call policy checker.
+The framework integrates an SMT-based policy checker into
+the tool-call execution loop, blocking tool invocations that
+violate specified tool-use policies.
+for TaLLM agents typically involve embedding long policy docu-
+ments in the system prompt or applying output guardrails based on
+heuristic or pattern-matching rules. These approaches lack formal
+semantics and do not provide reliable guarantees that policy viola-
+tions will be prevented. One could also integrate a human trained
+with domain expertise in the loop to authorize each tool call before
+execution. However, this limits agent autonomy and processing
+speed as it requires the human to be familiar with the context of
+each request. Furthermore, all these approaches are not scalable to
+larger and more complex policies.
+Focusing on the set of policies that directly govern and constrain
+tool use, we argue that tool-call policy compliance can be modeled
+as a constraint satisfaction problem over agent-observable state
+and the tool set and can be implemented as a runtime check before
+tool execution. With this framework, determining whether a tool
+call violates a policy reduces to checking the satisfiability of a set
+of logical constraints derived from the policy, the agent’s current
+state, and the planned tool call.
+We propose a formal-methods-based framework that encodes tool-
+use policies as logical constraints and checks tool calls for compat-
+ibility prior to tool execution using an SMT solver. By verifying
+planned actions before they occur, our method aims to reduce the
+proportion of policy-violating tool calls while maintaining task
+success rates. Figure 1 illustrates such a TaLLM agent integrated
+with a SMT-solver-based policy checker.
+Tool-use policies are often defined in long natural-language policy
+documents that contain both tool-use policies and other behavioral
+or operational policies that are not tied to specific tool-use. While
+translating such documents into formal logic constraints is an im-
+portant challenge, our primary focus in this work is evaluating
+the effectiveness of using formal logic if such a translation exists.
+Hence, we extract tool-use policies from policy documents and
+encode them into formal logic statements using an LLM-assisted,
+human-guided, and human-reviewed approach. This allows us to
+arXiv:2603.20449v1 [cs.SE] 20 Mar 2026
+
+[[page 2]]
+Cailin Winston, Claris Winston, and René Just
+isolate evaluating the effectiveness of constraint-based runtime
+enforcement of tool-use policies.
+Specifically, we make the following contributions:
+• A formalization of TaLLM agent tool-use policies as logical
+constraints over agent-observable state and tool arguments.
+• SMT solver-based policy compatibility checking framework
+for TaLLMs.
+• An empirical evaluation on the𝜏 2-bench, demonstrating the
+effectiveness and feasibility of solver-aided policy checking
+for TaLLMs to reduce policy-violating tool calls.
+2 Logical Encoding of Natural Language Policies
+Operational policies for TaLLM agents are typically specified in
+natural language documents that may be derived from real-world
+policy documents for the domain in which the agent is deployed.
+For example, a policy for an airline customer service agent might
+contain response guidelines and rules describing when operations
+such as cancellations and reservation changes are permitted. Since
+LLMs operate on natural language, these policy documents can be
+provided as text inputs to the LLM to attempt to steer the LLM to
+adhere to them.
+However, prompt-based guidance does not provide reliable policy
+enforcement. As policies grow longer and more complex, purely
+prompt-based enforcement becomes increasingly brittle and harder
+to validate. LLMs may struggle with remember complex policies
+and their interactions across multi-turn conversations and across
+various tool invocations. Furthermore, there is no way to validate
+that a proposed tool call satisfies all policy requirements before
+execution.
+We observe that tool-use policies are fundamentally constraint sys-
+tems: they specify conditions over an agent’s observable state and
+tool arguments that determine whether a tool call is permitted. This
+observation enables modeling policy compliance as a satisfiability
+problem. We first model a policy as a set of unconstrained variables
+representing all relevant state and possible tool calls along with
+predicates capturing constraint-based relationships between the
+variables. Then, given a proposed tool call and the agent’s observ-
+able state that constrain a subset of all policy variables, do there
+exist assignments to the remaining unconstrained variables that
+satisfy all policy constraints if the tool were called? If not, the tool
+call violates the policies. Once encoded as SMT formulas, a solver
+such as Z3 can automatically determine satisfiability.
+2.1 Policy Encoding
+Given a set of policies in natural language, a domain expert converts
+them to a logical encoding that contains:
+• Uninterpreted constantsrepresenting observable state
+and tool arguments (e.g., user identifiers, timestamps, flags
+indicating whether required information has been obtained).
+• Sortscapturing enum-like categories (e.g., membership
+tiers, reservation states).
+• Predicates and functionsimplemented as uninterpreted
+constants but semantically encoding policy conditions (e.g.,
+whether a cancellation is allowed).
+• Assertionsthat constrain relationships among these con-
+stants and predicates.
+2.2 Tool Validation Schema
+In order to enable reliable policy checking at runtime, a domain
+expert defines a validation schema for each tool available to the
+LLM agent that is based on the policy encoding. A schema speci-
+fies (1) the set of variables from the policy encoding that must be
+instantiated to assess compatibility for that tool, including their
+types and any domain-specific enumerations, and (2) a designated
+policy predicate whose satisfiability determines whether the tool
+invocation is permitted. Tools that are unconditionally allowed are
+associated with empty schemas and bypass compatibility checking.
+An example of a policy encoding and its corresponding tool schema
+for a cancellation tool is showed in Figure 2.
+3 Solver-Aided Policy Compatibility Checking
+Once a logical encoding of tool-use policies is constructed, these
+constraints can be applied at runtime to verify tool-call compatibil-
+ity. We introduce a solver-aided policy compatibility checker that is
+integrated into the tool planning loop of a TaLLM. At runtime, the
+checker intercepts each planned tool call, constructs a concrete set
+of logical assertions using the agent’s observable state and planned
+tool call, and checks for satisfiability against the policy encoding
+using a SMT solver. The solver’s result is then used to allow or
+block the tool invocation prior to execution. Figure 2 depicts an
+example of policy checking works for a single tool call.
+3.1 Runtime Tool-Call Interception
+At runtime, the policy compatibility checker is invoked whenever
+the agent produces a candidate tool call. The checker observes the
+tool name, its arguments, and the preceding conversation history,
+but does not otherwise alter the agent’s internal reasoning process.
+Instead, it acts as an external gate that validates whether the pro-
+posed tool invocation is compatible with the policy encoding under
+the current agent-observable state.
+SMT-LIB Constraint ConstructionGiven a planned tool call, the
+checker retrieves the corresponding tool validation schema and
+instantiates the required policy variables. A language model is used
+to extract concrete values for these variables from the conversation
+history and the tool arguments.
+The extracted values are translated into logical assertions and ap-
+pended to the static SMT-LIB policy encoding. The designated
+policy predicate according to the tool schema is then asserted as
+the compatibility condition to be checked for the current tool invo-
+cation.
+Solver-Based Policy CheckingThe constructed SMT-LIB code
+is submitted to an SMT solver, which determines whether it is
+satisfiable (SAT) or unsatisfiable ( UNSAT). A SAT result indicates
+that there exists an assignment consistent with both the policy
+
+[[page 3]]
+Solver-Aided Verification of Policy Compliance in Tool-Augmented LLM Agents
+cancel_reservation(
+id="Q69X3R"
+)
+Tool Call
+- prior user msgs
+- prior tool calls
+Context
+cancel_reservation:
+ required_assertions:
+ - id
+ - reason
+ - createdTime
+ - currentTime
+ - cabinClass
+ - ...
+ check: isCancellationAllowed
+Tool Schema
+LLM-based
+Fact
+Extractor
+(declare-const id Int)
+(declare-const isCancellationAllowed Bool)
+(assert (= isBookingWithin24Hours
+ (<= (- (tsToSec currentTime)(tsToSec createdTime))
+ 86400)))
+(assert (= isCancellationAllowed
+ (or isBookingWithin24Hours
+ isFlightCancelledByAirline
+ (= cabinClass BUSINESS)
+ (and hasTravelInsurance isInsuranceCovered))))
+...
+Policy Encoding
+{
+"id": "Q69X3R",
+"reason": "CHANGE_OF_PLAN",
+"createdTime": 20240514095238,
+"currentTime": 20240515150000,
+"cabinClass": "ECONOMY"
+}
+Z3
+Solver
+SMT-LIB-2.0
+Builder
+SAT
+UNSAT
+Extracted Facts
+Combined SMT-LIB 2.0 Code
+; Policy Encoding
+...
+; Extracted facts assertions
+(assert (= id 712749525))
+(assert (= reason CHANGE_OF_PLAN))
+(assert (= createdTime 20240514095238))
+(assert (= currentTime 20240515150000))
+(assert (= cabinClass ECONOMY))
+...
+; Final tool call check
+(assert isCancellationAllowed)
+; Check for overall satisfiability
+(check-sat)
+Runtime
+Figure 2: Flow diagram of the policy compatibility checker in order to validate whether a tool call for cancellation can be called.
+constraints, the current state, and the proposed tool call, and the
+invocation is permitted. A UNSAT result indicates a policy violation,
+and the tool call is blocked.
+3.2 Agent Planning Control
+If the solver returns SAT, the tool call is executed. If it returns
+UNSAT, the tool call is blocked and the agent is prompted to revise
+its plan. The minimum unsatisfiable core is also provided in the retry
+prompt as an explanation for the tool call being blocked. To prevent
+infinite retry loops and to account for potential policy encoding
+or solver failures, the agent is permitted a bounded number of
+replanning attempts (up to three in our implementation) before
+returning control to the user.
+4 Evaluation Setup
+Evaluation SetupWe evaluated the solver-aided policy checker
+on the airline domain of 𝜏 2-bench, which is a benchmark designed
+to assess tool-augmented agents interacting with users in multi-
+turn conversations in realistic scenarios. The benchmark consists of
+domain-specific tasks that require agents to interpret user intents,
+invoke external tools correctly, and achieve the expected outcome
+while adhering to complex policy constraints. The airline domain
+includes50tasks,13tools, and a1242-word policy document with
+detailed rules about cancellations, re-bookings, and compensation
+eligibility. We specifically select this domain as it contains a more
+complex domain policy and tasks that can be used to test policy
+adherence.
+We measure task performance with the pass∧k metric introduced
+by the benchmark authors. This metric computes the probability
+that all 𝑘 i.i.d. task trials are successful, averaged across all tasks.
+Higher pass∧k scores indicate increased consistency and reliability
+across𝑘independent trials.
+For all experiments, we run the benchmark 𝑘= 4trials to pro-
+duce pass∧1 . . . 4scores. The customer and service agents were
+instantiated with GPT-4.1, and tool call validation used GPT-4o.
+Research QuestionsSpecifically, we aim to answer the following
+research questions:
+• RQ1: How effective is automated translation of natural-
+language policies into SMT constraints??
+• RQ2: How much does solver-aided policy checking reduce
+the number of policy-violating tool calls made by TaLLM
+agents?
+• RQ3: How does solver-aided policy checking impact overall
+task accuracy and consistency?
+5 Results
+5.1 RQ1: Formal Logic Policy Translation
+We investigated several approaches for encoding natural-language
+policies into SMT constraints, progressing from fully automated
+generation to human-in-the-loop methods. Across these designs,
+we observed recurring challenges in syntactic correctness, semantic
+completeness, and constraint tightness. Below, we summarize the
+designs explored and the outcomes observed.
+Design 1: Proof-of-Thought (Simple LLM) Generation.Our
+initial attempt relied on the Proof-of-Thought framework [2], which
+involved prompting an LLM to directly generate SMT-LIB and exe-
+cuting the generated code with Z3. This approach consistently failed
+on realistic policy documents: the generated SMT-LIB frequently
+contained syntax errors, undefined symbols, and incomplete rule
+
+[[page 4]]
+Cailin Winston, Claris Winston, and René Just
+Precision Recall0.0
+0.2
+0.4
+0.6
+0.8
+1.0Score
+0.51
+0.61
+0.70
+0.49
+Write Tool Call Invocations
+Baseline
+Solver-Aided
+Figure 3: Precision and recall of write tool calls for baseline
+TaLLMand theTaLLMwith policy checker.
+pass^1 pass^2 pass^3 pass^4
+k (number of trials)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0pass^k rate
+0.560
+0.433
+0.375
+0.340
+0.625
+0.543
+0.495
+0.460
+Pass^k Comparison Across Agents
+Baseline Agent
+Solver Aided Agent
+Figure 4: The pass∧k scores for the baselineTaLLMand the
+TaLLMwith policy checker.
+structures. As a result, this design was not viable for policy verifi-
+cation.
+Design 2: Iterative LLM Generation and Repair.Our next ap-
+proach built on top of the Proof-of-Thought framework by adding
+in an iterative repair loop. The LLM generated an initial encoding,
+and errors produced by Z3 when running the generated code were
+passed back to the LLM for further refinement and repair. This
+approach produced syntactically correct SMT-LIB (50–60 lines)
+and performed better when generating Z3-Python code than raw
+SMT-LIB. However, the major limitation of this approach was that
+the resulting policy encodings omitted many essential constraints,
+leading to underconstrained policies and incorrect behavior.
+Design 3: Automated Reasoning Tool in A WS Bedrock.We
+next applied an automated-reasoning-capable LLM via the Auto-
+mated Reasoning tool in AWS Bedrock. This approach produced
+more complete policy encodings (around 600 lines) with around
+95% coverage according to an LLM judge. While significantly im-
+proved, many rules remained underconstrained. For example, the
+encoding for the cancellation policy used an implication to allow
+cancellations when a booking was made within 24 hours, but did
+not explicitly prohibit cancellations outside this window. As a result,
+the solver permitted tool invocations that violated the intended
+policy semantics.
+Design 4: A WS Bedrock + Custom Prompting + Manual Tun-
+ing.Due to the limitations of using AWS Bedrock out of the box, the
+final design augmented the Bedrock approach with custom prompt-
+ing instructions to emphasize constraint correctness tightness. We
+further performed manual review and targeted tuning on the gen-
+erated SMT-LIB to refine the rules. Some of these manual improve-
+ments included adding definitions for undefined variables, adding
+timestamp conversions for time-based constraints, reducing com-
+plexity in variable declarations, and diagnosing underconstrained
+implications by running the benchmark and repairing them. This
+process yielded the final translated SMT-LIB policy encoding that
+we used for theTaLLM.
+Observed Challenges.Across all designs, three core challenges
+emerged:
+• Syntactic Correctness.Automatically generated policy
+encodings frequently fail to have correct syntax and typing
+requirements.
+• Semantic Completeness.Even syntactically valid encod-
+ings often omit policy clauses or fail to capture more com-
+plex policy interactions.
+• Constraint Tightness.Natural-language policies com-
+monly rely on implicit negation and exclusivity assump-
+tions. Failure to make this explicit results in under-constrained
+models that allow policy-violating tool calls.
+These findings indicate that automatically translating natural-language
+policies into logical constraints is a challenging task. Furthermore,
+verifying semantic completeness requires manual review. As a re-
+sult, we treat policy encodings as explicit, reviewable artifacts rather
+than relying solely on fully automated translation. Future work will
+be needed to develop a fully automatic encoding of policies.
+5.2 RQ2: Reduction in Policy-Violating Tool
+Calls
+To evaluate the effectiveness of solver-aided policy checking in
+preventing policy violations, we ran the 𝜏 2 benchmark with and
+without the policy checker enabled. Figure 3 shows the number of
+expected write tool calls across the four trials of all the tasks as
+well as the number of valid and invalid tool calls that were made
+by the baselineTaLLMand theTaLLMwith policy checker.
+While the baseline produced a roughly equal proportion of valid
+and invalid write tool calls, theTaLLMwith policy checker reduced
+the fraction of invalid write tool calls to29%(measured over all
+write tool calls). However, it also produced fewer correct write tool
+calls overall compared to the baseline. This suggests a tradeoff:
+policy checking improves precision (fewer invalid tool calls) at the
+cost of a slight reduction in recall (fewer correct tool calls).
+
+[[page 5]]
+Solver-Aided Verification of Policy Compliance in Tool-Augmented LLM Agents
+5.3 RQ3: Impact on Overall Task Accuracy and
+Consistency
+We measured task performance using the pass𝑘 metric, which eval-
+uates consistent task success across 𝑘 independent executions of
+the same task. Figure 4 compares theTaLLMwith policy checker to
+the baselineTaLLMacross all tasks in the airline domain for 𝑘= 4.
+Overall, both achieve similar success rates, with the policy checker
+yielding a slight improvement. Moreover, the policy checker im-
+proves consistency across runs: its success rate decreases by only
+26%as𝑘increases, compared to a40%decrease for the baseline.
+6 Related Work
+6.1 Tool Augmented LLMs
+Recent work has extended the capabilities of language models be-
+yond text generation by enabling LLMs to use external, domain-
+specific tools. These Tool-augmented LLM (TaLLM) agents vary in
+the way they provision tools to the LLM and execute them [1, 3, 7, 8].
+For example, Chameleon [7] provides documentation for compo-
+sitional tools in the LLM system prompts to accomplish question-
+answering tasks, while Gorilla [8] is a fine-tuned LLM that selects
+machine learning tools for a task.
+6.2 Policy Enforcement in LLM Agents
+Recent work has aimed to characterize the types of failures that
+TaLLM agents exhibit, either by developing new benchmarks to
+analyze various task capabilities on different domains [4–6, 10, 12,
+13] or by more systematic analysis of existing benchmarks [ 11].
+This work has revealed common failures, including incomplete task
+planning, incorrect tool invocations, and tool execution errors.
+Policy adherence is a key failure mode, as highlighted by Rodriguez
+et al., 2025 [9] and Tau-bench [12]. Existing LLM agents primar-
+ily enforce policies by including such domain-specific rules in the
+system prompt or by filtering or modifying responses in a post-
+processing step. However, these approaches lack deterministic guar-
+antees of correctness and cannot prevent policy-violating actions
+from being executed.
+6.3 Formal Verification and SMT Solvers
+On the other hand, formal methods can provide hard guarantees for
+enforcing policy constraints in LLM agents. A recent framework
+(Proof of Thought [2]) compiles natural language reasoning into
+logical proofs checked by solvers. Yet, no existing work integrates
+such formal verification directly into the tool-use planning loop
+of the LLM. Our work bridges this gap by integrating proof-based
+reasoning into the action planning loop of tool-using agents.
+7 Conclusion
+We presented a solver-aided policy checker framework for enforc-
+ing tool-call policy compliance in TaLLM agents. By compiling
+natural-language operational policies into logical constraints and
+checking proposed tool invocations against these constraints at
+runtime, our approach provides policy enforcement independent of
+agent reasoning variability. Evaluations on the 𝜏 2 benchmark show
+that solver-aided checking reduces the frequency of policy-violating
+tool calls and improves consistency across repeated executions.
+Our results highlight both the feasibility and the limitations of
+applying formal methods to TaLLM policy enforcement. While
+manual or semi-structured policy encoding remains necessary to
+ensure constraint correctness and tightness, the resulting encodings
+can be applied for runtime policy enforcement.
+This work suggests several directions for future research, including
+further automation of policy encoding and improved policy check-
+ing. Overall, our work suggests the importance of providing formal
+guarantees on safety-critical properties, such as domain-specific
+policies, in tool-augmented LLM agents.
+References
+[1] S. K. Dam, C. S. Hong, Y. Qiao, and C. Zhang. 2024. A Complete Survey on
+LLM-based AI Chatbots.arXiv preprint arXiv:2406.16937(2024). https://arxiv.
+org/abs/2406.16937
+[2] Debargha Ganguly, Srinivasan Iyengar, Vipin Chaudhary, and Shivkumar Kalya-
+naraman. 2024. Proof of Thought: Neurosymbolic Program Synthesis Allows
+Robust and Interpretable Reasoning. In38th Conference on Neural Information
+Processing Systems (NeurIPS 2024) System 2 Reasoning At Scale Workshop.
+[3] Sheng Hao, Tianyang Liu, Zhiyu Wang, and Zhiting Hu. 2023. ToolkenGPT:
+Augmenting Frozen Language Models with Massive Tools via Tool Embeddings.
+(2023).
+[4] Shijue Huang, Wanjun Zhong, Jianqiao Lu, Qi Zhu, Jiahui Gao, Weiwen Liu,
+Yutai Hou, Xingshan Zeng, Yasheng Wang, Lifeng Shang, Xin Jiang, Ruifeng
+Xu, and Qun Liu. 2024. Planning, Creation, Usage: Benchmarking LLMs for
+Comprehensive Tool Utilization in Real-World Complex Scenarios.arXiv preprint
+arXiv:2401.17167(2024). https://arxiv.org/abs/2401.17167
+[5] Yue Huang, Jiawen Shi, Yuan Li, Chenrui Fan, Siyuan Wu, Qihui Zhang, Yixin
+Liu, Pan Zhou, Yao Wan, Neil Zhenqiang Gong, and Lichao Sun. 2024. MetaTool
+Benchmark for Large Language Models: Deciding Whether to Use Tools and
+Which to Use.arXiv preprint arXiv:2310.03128(2024). https://arxiv.org/abs/2310.
+03128
+[6] Moxin Li, Yuxin Zhao, Boyuan Yu, Fuwen Song, Hongyang Li, Hao Yu, Zhifei Li,
+Fei Huang, and Yulong Li. 2023. API-Bank: A Comprehensive Benchmark for
+Tool-Augmented LLMs.arXiv preprint arXiv:2311.04897(2023). https://arxiv.
+org/abs/2311.04897
+[7] Pan Lu, Baolin Peng, Hao Cheng, Michel Galley, Kai-Wei Chang, Ying Nian Wu,
+Song-Chun Zhu, and Jianfeng Gao. 2023. Chameleon: Plug-and-Play Composi-
+tional Reasoning with Large Language Models.arXiv preprint arXiv:2304.09842
+(2023). https://arxiv.org/abs/2304.09842
+[8] Shishir G. Patil, Tianjun Zhang, Xin Wang, and Joseph E. Gonzalez. 2023. Go-
+rilla: Large Language Model Connected with Massive APIs.arXiv preprint
+arXiv:2305.15334(2023). https://arxiv.org/abs/2305.15334
+[9] David Rodriguez, William Seymour, Jose M. Del Alamo, and Jose Such. 2025.
+Towards Safer Chatbots: A Framework for Policy Compliance Evaluation of
+Custom GPTs.arXiv preprint arXiv:2502.01436(2025). https://arxiv.org/abs/2502.
+01436
+[10] Yongliang Shen, Kaitao Song, Xu Tan, Wenqi Zhang, Kan Ren, Siyu Yuan, Weim-
+ing Lu, Dongsheng Li, and Yueting Zhuang. 2024. TaskBench: Benchmarking
+Large Language Models for Task Automation.arXiv preprint arXiv:2311.18760
+(2024). https://arxiv.org/abs/2311.18760
+[11] Cailin Winston and René Just. 2025. A Taxonomy of Failures in Tool-Augmented
+LLMs. In2025 IEEE/ACM International Conference on Automation of Software Test
+(AST). IEEE. https://ieeexplore.ieee.org/document/11081716
+[12] Shunyu Yao, Noah Shinn, Pedram Razavi, and Karthik Narasimhan. 2024. Tau-
+Bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains.
+arXiv preprint arXiv:2406.XXXX(2024).
+[13] Shuyan Zhou, Frank F. Xu, Hao Zhu, Xuhui Zhou, Robert Lo, Abishek Sridhar,
+Xianyi Cheng, Tianyue Ou, Yonatan Bisk, Daniel Fried, Uri Alon, and Graham
+Neubig. 2024. WebArena: A Realistic Web Environment for Building Autonomous
+Agents.arXiv preprint arXiv:2307.13854(2024). https://arxiv.org/abs/2307.13854

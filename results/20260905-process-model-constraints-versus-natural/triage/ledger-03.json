@@ -1,0 +1,319 @@
+[
+ {
+  "key": "10.48550/arxiv.2311.10751",
+  "title": "ProAgent: From Robotic Process Automation to Agentic Process Automation",
+  "status": "read",
+  "read_order": 17,
+  "concepts": [
+   "process-modeling",
+   "orchestration",
+   "autonomy-control",
+   "tool-integration",
+   "multi-agent-topology",
+   "governance-accountability",
+   "agentic-process-automation"
+  ],
+  "notes": "This is the position-and-prototype paper that frames the RQ1 design space rather than testing it: it argues that rule-based RPA workflows are efficient but cannot handle dynamic decisions, while free-running LLM agents are flexible but inefficient, and proposes Agentic Process Automation as the hybrid. The concrete mechanism is an Agentic Workflow Description Language (JSON for data flow, Python for control flow) into which two agent node types are embedded: DataAgent for complex data processing and ControlAgent as a natural-language branch condition. This is the inverse of the RQ1 intervention: instead of constraining an agent with a process model, it relaxes a process model by inserting agents at the points that need judgement, which makes it useful for characterising where a binding process model must leave discretion. Evidence is a single GPT-4 proof-of-concept on the n8n platform (one commercial worksheet-routing task, a seven-node constructed workflow, two illustrated executions) with no metrics, no baseline and no compliance measurement, so it contributes vocabulary and an architecture to RQ2 but no empirical result. The authors' own safety discussion, that agents aggravate automation bias because humans transfer trust from deterministic workflows to hallucination-prone agents, is directly relevant to why explicit process binding is argued for.",
+  "quotes": [
+   {
+    "text": "Despite its strides, robotic process\nautomation merely offloads simple and mechanical human labor, while processes requiring\nhuman intelligence still necessitate human labor.",
+    "page": 2
+   },
+   {
+    "text": "Humans may shift their trust in the stability of traditional rule-based workflows\nto agents, mistakenly believing that the agent’s decision-making processes are equally reliable",
+    "page": 9
+   }
+  ],
+  "extraction": {
+   "study_type": "framework-proposal",
+   "framework": "ProAgent / Agentic Process Automation (Agentic Workflow Description Language, DataAgent, ControlAgent)",
+   "agent_count": "multi",
+   "topology": "orchestrator-constructed workflow with embedded DataAgent (data flow) and ControlAgent (control flow) nodes",
+   "benchmark": null,
+   "baseline": null,
+   "key_results": "No quantitative results. Proof-of-concept only: GPT-4 constructed a seven-node n8n workflow for one commercial task, containing one ControlAgent and one DataAgent, and two illustrated executions routed To-Business and To-Customer lines down the intended branches.",
+   "limitations": "Authors state the workflow construction is driven by the agent alone and may yield sub-optimal workflows (suggesting process mining as a remedy); they flag automation bias and over-reliance on agents, LLM hallucination, and the need for safer, more trustful and more interpretable agentic process automation; evidence is proof-of-concept case analysis only.",
+   "venue_type": "preprint"
+  }
+ },
+ {
+  "key": "10.18653/v1/2025.emnlp-industry.41",
+  "title": "Towards Enforcing Company Policy Adherence in Agentic Workflows",
+  "status": "read",
+  "read_order": 18,
+  "concepts": [
+   "policy-compliance",
+   "conformance-violation",
+   "tool-integration",
+   "prompting-instruction",
+   "task-completion",
+   "benchmarks-evaluation",
+   "human-in-loop"
+  ],
+  "notes": "This is the closest direct test of RQ1 in the set: it holds the agent, tools and task fixed and swaps natural-language policy in the prompt for compiled, deterministic pre-conditions. An offline buildtime stage maps a free-form policy document onto the 14 tau-bench Airlines tools and generates executable ToolGuards via test-driven development; at runtime each guard runs immediately before its tool call and, on violation, blocks the call and returns the violated policy to the agent for revision. On the 22 tau-bench Airlines tasks whose user request violates policy, the prompt-only 'best-effort' baseline reaches pass^1 0.450 / pass^10 0.227, two reflection variants that re-inject the policy or the compact policy-tool mapping before each action move pass^10 only to 0.273, while the generated guards reach 0.685 / 0.500. That pattern is the key RQ1 signal: restating the same policy as natural language buys almost nothing, whereas compiling it into an executable precondition buys roughly twenty points, and the authors attribute the gain solely to the enforcement module since nothing else in the deployment changed. Crucially for RQ1's second half, the study measures the tau-bench pass metric (final database state versus annotated goal state), so compliance and task completion are scored together rather than traded off, though the guards only cover pre-invocation policies.",
+  "quotes": [
+   {
+    "text": "The originalτ-bench approach achieves apassˆ1\nrate of 0.450 and a passˆ10 rate of 0.227.",
+    "page": 6
+   },
+   {
+    "text": "The fully automated\nToolGuards generation and deployment pipeline\nshows substantial steady gains, improvingpassˆ1\nand passˆ10 to 0.685 and 0.500, respectively –\nover 20 percentage points above the baseline.",
+    "page": 6
+   },
+   {
+    "text": "First, the proposed approach\noperates at the pre-tool activation level, meaning\nit does not capture violation cases where a tool\n(e.g., flight cancellation) should be invoked accord-\ning to policy, but the agent chooses not to, thereby\nbreaching the guidelines.",
+    "page": 7
+   }
+  ],
+  "extraction": {
+   "study_type": "empirical-experiment",
+   "framework": "ToolGuard (Tool-Policy Mapper plus test-driven ToolGuard code generation, integrated into a ReAct loop)",
+   "agent_count": "single",
+   "topology": "single-agent ReAct loop with a deterministic guard interposed between the reason and act steps",
+   "benchmark": "tau-bench Airlines (22 of the 50 tasks in which the user request violates a policy); plus a 61-test suite (25 compliance, 36 violation) over the 6 state-mutating tools",
+   "baseline": "Original tau-bench 'best-effort' run with the policy document in the prompt and no guards, plus two reflection strategies: appending the full policy document before each agent action, and inserting the ground-truth compact Tool-Policy mapping before each action",
+   "key_results": "Baseline pass^1 0.450 and pass^10 0.227; both reflection strategies reached only pass^10 0.273; ToolGuards reached pass^1 0.685 and pass^10 0.500, over 20 percentage points above baseline. Tool-Policy mapper best reference F1 0.80 and fuzzy RandIndex 0.83 (GPT-4o), degrading 8-18% when out-of-domain or irrelevant in-domain policies are appended. Guard test pass rate: mean 0.82 (GPT-4.1 with ground-truth mapping) and 0.75 with the best automatic mapping.",
+   "limitations": "Authors state the approach operates only at pre-tool activation, so it cannot catch violations of omission where a policy-required tool is not called; and that the pipeline was evaluated on a single benchmark with a limited toolset and concise policy documents, with scaling to larger policy documents and toolsets left to future work.",
+   "venue_type": "conference"
+  }
+ },
+ {
+  "key": "10.48550/arxiv.2604.12177",
+  "title": "Policy-Invisible Violations in LLM-Based Agents",
+  "status": "read",
+  "read_order": 19,
+  "concepts": [
+   "policy-compliance",
+   "conformance-violation",
+   "governance-accountability",
+   "prompting-instruction",
+   "tool-integration",
+   "benchmarks-evaluation",
+   "security-privacy",
+   "autonomy-control"
+  ],
+  "notes": "This paper isolates the failure class that makes natural-language policy specification insufficient in principle: violations whose decisive facts (recipient status, document audience label, session scope) are absent from the agent-visible context, in a cooperative non-adversarial setting. It contributes PhantomPolicy (60 violation and 60 matched safe cases across eight categories, with all tool responses stripped of policy metadata) and Sentinel, an enforcement layer that translates each outbound tool call into proposed mutations of an organisational knowledge graph, forks and applies them speculatively, and checks seven declarative invariants to return Allow, Block or Clarify. Its most useful contribution to RQ1 is a three-way comparison on identical traces: no enforcement (risky-case violations in 54-59 of 60 cases per model), the same policy injected as high-level natural-language rules in the system prompt (violations drop from 95.3% to 40.7% but range from 25% to 85% across models), and world-state-grounded enforcement (92.99% accuracy, 92.71 F1, 5 false positives, 37 missed violations). The paper argues explicitly that prompt-level policy helps only when the model attends to the rules and is not a reliable compliance boundary, and its coverage-degradation experiment shows enforcement recall is bounded above by world-model coverage rather than invariant sophistication. All 600 baseline and 600 policy-in-prompt traces were human-reviewed, which strengthens the violation labels. Note that the file contains quoted system and user prompts used in the experiments (for example an execution-oriented system prompt telling the assistant to be proactive and not ask questions); these are the authors' experimental stimuli reported as data, not instructions to a reader, and I treated them as such.",
+  "quotes": [
+   {
+    "text": "Under the\npolicy-in-promptcondition,risky-caseviolationsdropfrom95.3%to40.7%overall—asubstantialreduction,\nbut still leaving 122 violations across300 risky cases.",
+    "page": 16
+   },
+   {
+    "text": "Against human-reviewed trace labels, Sentinel substantially outperforms a content-\nonly DLP baseline (68.8% vs. 93.0% accuracy) while maintaining high precision",
+    "page": 1
+   },
+   {
+    "text": "All models were evaluated with an instruction-compliance system prompt (“Be\nproactive — don’t ask unnecessary questions, just get things done”).",
+    "page": 20
+   }
+  ],
+  "extraction": {
+   "study_type": "benchmark",
+   "framework": "Sentinel (counterfactual graph simulation over an organisational world-state graph with seven declarative invariants), with the PhantomPolicy benchmark",
+   "agent_count": "single",
+   "topology": "single tool-using agent loop with an external action-time enforcement layer intercepting outbound tool calls",
+   "benchmark": "PhantomPolicy: 120 cases (60 violation, 60 matched safe controls) across eight policy-invisible violation categories, with a companion world model of 30 contacts, 40 documents, 3 projects and 4 groups",
+   "baseline": "Execution-oriented prompt with no enforcement; a policy-in-prompt condition adding high-level organisational rules to the system prompt while withholding entity-level metadata; and a content-only DLP pattern-matching baseline",
+   "key_results": "Baseline: 54-59 of 60 risky cases per model end in human-reviewed violations (90-98%), with 2-8 of 60 safe-case errors, across GPT-5.4, GPT-5 mini, GPT-5.4 nano, Claude Sonnet 4.6 and Claude Opus 4.6. Policy-in-prompt: risky-case violations fall from 286/300 (95.3%) to 122/300 (40.7%), but range from 25% (Claude Sonnet 4.6) to 85% (GPT-5.4 nano); safe-case errors 5.7%. Content-only DLP: 68.83% accuracy, 56.61 F1, precision 96.06%, recall 40.13%. Sentinel: 92.99% accuracy, 92.71 F1, 5 false positives and 37 missed violations across 599 decided traces. Coverage degradation: Sentinel recall falls monotonically from 100% at full world-model coverage to 20% at zero entity coverage, with 0 false positives at every level; nullifying scope labels alone drops recall to 40%.",
+   "limitations": "Authors state: single curated domain (corporate email and file sharing); 120 cases, 7-8 per category, framed as a diagnostic unit-test suite rather than a corpus for statistical generalisation; a single execution-oriented system prompt that likely inflates violation rates relative to more cautious prompts; single-run main measurements under one decoding configuration; a small annotator pool; Sentinel assumes an available world model whose construction is treated as an engineering problem; and Sentinel intercepts tool calls only, so sensitive content emitted in a direct text response is not caught.",
+   "venue_type": "preprint"
+  }
+ },
+ {
+  "key": "mantrasynthesizingsmtvalidatedcompliancebenchmarksfortoolusingllmagents",
+  "title": "MANTRA: Synthesizing SMT-Validated Compliance Benchmarks for Tool-Using LLM Agents",
+  "status": "read",
+  "read_order": 20,
+  "concepts": [
+   "policy-compliance",
+   "conformance-violation",
+   "benchmarks-evaluation",
+   "tool-integration",
+   "process-modeling",
+   "reliability-nondeterminism",
+   "formal-verification"
+  ],
+  "notes": "MANTRA addresses the measurement problem behind RQ1: how to decide, deterministically and at scale, whether an agent's tool-call trace actually followed a natural-language procedural manual. The pipeline chunks a manual into a dependence graph, samples subgraphs to control task difficulty, and then generates two artefacts independently from the same region: LLM-generated trace-level checks (required calls, forbidden calls, and after/before/follows/precedes ordering) and a symbolic world model expressed as a typed DSL of tool pre- and post-conditions. Both are compiled to bounded SMT and cross-validated with Z3 in forward (checks too weak) and backward (checks too strict) conflict searches, with an LLM repairing whichever artefact the conflicting trace implicates and human review only as a fallback. This is directly useful for RQ2 because it operationalises the process model as a state-transition system while the agent still receives only the natural-language manual, so the process model functions as an oracle rather than as a control. Its most quotable RQ1-adjacent finding is diagnostic: across 10,895 failed checks, 76% are missing required calls or missing ordering anchors and only 2% are pure ordering violations, meaning agents fail by skipping mandated gating reads before write-style tools rather than by misordering, and the model with a 0% premature-write rate on the tau2 domains is the one that leads them.",
+  "quotes": [
+   {
+    "text": "Another interesting observation is that none of the used models reached very\nhigh procedural compliance.",
+    "page": 13
+   },
+   {
+    "text": "These missing tool calls in particular manifest themselves in the habit of weaker\nmodels towrite prematurely, i.e., to call a write-style tool before any read-style\ntool.",
+    "page": 13
+   },
+   {
+    "text": "MANTRAdoes not provide full formal certification\nofcompliancewiththeoriginaldocument.",
+    "page": 13
+   }
+  ],
+  "extraction": {
+   "study_type": "benchmark",
+   "framework": "MANTRA (MANual-to-Test-tRAnslation): dependence-graph sampling, LLM check generation, typed world-model DSL, bounded SMT cross-validation with Z3 and a typed-edit repair loop",
+   "agent_count": "single",
+   "topology": "single tool-using agent (Strands framework) evaluated on its tool-call trace; the benchmark generator is a multi-stage LLM plus solver pipeline",
+   "benchmark": "MANTRA suite: 285 validated test cases across 6 domains (operations, sneaky-sasquatch, cabin-safety, tau2-retail, tau2-airline, tau2-telecom), with manuals of 566-16,644 words and tool schemas of 13-148 tools",
+   "baseline": "Feature-level comparison against existing tool-use and compliance benchmarks (ToolBench, tau/tau2-bench, IntellAgent, AgentOrca, SOP-Bench, AgentIF, MCP-Bench, Agent-Diff) on automation, document size, domain extensibility, trace evaluation and deterministic grading; agent results are a six-model cross-comparison rather than an intervention-versus-control condition",
+   "key_results": "285 validated cases; roughly 50% of generated scenarios validated within 5 refinement rounds using GPT-5.4 with Codex (versus 11 of 48 in 13 rounds for Qwen3.6). Agent Pass@1 ranges 28.1-57.7% across six models and six domains, with tau-bench-derived domains hardest, correlating with tool argument complexity rather than manual length. Of 10,895 failed checks: Missing-Required-Call 58%, Forbidden-Call 20%, Missing-Anchor 18%, ordering violations 2%, all-branch OR failures 1%; Missing-Required-Call dominates in every domain (49-67%) and model (51-71%). Premature-write rate ranges 0-69.8%; Qwen3.6:36B is 0% on tau2-airline and tau2-retail, the two domains it leads, averaging 4.13 read calls per passing tau2-retail attempt versus 1.84-2.56 for other models.",
+   "limitations": "Authors state MANTRA does not provide full formal certification of compliance with the original document; it assumes a given tool schema and validates traces only up to a fixed horizon h=16, so inconsistencies beyond that bound may go undetected; some scenarios remain unresolved after the repair budget and need structured human review; coverage is 285 cases in six domains from English-language manuals and six evaluated LLMs; and benchmark generation is not fully reproducible because it uses a proprietary LLM agent. Manual inspection also found brittle pinned string arguments, spuriously enforced single-call constraints, and trivial samples that had to be filtered.",
+   "venue_type": "preprint"
+  }
+ },
+ {
+  "key": "10.1109/access.2025.3632528",
+  "title": "Evaluation of Automated Machinery Functional Safety Risk Assessment Using LLMs",
+  "status": "read",
+  "read_order": 21,
+  "concepts": [
+   "policy-compliance",
+   "prompting-instruction",
+   "benchmarks-evaluation",
+   "reliability-nondeterminism",
+   "cost-latency",
+   "explainability-rationale",
+   "security-privacy"
+  ],
+  "notes": "This is not an agent study, but it is the cleanest controlled ablation in the set of the RQ1 contrast between an explicit decision model and unstructured natural language. The task is classifying the Required Performance Level from a free-text machinery hazard description; the explicit model is the ISO 13849-1 Annex A risk graph, injected verbatim into the prompt as deterministic S/F/P mapping rules, and the control is a zero-shot prompt containing only the hazard description and the expert role. Across 7,800 ISO 12100/13849-1 scenarios (stratified subsets of n=567 and n=100, temperature 0), zero-shot accuracy is 0.300-0.470 while rule-injected prompting reaches 0.990 for gpt-4.1-mini and 1.000 for deepseek-chat, a gain of over 50 percentage points that the authors attribute to structured input rather than model scale. Two secondary findings matter for RQ2: retrieval augmentation on top of the rules adds essentially nothing to accuracy but adds latency (up to 56.87s per sample for deepseek-chat), and the benefit of structured input is model-capacity-dependent, since llama3.2 never exceeds 0.410 even with the rules. The generalisation caveat for RQ1 is that this is single-turn classification with a deterministically computed ground truth and no tools, state mutation or task-completion dimension, so it cannot speak to the completion side of the RQ1 trade-off. The text file quotes the authors' own prompt templates (for example a system message casting the model as a machinery safety expert); these are experimental artefacts reported as data and were treated as such.",
+  "quotes": [
+   {
+    "text": "Results show that explicit\nISO rule-based prompting lifts PL r accuracy from less than 50% (zero-shot) to about 99% with mid-scale,\ninstruction-tuned models.",
+    "page": 1
+   },
+   {
+    "text": "Compared to zero-\nshot prompting, rule-based prompts improved PL r classifi-\ncation accuracy by over 50 percentage points, highlighting\nthe essential role of structured input for deterministic safety\ntasks.",
+    "page": 21
+   }
+  ],
+  "extraction": {
+   "study_type": "empirical-experiment",
+   "framework": "Prompt-layered, standards-aligned NLP-NLU evaluation pipeline for PLr classification (LangGraph orchestration, LangChain chains, ChromaDB hybrid retrieval)",
+   "agent_count": "n/a",
+   "topology": "n/a (single-model prompt pipeline with optional retrieval augmentation; no tool use or multi-step execution)",
+   "benchmark": "Industrial Machinery Functional Safety Hazard Scenario Dataset: 7,800 scenarios derived from ISO 12100 Annex B with PLr assigned by the ISO 13849-1 Annex A risk graph; stratified subsets of n=567 (Test 1) and n=100 (Tests 2 and 3)",
+   "baseline": "Zero-shot prompting with only the natural-language hazard scenario and an expert role, no ISO rule logic; ablation ladder then adds rules, rules+RAG, and rules+RAG+instructions",
+   "key_results": "Test 1 (n=567): zero-shot 0.300 (gpt-4.1-nano), 0.450 (gpt-4.1-mini), 0.410 (gpt-4o-mini); rules 0.610 / 0.990 / 0.910; rules+RAG 0.990 (mini) and 0.840 (4o-mini); rules+RAG+instructions 1.000 for gpt-4.1-mini. Test 2 (3 runs of n=100): gpt-4.1-mini 0.990±0.010 with rules and 0.993±0.006 with RAG; gpt-4.1-nano 0.630±0.044 with rules and 0.430±0.015 with RAG. Test 3 (cross-architecture): deepseek-chat 1.000 with rules versus 0.530 zero-shot; gpt-4.1-mini 0.970 versus 0.470 zero-shot; llama3.2 maximum 0.410 and 0.090 zero-shot. Latency: 2.4-4.3s per scenario for the OpenAI models, 8.1s for llama3.2 and 56.87s for deepseek-chat under RAG.",
+   "limitations": "Authors state: templated canonical natural-language descriptions limit lexical diversity and may induce recognition bias; results generalise primarily to ISO 12100 Annex B industrial machinery hazards, not to non-industrial or hybrid systems; PLr classification accuracy is only an operational proxy for expert safety reasoning and abstracts away control-system design and human-machine interaction; version drift in proprietary LLMs limits reproducibility; and remaining variance may come from retrieval quality and prompt-model coupling. They also flag that API-based commercial models conflict with data-protection requirements in regulated sectors.",
+   "venue_type": "journal"
+  }
+ },
+ {
+  "key": "10.1109/bigdata59044.2023.10386251",
+  "title": "Comparing Generative Chatbots Based on Process Requirements: A Case Study",
+  "status": "read",
+  "read_order": 22,
+  "concepts": [
+   "process-modeling",
+   "conformance-violation",
+   "autonomy-control",
+   "task-completion",
+   "benchmarks-evaluation",
+   "human-in-loop"
+  ],
+  "notes": "This case study tests the weakest possible form of the RQ1 intervention: hand the LLM the BPMN XML of a process model, tell it to act as an agent honouring BPMN restrictions, and see whether the model constrains behaviour when no process engine enforces it. Thirteen evaluation questions cover start events, forward flow, history, end events, decision points and unintended paths on a single Trip Planning model built in Camunda Modeler. GPT-3.5 met 92.31% of the questions and PaLM 2 only 69.23%, but the two failure modes are identical and are exactly the ones RQ1 cares about: both models let the user execute a task that was not yet enabled (EQ12 not met), and both only partially handled the exclusive gateway, with GPT presenting the gateway itself as a task and PaLM listing both outgoing branches and then silently inferring the user's choice. The finding is that a formal process model supplied as prompt context conveys structure well enough for the model to recall history and explain gateway conditions, but does not produce enforcement: the model fabricates state (assuming an unperformed task was done) and admits unreachable tasks. That supports treating in-context process models as guidance rather than as a control mechanism, and motivates the external-guard designs seen elsewhere in this batch. Evidence is one process model, three BPMN construct types and two models, all qualitatively scored by the authors.",
+  "quotes": [
+   {
+    "text": "In the Trip Planning scenario, GPT achieved a score\nof 92.31% in terms of meeting the evaluation questions, while\nPaLM only met 69.23% of the questions.",
+    "page": 9
+   },
+   {
+    "text": "As it is possible to see, the chatbot assumed the user had\nalready booked the hotel even though that was not explicitly\nmentioned.",
+    "page": 6
+   },
+   {
+    "text": "First, the evaluation\nis restricted to a specific process model use case, namely Trip\nPlanning.",
+    "page": 9
+   }
+  ],
+  "extraction": {
+   "study_type": "case-study",
+   "framework": null,
+   "agent_count": "single",
+   "topology": "single conversational agent given the BPMN XML directly in context, with no connection to a process engine",
+   "benchmark": null,
+   "baseline": "GPT-3.5 versus PaLM 2 on the identical BPMN XML and the same 13 evaluation questions; there is no natural-language-instruction control condition and no process-engine-enforced condition",
+   "key_results": "GPT-3.5: 92.31% of evaluation questions met, 7.69% partially met, 0% not met. PaLM 2: 69.23% met, 7.69% partially met, 23.08% not met. Both failed EQ12 (each allowed the user to execute a task not yet available in the flow) and both only partially met EQ5 (exclusive gateway evaluation); PaLM additionally failed EQ4 (mentioned unavailable tasks) and EQ7 (conveying the gateway decision). Both correctly refused to end the process prematurely (EQ13).",
+   "limitations": "Authors state the evaluation is restricted to a single process model use case (Trip Planning); it covers only a subset of BPMN constructs (events, tasks and one gateway type), leaving inclusive and event-based gateways, messages, timers and subprocesses unexplored; and only two generative models (GPT and PaLM) were assessed.",
+   "venue_type": "conference"
+  }
+ },
+ {
+  "key": "10.1007/s44311-025-00029-1",
+  "title": "Enhancing declarative business process management availability through generative AI",
+  "status": "read",
+  "read_order": 23,
+  "concepts": [
+   "process-modeling",
+   "process-mining",
+   "prompting-instruction",
+   "reliability-nondeterminism",
+   "benchmarks-evaluation",
+   "security-privacy",
+   "declarative-constraints"
+  ],
+  "notes": "This paper is upstream of RQ1: rather than binding an agent to a process model, it uses LLMs to manufacture the process models themselves, addressing the scarcity of multi-perspective declarative (MP-Declare) models caused by commercial confidentiality. Terpsichora combines role-play prompting, knowledge injection and few-shot examples with two constrained-generation mechanisms, Function Calling and Structured Output, over a Pydantic metamodel that enforces MP-Declare syntax, plus a validation loop that regenerates on failure and a Declare4Py-based check. Its relevance to RQ1 is the empirical contrast between constraint mechanisms rather than between constrained and unconstrained generation: Structured Output, which enforces a JSON schema, produced far richer conditional logic (mean 2.59 activation and 2.25 correlation conditions versus 0.20 and 0.01 for Function Calling on GPT-4o) and held labelling-convention compliance as complexity rose, whereas Function Calling gave more predictable structure but degraded. For RQ2 it supplies the declarative side of the control-mechanism vocabulary, since declarative models constrain by prohibition rather than by prescribing a sequence, which is the alternative to the imperative binding RQ1 assumes. The evaluation is of artefact quality (complexity metrics, label conventions, rediscovery from generated logs), not of any agent's compliance behaviour, so it contributes no violation or completion data.",
+  "quotes": [
+   {
+    "text": "While our framework \nachieves high accuracy in basic constraint generation, we observed increased variability \nin handling complex negative constraints and intricate temporal conditions.",
+    "page": 47
+   },
+   {
+    "text": "The absence of a comprehensive bench -\nmark dataset for MP-Declare models makes it difficult to definitively assess the quality \nand representativeness of our generated models against real-world examples.",
+    "page": 47
+   }
+  ],
+  "extraction": {
+   "study_type": "framework-proposal",
+   "framework": "Terpsichora (metamodel implementation, generation orchestration via Function Calling and Structured Output, domain integration, validation module)",
+   "agent_count": "n/a",
+   "topology": "n/a (LLM generation pipeline with a Pydantic metamodel validator and regeneration feedback loop)",
+   "benchmark": null,
+   "baseline": "Within-study comparison of two constrained-generation methods (Function Calling versus Structured Output) across two LLMs (GPT-4o and Gemini 2.0 Flash) and two complexity batches; no external ground-truth or real-world model collection to compare against",
+   "key_results": "2000 synthetic MP-Declare models generated (1000 OpenAI, 1000 Google) across 500 domains at temperature 0.2. Label-convention compliance exceeded 98% for every method-model-batch combination; Structured Output improved from 98.3% to 99.2% (OpenAI) and 98.2% to 98.9% (Google) as complexity rose while Function Calling declined slightly (98.5% to 98.3% OpenAI; fully compliant processes fell from 210 to 194 for Google). On OpenAI, Structured Output produced mean 2.59 activation and 2.25 correlation conditions versus 0.20 and 0.01 for Function Calling, and higher density (1.180 versus 0.822 in Batch 1); Function Calling showed a cardinality outlier (std dev 44.07, max 1000). Template preference differed by provider: Gemini used Response constraints for over 50% of all templates versus roughly 15-20% for OpenAI. Generated models were rediscovered from simulated event logs with matching constructs and control flow.",
+   "limitations": "Authors state: increased variability in handling complex negative constraints and intricate temporal conditions, with overly simplified constraint patterns when activation and correlation conditions interact; no comprehensive MP-Declare benchmark exists, so quality and representativeness against real-world examples cannot be definitively assessed and validation leans on structural characteristics rather than semantics; reliance on the GPT-4 API brings cost and access limits and ties findings to current model capabilities; effectiveness may vary in domains with specialised terminology or complex regulatory requirements; and generation can produce redundant or conflicting constraints in large multi-perspective models.",
+   "venue_type": "journal"
+  }
+ },
+ {
+  "key": "10.21203/rs.3.rs-10502893/v1",
+  "title": "PolicyFaultBench: Mutation-Based Assurance of Policy Mediation and Proposal-Interface Conformance for Tool- Using AI Agents",
+  "status": "read",
+  "read_order": 24,
+  "concepts": [
+   "policy-compliance",
+   "conformance-violation",
+   "governance-accountability",
+   "security-privacy",
+   "benchmarks-evaluation",
+   "tool-integration",
+   "reliability-nondeterminism",
+   "autonomy-control"
+  ],
+  "notes": "This paper deliberately removes the agent's planning freedom in order to test the control mechanism itself: the prompt supplies a frozen synthetic operation so the model merely transcribes it, and what is measured is whether the deterministic fail-closed mediator between proposal and side effect authorises correctly. Its distinctive contribution to RQ2 is turning the policy into an object of assurance rather than a trusted given, by applying twelve first-order mutation operators (subject widening, approval-gate bypass, temporal-constraint deletion, fail-open exception, state-reset omission and others) to two independently implemented policy architectures, an ordered-rule engine and a capability engine. The frozen 40-case corpus killed only 7 of 12 ordered-rule mutants, and an externally derived AgentDojo corpus killed just 2 of 12, showing that a corpus can produce high execution success while being weak at exposing policy faults; survivor-guided probes closed the gap but are labelled as repair rather than independent validation. A second result relevant to RQ1's completion side is that strictness costs availability without costing safety: nine benign Anthropic proposals were quarantined purely for adding an unrequested approval-scope annotation, breaking the preregistered 800/800 rule while every admitted proposal agreed under both policies and no containment failure occurred. The authors are explicit that this design cannot support claims about autonomous tool selection or planning under untrusted content.",
+  "quotes": [
+   {
+    "text": "OpenAI met the compound endpoint in 400/400\ntrials. Anthropic met it in 391/400: nine outputs for one benign payment case added an unrequested\napproval-scope ﬁeld and were quarantined before policy evaluation.",
+    "page": 2
+   },
+   {
+    "text": "The frozen corpus killed 7 of 12 mutants (58.33%). Subject widening, approval bypass, temporal deletion,\nfail-open exception handling, and reset omission survived.",
+    "page": 9
+   },
+   {
+    "text": "Mutation adequacy did not transfer automatically. The external corpus killed only 2/12 ordered-rule\nmutants and 1/12 capability mutants before targeted probes.",
+    "page": 12
+   }
+  ],
+  "extraction": {
+   "study_type": "benchmark",
+   "framework": "PolicyFaultBench (deterministic fail-closed mediator, state-transition oracles, proposal-interface conformance gate, 12 mutation operators, plus a second independently implemented capability policy engine with a C01-C12 mutant family)",
+   "agent_count": "single",
+   "topology": "single model emitting a structured proposal to an external runtime mediator, with proposal and execution separated (transcription contract, not autonomous planning)",
+   "benchmark": "PolicyFaultBench: a frozen 40-case corpus over 10 threat families (20 allow / 20 deny), plus a preregistered 40-case external corpus derived from four AgentDojo v1 suites (banking, workspace, Slack, travel)",
+   "baseline": "Always-allow and always-deny local baselines (each correct on 20 of 40 balanced scenarios); policy-only, full-object-gate and envelope-gate ablations; and a cross-provider comparison of gpt-5.6-sol against claude-sonnet-5",
+   "key_results": "Frozen corpus killed 7/12 ordered-rule mutants (58.33%) and 5/12 capability mutants (41.67%); survivor-guided probes then killed all 12. The external AgentDojo-derived corpus killed only 2/12 ordered-rule and 1/12 capability mutants before probes (expanded 7/12 and 12/12). Across 1,200 completed records, every logged policy decision and post-state replayed identically with zero containment failures. External replication: OpenAI 400/400 strict successes, Anthropic 391/400 (97.75%), combined 791/800 (98.875%), failing the preregistered 800/800 rule; all nine failures were the same benign scenario, quarantined for adding an approval_scope field. Historical full-object conformance: OpenAI 400/400 versus Anthropic 291/400 (mean scenario difference 27.25 percentage points, bootstrap 14.75-42.00), with all 1,200 decision-relevant envelopes matching. Latency median-of-medians 6.662s (OpenAI) versus 2.204s (Anthropic).",
+   "limitations": "Authors state: construct validity is bounded because the prompt supplies the operation to transcribe, so no claims can be made about autonomous tool selection, refusal, planning quality or resistance to injection; offline replay uses the same implementation family as the sandbox, so a separately written oracle would be stronger; repetitions are repeated API calls on fixed hand-built cases rather than random samples; synthetic files, payments, memory, egress and delegation do not reproduce production failure modes and the external corpus projects AgentDojo tasks onto terminal operations rather than replaying interactive trajectories; only one model identifier per provider was tested and the Gemini workflow was stopped by quota; and the 12 operators are plausible first-order faults, not an exhaustive fault model, with equivalent and higher-order mutants untested.",
+   "venue_type": "preprint"
+  }
+ }
+]

@@ -1,0 +1,2152 @@
+[[page 1]]
+From Business Events to Auditable Decisions: Ontology-Governed
+Graph Simulation for Enterprise AI
+Hongyin Zhua,b,∗, Jinming Liangb, Mengjun Houb, Ruifan Tanga,b, Xianbin Zhua,b, Jingyuan Yangb,
+Yuanman Maob and Feng Wub
+aYonyou AI Lab,
+bYonyou Network Technology Co., Ltd.,
+ARTICLE INFO
+Keywords:
+large ontology model
+event-driven simulation
+ontology harness engineering
+auditable decision intelligence
+illusive accuracy
+ABSTRACT
+Existing LLM-based agent systems share a common architectural failure: they answer from the
+unrestrictedknowledgespacewithoutfirstsimulatinghowactivebusinessscenariosreshapethatspace
+fortheeventathand—producingdecisionsthatarefluentbutungroundedandcarryingnoaudittrail.
+WepresentLOM-action,whichequipsenterpriseAIwithevent-drivenontologysimulation:business
+eventstriggerscenarioconditionsencodedintheenterpriseontology(EO),whichdrivedeterministic
+graph mutations in an isolated sandbox, evolving a working copy of the subgraph into the scenario-
+valid simulation graph𝐺sim; all decisions are derived exclusively from this evolved graph. The core
+pipelineisevent→simulation→decision,realizedthroughadual-modearchitecture—skillmodeand
+reasoning mode. Every decision produces a fully traceable audit log. LOM-action achieves 93.82%
+accuracyand98.74%tool-chainF1againstfrontierbaselinesDoubao-1.8andDeepSeek-V3.2,which
+reachonly24–36%F1despite80%accuracy—exposingtheillusiveaccuracyphenomenon.Thefour-
+fold F1 advantage confirms that ontology-governed, event-driven simulation, not model scale, is the
+architectural prerequisite for trustworthy enterprise decision intelligence.
+1. Introduction
+Enterprise AI cannot be built on general-purpose LLMs
+alone. Enterprise decisions are not made on the static
+ontology—they are made on a scenario-evolved version of
+it, shaped by the active business conditions of the event
+at hand: the carrier contracts in force, the spending policy
+currently active, the organizational scope of the requesting
+user.General-purposeLLMshavenomechanismtoperform
+thisevolution:theyanswerfromtheunrestrictedknowledge
+space, producing responses that are fluent but never derived
+from the graph the business scenario actually defines.
+LOM [26, 24] established the ontological foundation
+for enterprise AI. This paper extends LOM with a new
+capability that production deployment demands: asandbox
+simulation enginethat evolves a working copy of the en-
+terprise ontology under active business scenario conditions,
+and derives every decision exclusively from the resulting
+simulation-valid graph.
+LOM-action adds the next piece of the capability puz-
+zle:knowing how to delegate. Where LOM grounds what
+the model knows and how it reasons, LOM-action governs
+whatthemodelcaninvoke—aregistryofexternalresources
+including frontier models, specialized tool endpoints, and
+domain skill nodes, each accessed through a skill ontology
+node carrying EO authorization contracts, making every
+delegation an auditable ontological act rather than a black-
+box API call. A frontier LLM invoked as a registered skill
+nodeoperatesonapreciselybounded,EO-authorizedinput;
+itsoutputisinterceptedbyLOM-as-Judge,whichre-grounds
+theresultagainstEOauthoritybeforewritingittothesession
+zhuhongyin@yonyou.com(H. Zhu)
+ORCID(s):0000-0001-5786-7594(H. Zhu)
+ontology.Thecapabilityceilingthereforerisescontinuously
+astheregisteredskillsetexpandsandfrontiermodelquality
+improves, without retraining.
+Each business event—a structured data payload from an
+enterprise system that carries sufficient semantic content to
+activate EO-encoded scenario conditions—poses a specific
+question: not “what does the static graph say?” but “what
+doesthegraphsayafterthisevent’sscenarioconditionshave
+reshaped it?” Event-driven AI answers by first evolving the
+ontology under those conditions, then deriving decisions
+exclusively from the evolved state.
+Businessscenariosarepropertiesoftheontologicalcon-
+text, not features of event text, so injecting them as prompt
+instructions fails: the model treats them as soft preferences
+and may still operate on the unrestricted graph. The cor-
+rect scope for any tool call is not the static graph but
+the simulation-valid𝐺 sim that survives the organization’s
+activescenarioconditions;asystemthatbypassessimulation
+answers a different question than the one the enterprise
+eventposed,withnoauditbasis.LOM-actionaddressesboth
+gaps with a strictly ordered three-phase pipeline—scenario
+parsing, sandbox simulation, decision derivation—backed
+by a persistent, isolated graph sandbox: when a business
+event arrives, a working copy of the enterprise ontology is
+instantiated under a uniquegraph_id; Phase 2 mutates this
+copy without touching the authoritative EO graph; Phase 3
+executes decisions against the evolved state, with every
+mutation logged for full auditor replay.
+This paper makes three contributions. (1) Thescenario
+simulationinnovation: EO-authorized constraint predicates
+drive deterministic sandbox graph mutations before any
+decision is derived, confirmed empirically to close the sim-
+ulation gap that frontier LLMs systematically leave open.
+First Author et al.:Preprint submitted to ElsevierPage 1 of 21
+arXiv:2604.08603v1 [cs.AI] 8 Apr 2026
+
+[[page 2]]
+(2) Thedecision derivationinnovation: the event→simu-
+lation→decision pipeline via a dual-mode architecture—
+skill mode for registered skill calls; reasoning mode for
+novel computations—with every decision producing a fully
+traceable, replayable decision trace. (3) Thesimulation-
+first principleand the illusive accuracy index IA(𝑀) =
+Acc(𝑀)−F1_chain(𝑀), validated across 11 tasks.
+Theremainderofthispaperisorganizedasfollows.Sec-
+tion2reviewsrelatedwork.Section3presentstheapproach
+across Sections 3.1–3.7. Section 4 reports experiments, re-
+sults, and limitations. Section 5 concludes. Appendix A
+covers the ontology harness engineering and broader LOM
+global architecture.
+2. Related Work
+2.1. Tool-Augmented LLM Agents
+The modern tool-use paradigm traces from ReAct [22],
+which interleaves reasoning traces with action execution,
+through Toolformer [17], which introduces self-supervised
+tool annotation, to OpenAI function calling [8], which stan-
+dardizedJSONSchema-basedAPIinvocationasafirst-class
+modelinterface.Subsequentworkhaspushedthisparadigm
+intwodirections:scaleandspecialization.Onscale,frontier
+systems—GPT-4o [8], Claude with extended thinking [1],
+Gemini function calling [18]—have dramatically raised the
+zero-shot ceiling for tool invocation quality. On special-
+ization, fine-tuning methods such as ToolACE [11], Ham-
+mer [10], and xLAM [23] demonstrate that domain-curated
+corpora can substantially close the gap with frontier models
+on standard function-calling benchmarks. Evaluation has
+maturedaccordingly:BFCL[15]providesarigorousleader-
+board covering parallel, nested, and multi-turn invocations;
+𝜏-bench [21] evaluates agentic task completion across ex-
+tended dialogues; WorFBench [16] targets multi-step work-
+flow planning.
+Despite this progress, all these systems share one archi-
+tecturalassumption:toolselectionisalanguagemodelinfer-
+encedecisionmadefromthefullinputcontext,withscenario
+conditions provided (if at all) as natural language instruc-
+tions in the prompt. No system introduces a mandatory
+sandbox simulation step that evolves the knowledge graph
+beforeanytoolisinvoked.LOM-actionchallengesthisatthe
+root: tool selection is a consequence of sandbox-simulated
+graph evolution, not a generative act over the unrestricted
+space.Existingbenchmarksalsoshareameasurementgap—
+they evaluate tool-call accuracy without measuring whether
+decisions were derived from a correctly evolved graph. Our
+tool-chain F1 and Illusive Accuracy index fill this gap by
+distinguishing decisions produced through scenario-driven
+simulation from those produced by operating on the unre-
+stricted graph, exposing a failure mode invisible to standard
+accuracy metrics.
+2.2. Knowledge Graph Reasoning and Enterprise
+Semantic Systems
+The integration of LLMs with ontologys has advanced
+rapidly along the retrieval axis. KG-augmented LLMs em-
+bed graph information—including domain-specific hetero-
+geneousknowledgeunifiedintostructuredrepresentations[29]—
+inpromptsorfine-tuningdatatoimprovefactualgrounding.
+The underlying ontologys themselves depend on structured
+relation extraction pipelines [30] that adaptively identify
+typed entity relationships in text, a foundational step that
+KG-augmented LLM approaches typically assume as a
+precondition. GraphRAG [5] introduces community-aware
+hierarchical graph summarization as a retrieval layer for
+document corpora. GNN-RAG [13] combines graph neural
+network traversal with retrieval-augmented generation for
+multi-hop question answering. Think-on-Graph 2.0 [12]
+iterativelybeam-searchesontologypathstoguideLLMrea-
+soning. Complementary to these retrieval-focused methods,
+graph representation learning has advanced node-level un-
+derstanding through semantic-structural attention-enhanced
+graph convolutional networks [25] and pre-trained graph
+autoencoders incorporating hierarchical topology knowl-
+edge [28].
+Across all these works, the ontology is astatic retrieval
+substrate—a source of evidence that the LLM draws on but
+doesnotmodify.Enterprise-specificsystemsfollowasimilar
+pattern: text-to-SQL systems for BI [6, 7] treat database
+schemasasretrievalaids,andDB-GPT[20]integratesLLMs
+with database engines for natural language querying but
+positions the schema as context rather than authority. None
+of these systems maintains a mutable simulation sandbox
+where the graph is evolved to model business scenarios
+before decisions are derived; the ontology is consulted, not
+simulated. LOM-action differs fundamentally: the sandbox
+is a dynamic, mutable execution workspace where scenario
+operations evolve a copy of the enterprise graph in an
+isolated environment, subsequent reasoning operates on the
+evolvedstate,andtheEOisnotmerelyconsulted—itautho-
+rizes every mutation before any model inference proceeds.
+The simulation-first principle—the best decision is the best
+decision among those derivable from the simulation-valid
+graph—has no direct precedent in the enterprise LLM liter-
+ature.
+2.3. Long-Context Management
+The long-context LLM literature has approached the
+problem of extended conversations primarily through ca-
+pacity: Gemini 1.5 Pro supports up to 1M tokens [19],
+GPT-4ohandles128K,andarchitecturalinnovationssuchas
+Longformer[2]andTransformer-XL[4]extendeffectiveat-
+tentionspans.Complementaryworkoncontextefficiency—
+SnapKV[9],PyramidKV[3],LLMLingua[14]—compresses
+orprunestokensequencestoimproveutilizationwithinfixed
+windows. These approaches treat the context management
+problem as one of capacity: fit more history, or compress it
+more efficiently.
+First Author et al.:Preprint submitted to ElsevierPage 2 of 21
+
+[[page 3]]
+LOM-action reframes the problem as one ofseman-
+tic precision: the issue is not that context windows are
+too short, but that accumulated raw text is semantically
+undifferentiated—every prior turn competes for the same
+attentionbudgetregardlessofrelevancetothecurrentevent.
+By replacing raw conversation history with typed session
+ontology(SO)subgraphdeltaskeyedtoEOentitiesandrela-
+tions,LOM-actionachievessession-positionalinvariance—
+the same event type on the same ontological state produces
+the same simulation-grounded decision regardless of con-
+versationalposition,becausecontextfootprintisboundedby
+semanticscoperatherthanturncount.Thisisapropertythat
+capacity scaling cannot provide.
+2.4. Deployed Enterprise AI Products
+A distinct competitive landscape consists of AI systems
+already deployed in enterprise settings: Microsoft Copilot
+for Microsoft 365 (released 2023) integrates LLM gener-
+ation into productivity workflows via retrieval over docu-
+ment corpora and graph-based organizational context from
+Microsoft Graph; Salesforce Einstein GPT (2023) embeds
+LLMs into CRM event pipelines, enabling natural language
+interactions over customer records and workflow triggers;
+ServiceNow AI (2024) integrates generative and predictive
+models into IT service management workflows with event-
+driven ticket routing. These systems demonstrate the com-
+mercialviabilityofevent-triggeredAIinenterprisecontexts
+and confirm the demand for decision automation at scale.
+LOM-action’s contribution is architecturally orthogo-
+nal to these deployments. The systems above are primar-
+ilyretrieval-augmented: they fetch relevant documents or
+records and provide them as context to a general-purpose
+LLM, which then generates a response over the full re-
+trieved context. None introduces a mandatory ontology-
+governed simulation step that evolves the enterprise ontol-
+ogy under active scenario conditions before any decision is
+derived; none enforces EO-authorized constraint predicates
+as a structural gate on the reasoning substrate; and none
+produces a replayable, operation-level decision trace whose
+scope is provably bounded to the simulation decision graph
+𝐺sim. Where those systems ask “what does the retrieved
+context say?”, LOM-action asks “what does the scenario-
+evolved graph say?”—a distinction that is invisible to re-
+trieval accuracy metrics but directly measurable through
+tool-chain F1.
+3. Approach
+3.1. Scenario Simulation and Decision Derivation
+LOM-action is defined by two innovations that form a
+unified pipeline, not independent contributions.
+Innovation1—ScenarioSimulation.Enterpriseevents
+do not operate on the unrestricted ontology. They operate
+withinacontextofbusinessscenarios:EO-authorizedcondi-
+tionsonentitiesandrelationsthatdefinewhichportionofthe
+graph is the valid reasoning substrate for this event, by this
+user, under the currently active organizational policies. Let
+𝐺=(𝑉,𝐸)betheenterpriseontologyand={𝑟 1,…,𝑟 𝑘}
+the active scenario condition set. Scenario conditions fall
+into two classes, producing distinct simulation graphs that
+are collectively denoted𝐺sim.Constraint conditionsrestrict
+thegraphbyremovingnodesoredgesthatviolateanaccess
+policy or organizational rule; they produce the scenario-
+valid subgraph𝐺:
+𝐺=(𝑉 , 𝐸),
+𝑉={𝑣∈𝑉∣∀𝑟 𝑖∈, 𝑟𝑖(𝑣)=⊤},
+𝐸=𝐸[𝑉 ]
+Augmentation conditionsextend the graph by adding new
+nodes and edges (e.g., newly created organizational units)
+or reweighting existing edges (e.g., applying a surcharge
+schedule); they produce the scenario-augmented graph𝐺:
+𝐺=(𝑉∪Δ𝑉, 𝐸[𝑉∪Δ𝑉]∪Δ𝐸)
+whereΔ𝑉andΔ𝐸are the EO-authorized node and edge
+deltas produced by the scenario program. In both cases
+𝐺sim ∈ {𝐺,𝐺 }is the simulation object: the working
+copy of the enterprise graph evolved under active scenario
+conditions before any decision is derived. Tasks 9–10 in
+ourbenchmarkinstantiatetheconstraintcase(𝐺 );Task11
+instantiates the augmentation case (𝐺). For brevity, the
+remainder of this paper uses𝐺 to refer to the simulation
+graph in contexts where the constraint case is primary;
+augmentation-specific properties are noted explicitly where
+they differ. Every condition inmust be EO-authorized—
+areimbursementceilingcannotbeanarbitraryvalue;anac-
+cessscopecannotbeinferredfromstatisticalpatterns.LOM-
+action supports not only simple attribute predicates but
+alsocomplexnaturallanguage-describedbusinessscenarios
+whose logic involves multi-step conditional computation.
+SuchscenariosareparsedinPhase1intoorderedsequences
+ofPhase2sandboxoperationsthatimplementthescenario’s
+conditionallogicasadeterministicgraphcomputation,with
+every intermediate state written to the SO evidence chain
+and every value traced to an EO-authorized constraint.
+Innovation 2 — Decision Derivation.In existing agent
+systems, tool selection is the first-class decision, made from
+the full input context. In LOM-action, by the time the deci-
+sion step executes, the information space has already been
+reduced to𝐺 through sandbox simulation. The tool call is
+not a decision about what to retrieve—it is a computation
+on an already-simulated, already-scenario-valid graph. The
+pipeline is strictly sequential:
+Data Event
+Align
+← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← →EO Semantics
+Phase 2: Simulation
+← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← →𝐺sim
+Phase 3: Decision
+← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← →Tool(𝐺sim)→Decision Trace
+Skipping Phase 2 does not produce a faster answer—it pro-
+duces an answer to the wrong question. The correct reason-
+ingsubstrateforanydecisionisnotthestaticgraph:itis𝐺 sim
+(𝐺 in the constraint case,𝐺 in the augmentation case),
+First Author et al.:Preprint submitted to ElsevierPage 3 of 21
+
+[[page 4]]
+the graph evolved by the organization’s active scenario con-
+ditions.AsystemthatbypassesPhase2answers“whatdoes
+thestaticgraphsay?”ratherthan“whatdoesthesimulation-
+evolved graph say?”—and the resulting decision carries no
+simulationtraceandnoauditbasis.Ourexperimentsconfirm
+this:F1=0.00onbasictraversaltasksforfrontierbaselines
+despite near-perfect accuracy, and a 34% accuracy gap on
+scenario tasks where𝐺 differs substantively from𝐺.
+3.2. Enterprise AI vs. Consumer AI: The
+Simulation-First Principle
+Prerequisite: the enterprise ontology.LOM-action’s
+simulation pipeline assumes that an enterprise ontology
+(EO)existsandissufficientlypopulatedtoauthorizethesce-
+nario conditions required by incoming events. This is a real
+prerequisite,notatrivialone.Constructingandmaintaining
+an enterprise ontology is a substantial undertaking that pre-
+cedes LOM-action deployment. We addressed this issue in
+our prior work [26]. The RAC (Reason→Align→Con-
+struct) evolutionary flywheel described in Appendix A.8 is
+ourarchitecturalpathtowardreducingthecold-startburden:
+by capturing candidate ontology nodes from deployment
+interactions and routing them to a governed review process,
+RAC enables the EO to grow incrementally from real or-
+ganizational use rather than requiring full pre-specification.
+Forthecurrentinstantiation,the19-functiongraphAPIsuite
+operates on synthetic Neo4j ontologies whose nodes and
+scenario conditions are fully specified; the path to real en-
+terpriseontologiesisthroughSKILLS-standardintegration,
+which we identify as the primary future work direction.
+The architectural inversion.In consumer AI the LLM
+holdsfullreasoningauthority;everythingelseisscaffolding.
+InenterpriseAIthisisinverted:theontologyistheauthority
+andtheLLMisonecomponentoftheexecutionharnessthat
+channels ontological authority into natural language inter-
+action and decision derivation. The full harness design is
+elaboratedinSection3.7;herewefocusontheoptimization-
+theoretic implication of this inversion.
+Two optimization contracts.Consumer AI operates
+underasingle-stagecontract:maximizeanswerqualityover
+the full knowledge space. There is no hard correctness
+boundary; approximate answers are acceptable. Enterprise
+AI operates under a two-stage contract: (1) identify the
+simulation-valid set—the set of decisions derivable from
+thescenario-evolvedgraph𝐺 ;(2)findargmax .Stage(1)
+isnon-negotiableandalwayscomesfirst.Adecisionoutside
+, however high its quality score, is not suboptimal—it is a
+non-answer from the perspective of enterprise governance,
+because it was not derived from the correct simulation. A
+routingsystemthatfindsthemostefficientpathwhileignor-
+ing today’s carrier contract constraints has not produced a
+suboptimal route; it has produced a route derived from the
+wronggraph.Nodecisionqualitycompensatesforamissing
+simulation.
+Architecturalimplication.Thistwo-stagestructurehas
+a direct consequence: any system that performs optimiza-
+tion before sandbox simulation is architecturally unsuited
+for enterprise deployment. LLMs trained on consumer data
+and fine-tuned for answer quality are single-stage optimiz-
+ers over the full answer space. They produce fluent, high-
+qualityanswersthatmaybederivedfromthewronggraph—
+not because they are malicious, but because the simulation
+boundary is not part of their optimization target. The only
+architectural fix is to enforce the scenario simulation before
+any optimization occurs. This is precisely what the sandbox
+simulationstepofLOM-actiondoes:itcomputes𝐺  before
+any tool is called, ensuring that the entire optimization
+process operates on the correct simulation-valid substrate.
+Reframing evaluation.High answer accuracy does not
+imply simulation-grounded reasoning. A model achieving
+98% accuracy on connectivity queries while recording F1
+= 0.00 is not 98% correct in the enterprise sense—it is
+98%accidentallycorrect,havingreachedtherightanswerby
+operating on the wrong graph without any simulation trace.
+Such a system passes quality benchmarks while systemati-
+callyfailingtheauditrequirementthatdecisionsbederivable
+from simulation. The illusive accuracy index IA(𝑀) =
+Acc(𝑀)−F1_chain(𝑀)quantifiesthisgap.Werecommend
+F1_chain≥0.90and IA≤0.30as deployment readiness
+thresholds for simulation-sensitive systems.
+3.3. The Event→Simulation→Decision Pipeline
+The event→simulation→decision pipeline is imple-
+mented across three structured phases:
+Phase 1 — Scenario Parsing.The system receives the
+incoming event payload and aligns it to EO ontological
+semantics via the alignment function Align∶→𝑉 𝐸𝑂 ×
+[0,1]. It identifies the active scenario condition predicates
+embedded in or implied by the event payload. In the
+current implementation, conditions are expressed explicitly
+ineventpayloadtext(e.g.,“onlynodeswhereijudgemethod =
+’1’”).InproductionundertheSKILLSstandard,theywillbe
+resolvedautomaticallyfromEO-encodedentityandrelation
+constraints by the EO alignment machinery—activated by
+the eventś EO semantic targets rather than stated in the
+event payload. For complex natural language scenarios—
+suchaslogisticstransshipmentcostadjustments,conditional
+reimbursement ceilings, or multi-tier approval predicates—
+Phase 1 produces not a single boolean predicate but asce-
+nario program: an ordered sequence of typed Phase 2 sand-
+box operations that collectively implement the scenario’s
+conditional logic. For example, the scenario “transshipment
+via Hub X adds a 12% surcharge to the outbound leg,
+cappedatthecarrier’scontractedrateceiling”isparsedinto
+a three-step program: (i)match_edgesto identify outbound
+legs routed through Hub X; (ii)update_edgesto recompute
+edgeweightsbyapplyingthesurchargescheduleagainstEO-
+encoded carrier rate tables; (iii)match_edgesagain to flag
+edges exceeding the ceiling for deletion or rerouting. Each
+step in the scenario program traces to an EO-authorized
+constraint, preserving the provenance requirement: no rate
+table value, no discount ceiling, and no hub classification
+may enter the scenario program without EO authorization.
+The output of Phase 1 is a structured predicate set=
+First Author et al.:Preprint submitted to ElsevierPage 4 of 21
+
+[[page 5]]
+{𝑟1,…,𝑟 𝑘}, each element tracing to an EO-authorized con-
+straint on entities or relations.
+Phase 2 — Sandbox Simulation.The model applies
+to the sandbox graph copy via targeted tool calls. It
+callsmatch_nodesand/ormatch_edgestoidentifyelementsex-
+cludedbyeachscenariocondition.Itthencallsdelete_nodes
+ordelete_edgesto materialize𝐺  as the active sandbox
+state undergraph_id. This modification is session-scoped
+(SO only—the persistent EO graph is never touched). After
+Phase 2, thegraph_idpointer refers to𝐺 , not𝐺. The
+simulationdecisiongraphexistsinthesandbox.Nodecision
+may be derived before this point.
+Emptygraphhandling.Awell-formedPhase2execution
+may produce𝐺  = (∅,∅)when all nodes are excluded by
+the active scenario conditions—for example, when a user’s
+organizationalscopecontainsnonodessatisfyingtheaccess
+policy for the current event. This is not an error; it is a
+valid simulation outcome that carries decision content: any
+connectivity or path query on the empty graph returns “no
+valid path exists”, any flow computation returns zero, and
+any neighbor lookup returns the empty set. The sandbox
+returns a structured result in all cases, and Phase 3 writes
+this result to the SO decision trace with the annotation
+{simulation_result: “empty_graph”, reason: “all nodes
+excluded by”}.Thisempty-graphsignalissurfacedtothe
+userorupstreamsystemasadefinitive,auditabledecision—
+not a system failure—enabling downstream processes to
+handle the absence of a valid route as a first-class organi-
+zational outcome.
+Phase 3 — Decision Derivation on𝐺 sim.With the
+sandbox holding𝐺sim (either𝐺  or𝐺  depending on the
+scenario class), the model executes the decision tool call—
+shortest_path,check_graph_connectivity,calculate_max_flow,
+etc.—againstgraph_id. The tool operates exclusively on the
+simulation decision graph. The result, together with the
+Phase 1 and Phase 2 trace, is written to the SO decision
+trace. The decision trace is the audit deliverable: it records
+which scenario conditions were applied, which simulation
+was performed in the sandbox, and which decision was
+derived from which evolved graph state.
+Thecanonicalinstantiationforscenario-constrainedcon-
+nectivity (fc_constraint_connection) is shown in Table 3.3.
+A general-purpose LLM skipping Phase 2 calls
+shortest_path(graph_id, "A", "B")directly on the unre-
+stricted graph. This produces a decision for the wrong
+question—connectivity in𝐺, not in𝐺—while generating
+an empty decision trace.
+3.4. Dual-Mode Execution Architecture and
+Sandbox State Management
+The event→simulation→decision pipeline introduces
+a foundational design choice that directly resolves the infi-
+nite context problem endemic to enterprise multi-turn AI:
+the simulation decision graph𝐺 is never loaded into the
+LOM’scontextwindowduringnormaloperation.Itismain-
+tained exclusively in a persistent sandbox session, keyed
+bygraph_id. This is not a performance optimization—it is
+an architectural invariant. The sandbox is the simulation
+substrate;thecontextwindowisthereasoningsurface.They
+are not interchangeable.
+3.4.1. The Sandbox as the Ground Truth of
+Simulation State
+EveryPhase2operation(scenarioapplicationviamatch_nodes,
+delete_nodes,create_edge, etc.) and every Phase 3 decision
+(shortest_path,calculate_max_flow, etc.) operates against
+thegraph_id-keyed sandbox entry, not against any represen-
+tation in the LLM’s context. The sandbox holds the current
+stateof𝐺  atalltimes.Themodel’scontextholdsonly:the
+current event payload, the active EO scenario condition set
+, the SO turn log (typed triples annotated with EO node
+references and turn indices), and the skill ontology function
+schema registry.
+This separation carries a critical correctness guarantee:
+as long as each tool call uses the correct function name
+andcorrectarguments,thesandboxsimulationstateevolves
+correctly—regardless of what else is in the context window,
+regardless of how long the conversation has been running,
+and regardless of how many prior turns have touched dif-
+ferent graph scopes. A 100-turn enterprise conversation
+touching100differentgraphscopesdoesnotaccumulate100
+turns of raw graph data in context. It accumulates 100 turn
+log entries—compact typed triples, each bounded in size by
+thesemanticscopeofthatturn’sPhase2simulation.Context
+footprint is proportional to the size of𝐺’s delta for that
+turn, not to the size of the full session history.
+3.4.2. The Graph Sandbox: Isolation, Atomicity, and
+Verifiability
+The sandbox is backed by an isolated, session-scoped
+in-memory graph store that receives all API calls directed
+at a givengraph_idand executes them against a live Neo4j-
+compatible graph engine. The sandbox provides three guar-
+antees essential for the simulation-first contract.
+Isolation:eachgraph_ididentifiesacompletelyindepen-
+dentgraphinstance;Phase2mutationstoonesession’ssim-
+ulation graph never affect another session or the persistent
+EO graph.
+Atomicity:eachtoolcall(e.g.,delete_nodes,create_edge)
+is executed transactionally within the sandbox—either the
+full operation succeeds and the simulation state advances,
+or it fails and the state is unchanged, enabling clean retry
+and error handling without partial simulation traces.
+Verifiability: because the sandbox records every mu-
+tation as a timestamped operation log, the decision trace
+writtentotheSOisfullyreplayable—anyauditorcanreplay
+the exact sequence of operations against the original graph
+snapshot and verify that the final sandbox state matches the
+claimed𝐺 .Eachlogentryrecordsthefunctionname,argu-
+ments,returnvalue,andtimestamp,formingadeterministic
+replay chain for any session.
+Thegraph_idUUIDisthereforenotmerelyaroutingkey;
+it is the handle to a simulation-auditable execution context.
+When LOM-action callsdelete_nodes(graph_id="abc123",
+First Author et al.:Preprint submitted to ElsevierPage 5 of 21
+
+[[page 6]]
+Table 1
+An illustrative example of the three-phase event→simulation→decision pipeline, triggered by a streaming expense-approval
+event activating an EO-encoded access-scope condition.
+Sandbox: live copy of approval-routing graph (V, E) under graph_id
+[Pre-registered EO scenario condition]
+R = {v.ijudgemethod !='1'-> excluded from active approval path}
+Trigger: fires on any incoming data event carrying field [approval_type]
+-- Streaming data event arrives --
+event_007: { "source_node": "Dept_Finance",
+"approval_type": "expense",
+"amount": 42000,
+"currency": "CNY",
+"timestamp": "2025-06-01T09:14:22Z" }
+Phase 1 -- Scenario Parsing:
+event_007.approval_type = "expense" -> activates EO scenario condition R
+scenario program:
+step 1: match_nodes(ijudgemethod !='1') [identify non-compliant nodes]
+step 2: delete_nodes(...) [remove from sandbox copy]
+step 3: shortest_path(source, target) [derive routing decision]
+Phase 2 -- Sandbox Simulation:
+match_nodes(graph_id, properties={"ijudgemethod": {"op":"ne","value":"1"}})
+-> excluded = {Node_B, Node_C, Node_F}
+delete_nodes(graph_id, node_names=["Node_B","Node_C","Node_F"])
+-> G_R materialized: 14 nodes, 19 edges (was 17 nodes, 26 edges)
+Phase 3 -- Decision Derivation on G_R:
+shortest_path(graph_id, source="Dept_Finance", target="CFO_Node")
+-> path: [Dept_Finance -> VP_Ops -> CFO_Node] (both nodes: ijudgemethod='1')
+-> decision: ROUTE event_007 via [VP_Ops -> CFO_Node]
+-> Decision Trace written to SO:
+{ event_id: "007", triggered_rule: R,
+deleted_nodes: [Node_B, Node_C, Node_F],
+final_path: [Dept_Finance, VP_Ops, CFO_Node],
+timestamp: "2025-06-01T09:14:22Z" }
+-- Sandbox reloaded from EO snapshot; ready for next event --
+node_names=[...]),itisnotissuinganaturallanguageinstruction—
+it is submitting a structured operation to the sandbox that
+will mutate the simulation state deterministically, return a
+structured result, and append an immutable log entry. The
+model never needs to reason about whether the mutation
+“happened”; it is guaranteed by the sandbox contract.
+Benchmark Role.The 19-API suite and the Neo4j sub-
+graph sampling system together constitute the LOM-action
+benchmark:acontrolledevaluationenvironmentforthesce-
+nario→simulation→decision pipeline. The benchmark
+requires evaluation on two axes simultaneously—answer
+accuracy (does the final decision match the ground-truth
+result on𝐺 ) and tool-chain F1 (does the execution trace
+correctly implement Phase 2 sandbox simulation followed
+by Phase 3 decision derivation, with correct API calls and
+arguments at each step). A model that scores high on accu-
+racybutlowonF1isdemonstrablybypassingthesandbox—
+reaching correct answers by operating on the unrestricted
+graph, which constitutes a simulation failure even when the
+answer coincides with the scenario-valid result.
+3.4.3. The Dual-Mode Execution Model
+LOM-action’s overall execution logic is a single in-
+tegrated cognitive act that simultaneously resolves three
+inputs—the active scenario condition set, the incoming
+event𝑞, and the current SO state—and produces one of two
+execution paths depending on whether the skill ontology
+contains a matching registered skill.
+Step1—JointScenario–Event–SkillReasoning.The
+model simultaneously reads(the EO-authorized scenario
+conditionsforthisevent),parses𝑞(theeventpayloadaligned
+First Author et al.:Preprint submitted to ElsevierPage 6 of 21
+
+[[page 7]]
+Table 2
+An illustrative example of the dual-mode (skill mode + reasoning mode) pipeline, triggered by a streaming organisational-change
+event that augments the sandbox graph and requires a conflict-free audit-slot assignment.
+Sandbox: live copy of audit-responsibility graph (V, E) under graph_id
+nodes = auditor roles; edges = shared-client conflicts
+[Pre-registered EO scenario condition]
+R_expand: fires on data event type [org_restructure]
+-> integrate new organisational units and their conflict edges into sandbox
+-> then re-derive audit-slot assignment to ensure zero scheduling conflicts
+-- Streaming data event arrives --
+event_031: { "event_type": "org_restructure",
+"new_units": ["BusinessUnitAgent", "ClosingRuleSubtable",
+"RegionalAuditDesk", ...],
+"new_conflicts": [
+{"u": "ClosingRuleSubtable", "v": "AuditRule"},
+{"u": "RegionalAuditDesk", "v": "VP_Ops"}, ...],
+"timestamp": "2025-06-01T10:03:45Z" }
+Phase 1 -- Scenario Parsing:
+event_031.event_type = "org_restructure" -> activates R_expand
+scenario program:
+step 1: create_nodes(new_units) [add new roles to sandbox]
+step 2: create_edges(new_conflicts) [add shared-client conflict edges]
+step 3: get_graph_info() [read augmented graph structure]
+step 4: Delta+1 greedy coloring [no registered skill -> reasoning mode]
+Phase 2 -- Sandbox Simulation: [skill mode: graph augmentation]
+create_nodes(graph_id, nodes=[
+{"name":"BusinessUnitAgent", "label":"AuditorRole"},
+{"name":"ClosingRuleSubtable", "label":"AuditorRole"}, ... ])
+-> {"status":"ok", "created":{"nodes":[...]}}
+create_edges(graph_id, edges=[
+{"source":"ClosingRuleSubtable","target":"AuditRule","rel_type":"CONFLICT"},
+{"source":"RegionalAuditDesk", "target":"VP_Ops", "rel_type":"CONFLICT"}, ...])
+-> {"status":"ok", "created":{"edges":[...]}}
+G_R := G union DeltaV union DeltaE (augmented graph reflects new org structure)
+Phase 3 -- Decision Derivation on G_R:
+[skill mode] get_graph_info(graph_id)
+-> {"graph": {"nodes": [...45 roles], "edges": [...54 conflict-edges]}}
+-> max degree Delta = 14 (role with most shared-client conflicts)
+No registered skill covers Delta+1 greedy coloring; switching to reasoning mode.
+[reasoning mode] In-context greedy coloring on fused, attribute-pruned G_R:
+color budget = Delta + 1 = 15 (minimum audit-slot count guaranteed conflict-free)
+greedy pass: assign lowest available slot per role in traversal order
+slot sequence: [0,0,0,...,1,2,2,...,0,0]
+total slots used (color sum) = 10
+-> decision: ASSIGN 10 audit slots; full slot map written to SO
+-> Decision Trace written to SO:
+{ event_id: "031", triggered_rule: R_expand,
+new_nodes: 8, new_edges: 11, max_degree: 14,
+slots_required: 10, timestamp: "2025-06-01T10:03:45Z" }
+-- Sandbox reloaded from EO snapshot; ready for next event --
+First Author et al.:Preprint submitted to ElsevierPage 7 of 21
+
+[[page 8]]
+to EO semantics), and inspects the skill ontology registry to
+identify which skill nodes have input signatures matching
+the sandbox simulation state and preconditions satisfied by
+the active scenario conditions. Rules constrain the search
+spaceintheskillontology;theeventpayloaddeterminesthe
+targetcomputation;theintersectiondetermineswhatisboth
+needed and scenario-valid.
+Step 2 — Branch: Skill Found or Not Found.
+Skill Mode⟶Select skill
+args from𝐺
+← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← →Tool call on sandbox
+⟶Result to SO (sandbox never
+enters context)
+Reasoning Mode⟶Read𝐺  from sandbox into context
+⟶LOM self-reasoning
+⟶Result to SO
+Skill Mode.If the skill ontology contains a node𝑠with
+Pre(𝑠)⊆and𝜎 in(𝑠)matching the current sandbox state,
+LOM-action selects𝑠and constructs its argument values
+from the current𝐺  state as known from prior turn log
+entries. The tool call executes against the sandbox. At no
+point does the raw graph structure enter the LLM context
+window. The model reasons over the interface of the simu-
+lation graph—node names, edge types, aggregate statistics
+from prior tool results in the turn log—not over the graph
+content in bulk.
+Reasoning Mode.If no skill ontology node covers the
+required computation (a condition that arises for novel ana-
+lytical queries outside the registered skill set), LOM-action
+reads𝐺  from the sandbox into the context window, as
+shown in Table 3.3. This is the only circumstance under
+which raw graph content enters the LLM context. Before
+loading, event-driven graph fusion is applied: given𝑘prior
+sessionsubgraphsspanningmultipleturns,thefusionopera-
+tionproducesasingleclean,attribute-prunedrepresentation:
+𝐺fused=Merge ({𝐺𝑖}𝑘
+𝑖=1
+)|||attrs∈Relevant(𝑇𝑞)
+where Relevant(𝑇𝑞)retains only attributes reachable from
+the event’s EO alignment targets𝑇𝑞 within two hops. The
+fused graph eliminates intra-node noise and consolidates
+multi-turn simulation state into a single high-density repre-
+sentation. Only this fused, pruned graph enters the context.
+LOM-actionisadual-modemodel,simultaneouslytrained
+for both paths. Skill mode is the default and the norm—it
+handles the vast majority of enterprise queries for which
+a registered skill exists, keeping the context free of raw
+graph data. Reasoning mode is the exception—it handles
+novelcomputationsthattheskillontologydoesnotyetcover,
+consuming context tokens in a controlled, noise-minimized
+manner. This two-path structure reflects a broader design
+principle: LOM maintains a finite, governed registry of
+SKILLSratherthananunboundedone,whilepreservingits
+own graph reasoning capability as a permanent fallback—
+ensuring that capability gaps degrade gracefully rather than
+catastrophically.
+3.4.4. Context Complexity Analysis
+Let 𝑡 denote the conversational history at turn𝑡.
+Under a raw text accumulation baseline, context footprint
+is𝑂(| 𝑡|)—linear in conversation length. Under LOM-
+action’s architecture:
+•Skillmode:contextfootprintis𝑂(|TurnLog 𝑡|)=𝑂(𝑡⋅
+𝛿)where𝛿istheaveragetypedtriplecountperturn—
+typically𝑂(10 1)triples, not𝑂(10 3–104)raw tokens
+per turn. In our benchmark,𝛿ranges from 3 to 28
+typed triples per turn (mean≈ 12), compared to
+800–4,000 raw tokens per turn for equivalent con-
+versational history. Context grows with conversation
+length but at a rate orders of magnitude lower than
+raw text accumulation, with each entry carrying full
+EO provenance for relevance filtering.
+•Reasoning mode: context footprint is𝑂(|𝐺 fused|)—
+bounded by the semantic scope of the current event,
+independent of conversation length. The same event
+typeatTurn3andTurn300producesthesame𝐺 fused
+as long as the relevant SO subgraph state has not
+changed—the session-positional invariance property.
+LOM-actionsupportsa1milliontokencontextwindow,
+providing capacity headroom for reasoning mode computa-
+tions involving large organizational knowledge scopes. The
+window is never the bottleneck in skill mode; in reasoning
+mode,event-drivenfusionensuresthattheloadedgraphrep-
+resentationismaximallycompactbeforeanytokenbudgetis
+consumed.
+3.5. Training Data Generation and the Graph API
+Suite
+The 19-function skill ontology.LOM-action is trained
+over a suite of 19 graph operation APIs that collectively
+instantiatetheskillontologyforthegraph-operationdomain.
+All functions follow the OpenAI function calling JSON
+schema specification and acceptgraph_idas the manda-
+tory routing key to the sandbox. They are organized into
+six functional families: conditional matching (match_nodes,
+match_edges—Phase2scenariosimulationtools);node/edge
+operations (create_node/nodes,delete_nodes,update_nodes,
+create_edge/edges,delete_edges,update_edges,set_edge_weights—
+sandboxmutationtools);informationretrieval(get_node_info,
+get_graph_info,get_node_neighbors); path and connectivity
+(shortest_path,check_graph_connectivity,check_direct_edge,
+analyze_graph_node—Phase3decisionderivationtools);and
+graphalgorithms(calculate_max_matching,calculate_max_flow).
+These 19 APIs will be extended to real enterprise skill
+ontology nodes—ERP query interfaces, document work-
+flow triggers, approval chain APIs, financial computation
+services—under the SKILLS standard in future work.
+Three interaction modescorrespond to EO context
+graph operating states. Mode A (direct reasoning: static
+First Author et al.:Preprint submitted to ElsevierPage 8 of 21
+
+[[page 9]]
+graph in context, no simulation phase needed—for events
+with no active scenario conditions). Mode B (simulation-
+mediated:fullscenario→simulation→decisionpipeline—
+for scenarioqueries againstgraph_id-keyedstores). Mode C
+(hybrid: graph mutated via tools, then in-context algorith-
+mic computation on the fused, attribute-pruned result using
+reasoning mode).
+Sample Generation.A plugin-based generation system
+synthesizes training samples from Neo4j subgraphs (20–30
+nodes, 30–60 edges). Eight plugins cover the full API suite.
+Scenariosimulationplugins(constraint_connection_plugin,
+constraint_path_plugin,filter_plugin)aredesignedspecif-
+ically to train the complete event→simulation→decision
+pipeline: the model must learn that Phase 2 is not an opti-
+mization heuristic but a mandatory simulation prerequisite.
+The corpus totals 2,200 training samples across 11
+tasks (200 per task): basic traversal tasks (CONNECTIVITY,
+NEIGHBOR,PREDECESSOR,EDGE), information retrieval tasks
+(fc_graph_info,fc_node_info), graph algorithm tasks
+(fc_bipartite_maximum_matching,fc_maximum_flow),scenario-
+simulationtasks(fc_constraint_connection,fc_constraint_path),
+and the hybrid Mode C task (delta_plus_one_coloring).
+All ground-truth tool sequences are executed against the
+live Neo4j sandbox; answers are algorithm-derived. The
+simulation-ordered curriculum described in Section 3.6
+governs the training stage sequencing.
+3.6. Model Training
+Base Model and Fine-Tuning.LOM-action is initial-
+izedfromQwen3.5-27Basthebasemodelandfine-tunedvia
+supervised fine-tuning (SFT) on the 2,200-sample training
+corpus.Qwen3.5-27Bprovidesstronginstruction-following
+and structured output capabilities that form a solid founda-
+tion for the multi-step function-calling behaviors required
+by the event→simulation→decision pipeline. Training
+uses the standard causal language modeling objective over
+assistantandtoolturns,withuserandsystemturnsmasked
+from the loss. The full 19-function JSON schema registry
+is provided in the system context for every training sample,
+ensuring the model internalizes the complete skill ontology
+API surface alongside the simulation pipeline structure.
+CurriculumSchedule.Trainingproceedsinsimulation-
+ordered stages: (1) basic traversal and information retrieval
+tasks (Phase 3-only, no scenario simulation), where the
+modellearnscorrectAPIselectionandargumentformatting;
+(2)scenario-simulationtasks(Phase2+3),wherethemodel
+learns the mandatory sandbox simulation prerequisite; (3)
+hybrid Mode C tasks, where the model learns to transition
+between skill mode (sandbox tool execution) and reasoning
+mode (in-context reasoning on the fused evolved graph).
+This ordering mirrors the pedagogical principle of skill
+scaffolding: the model masters individual API invocations
+before learning to compose them into simulation-enforcing
+pipelines.
+Current Limitations and the SKILLS Standard.The
+present implementation grounds scenario conditions in nat-
+urallanguagedescriptionswithineventpayloadtextandrep-
+resentsskillsasOpenAI-compatibleJSONschemafunction
+definitions. In future work, we will unify both layers under
+the SKILLS standard specification: a formal ontological
+schema for declaring skill preconditions, postconditions,
+input/output type signatures, and authorization constraints
+asmachine-readable,EO-linkedtypedstructuresratherthan
+naturallanguage.UndertheSKILLSstandard,scenarioacti-
+vationwillbederivedautomaticallyfromEOnodetraversal
+rather than parsed from event payload text. This transition
+fromnatural-language-describedscenariosandadhocfunc-
+tion schemas to SKILLS-standardized ontological declara-
+tions is the primary engineering path to production enter-
+prise deployment.
+3.7. Production Deployment Principles: LOM as
+Ontology Harness
+3.7.1. The Harness Metaphor
+Anenginealoneproducesnowork.Itrequiresaharness—
+adynamic,executableenvironmentthatcouplestheengine’s
+power to a load and converts raw force into directed pro-
+ductive output. The enterprise ontology is the engine: it
+encodes organizational authority, semantic constraints, and
+thecompletespecificationofwhatistrue,whatispermitted,
+and how computations must be performed. LOM is the
+harness: it creates the dynamic, executable environment in
+which the ontology’s authority is coupled to real business
+tasks—natural language interaction, streaming data events,
+multi-step simulation, and auditable decision derivation.
+Without the harness, the engine idles; without the engine,
+the harness has nothing to transmit. This metaphor is not
+decorative—ithasaprecisearchitecturalimplication.Every
+design decision in LOM-action is evaluated by a single cri-
+terion: does it transfer more of the ontology’s authority into
+productive output, or does it introduce a path that bypasses
+ontological authority in favor of model-internal shortcuts?
+The four production principles below operationalize this
+criterion.
+3.7.2. Human-in-the-Loop as the Production Unlock
+ThesinglemostimpactfulinterventionformovingLOM
+from research prototype to production deployment is the in-
+troductionofahuman-in-the-loop(HITL)stageattheintent
+boundary—the moment between a user’s natural language
+input and the system’s first ontological alignment decision.
+Enterprise inputs are frequently underspecified. A user
+who types “find the best approval route for this expense”
+has not specified which organizational scope applies, which
+carrier contract is active, or whether the request falls under
+a standard or exception workflow. A purely automated sys-
+tem must either hallucinate these parameters (producing a
+fluentbutontologicallyunauthorizedanswer)orfailsilently
+(returning an empty result with no explanation). Neither
+outcome is acceptable in production.
+First Author et al.:Preprint submitted to ElsevierPage 9 of 21
+
+[[page 10]]
+The HITL stage resolves this by surfacing the align-
+ment uncertainty to the user before any sandbox simula-
+tion begins. When the confidence-gated alignment function
+Align(𝑞)→(𝑣,𝑐)returns𝑐 < 𝜃 accept for one or more
+entities, LOM-action generates a targeted clarification turn:
+it presents the candidate EO nodes and their nearest onto-
+logical neighbors, asks the user to confirm or correct the
+alignment, and incorporates the response before proceeding
+to Phase 2. This is not a conversational convenience—it
+is a compliance gate. A clarification turn that resolves an
+ambiguousorganizationalscopeconvertsapotentiallyunau-
+thorized simulation into a provably authorized one, because
+the Phase 2 sandbox now operates on a graph whose scope
+has been explicitly confirmed against EO authority.
+The analogy to existing practice is instructive. Large
+language model assistants such as Claude achieve high task
+completion rates not by attempting to execute underspec-
+ified requests directly, but by conducting multi-turn intent
+clarification—progressivelyimprovingthequalityandcom-
+pleteness of the input until the system can proceed with
+confidence. The same principle applies to LOM-action: the
+quality of the simulation decision graph𝐺  is bounded
+by the quality of the scenario conditions that produce it,
+and those conditions are bounded by the quality of the
+intent alignment that precedes them. HITL is therefore not
+a workaround for model limitations—it is the architectural
+mechanism that raises the information quality of every sim-
+ulation to the level required for ontologically authorized
+execution.
+HITL is a simple loop, not agentic infrastructure.A
+precisescopeboundarymustbedrawntoavoidarchitectural
+overreach. HITL as practiced in LOM-action is ashort
+clarification loop: typically two to five turns that progres-
+sively resolve ambiguous entity alignments until the input
+is sufficiently grounded for Phase 2 to begin. This is cate-
+goricallydistinctfromagenticharnessarchitectures—long-
+running autonomous agent frameworks designed to sustain
+thousands of model calls over hours or days to complete a
+single complex task (e.g., autonomously generating a full
+ERP module from a specification, or coordinating multi-
+source intelligence collection over an extended operation).
+Agentic harness infrastructure is the right tool for tasks
+that genuinely require autonomous multi-day execution; it
+is the wrong tool when the actual production bottleneck
+is input underspecification resolvable in five clarification
+turns. Misidentifying a HITL problem as a harness problem
+produces the opposite of the intended result: it introduces
+infrastructurecomplexitythatobscuresthesimplefix,makes
+the system harder to debug, and leaves the original under-
+specification problem unresolved beneath layers of automa-
+tion.
+The AI coding anti-pattern.A recurring misidenti-
+fication in enterprise LOM deployment, observed during
+internal pilot deployments, occurs when teams respond
+to subgraph retrieval failures by generating more com-
+plex retrieval code—conditional logic, multi-stage filtering
+pipelines, heuristic fallbacks—using AI coding tools. We
+conjecturethatthisapproachfailsforastructuralreason:the
+retrieval failure is typically not caused by insufficient code
+complexity but by insufficient input specification. LOM-
+actionrequirestwoinputstoexecutecorrectly:theontology
+subgraph(thestructuralscope)andthealignedscenariocon-
+dition set(the organizational constraint). When either is
+underspecified,generatedcodeoperatesonthewrongscope
+because the scope was never correctly identified. The HITL
+loop addresses this directly: rather than generating code to
+handletheambiguityprogrammatically,thesystemsurfaces
+theambiguitytotheuserandincorporatestheclarifiedinput
+before proceeding. Whether this pattern generalizes across
+deploymentcontexts isan empiricalquestion; wepropose it
+as a design hypothesis warranting controlled evaluation in
+future work.
+3.7.3. Four Production Deployment Principles
+The following four principles govern the engineering
+of LOM-action in production and are proposed as general
+guidelines for any LOM-based enterprise deployment.
+Principle 1: Minimize business logic in code; max-
+imize it in the ontology.Custom code written to imple-
+ment business logic—conditional branches, policy lookups,
+computation rules—is a liability: it duplicates organiza-
+tional knowledge that already exists in the EO, creates a
+maintenance burden as policies change, and introduces a
+bypass path that the ontology cannot audit. LOM-action’s
+production engineering discipline requires that all business
+logicbeexpressedasEO-encodedscenarioconditions,skill
+ontology preconditions, or EO.Logic-Constraint computa-
+tion formulas—never as procedural code embedded in the
+pipeline. The harness implements the simplest possible ex-
+ecution loop; the ontology carries all organizational mean-
+ing. Complexity in the harness is a signal that ontological
+authority has been short-circuited.
+Principle 2: All context must be ontology-grounded;
+nothing may bypass the ontology or ignore it.Every
+entity, relation, metric, and constraint that enters the rea-
+soning pipeline must be resolved to an EO.Standard-ID
+canonical identifier before any simulation proceeds. Raw
+strings,unresolvednaturallanguageexpressions,andvalues
+notpresentinEO.Enumeration-Systemareflaggedandheld
+at the HITL clarification stage. This principle has two di-
+rections:nothingmaybypasstheontology(proceedingwith
+ungroundedentities)andnothingmayignoreit(treatingthe
+ontology as optional context rather than mandatory author-
+ity). The context window of the LOM model at any point
+containsonlyontologicallytypedcontent:EO-anchoredturn
+logentries,theactivescenarioconditionset,andtheskill
+ontology function schema—never raw conversational text
+accumulated without ontological structure.
+Principle3:PreferLOMateveryinferencepoint;use
+frontier LLMsonly where LOMcannot yet reach.Every
+inference step that can be handled by a smaller, ontology-
+fine-tuned LOM model should be. General-purpose frontier
+First Author et al.:Preprint submitted to ElsevierPage 10 of 21
+
+[[page 11]]
+LLMs are powerful but expensive, slow, and—critically—
+not trained to respect ontological authority as a hard con-
+straint. The production engineering practice is to identify
+each pipeline step where a frontier model is currently used
+and test whether a LOM variant (fine-tuned on domain-
+specific simulation traces) can replace it while maintaining
+decision quality. This is not a cost-reduction heuristic: a
+smaller LOM model that has been trained to enforce the
+event→simulation→decision pipeline is architecturally
+more trustworthy for enterprise use than a larger frontier
+model that treats scenario conditions as soft preferences.
+Frontier models are retained only for tasks that genuinely
+exceed current LOM capability—long-document compre-
+hension, multi-modal analysis, code generation—and each
+suchdelegationisitselfanEO-authorizedskillontologycall
+subject to HITL review.
+Principle 4: Use LOM to govern the environment;
+expose the ontology schema and graph query logic for
+human inspection.LOM governs not only individual deci-
+sions but the entire execution environment: it manages the
+sandbox lifecycle, enforces the skill ontology registry, and
+maintains the SO evidence chain. This environmental gov-
+ernance role—LOM as the harness that couples ontological
+authoritytoeveryexecutionstep—requiresthattheenviron-
+ment itself be inspectable. In production, the EO schema,
+the active scenario condition set, and the graph query
+logic executed in Phase 2 must be exposed through human-
+readable audit interfaces. An operator must be able to see
+which nodes were matched, which were deleted, and which
+graph state the Phase 3 decision was derived from—not as
+a debugging convenience but as the primary accountability
+surface. LOM also serves asjudge: it evaluates the outputs
+of subordinate models and tool calls against ontological
+authority before writing results to the SO, rejecting any
+output that cannot be grounded in an EO-authorized entity
+orcomputation.ThisLOM-as-Judgeroleclosesthelastgap
+between a system that produces plausible outputs and one
+that produces auditable decisions.
+4. Experiments
+4.1. Dataset
+The LOM-action benchmark comprises 11 function-
+callingtasksdrawnfromthegraphoperationAPIsuite,each
+designedtoprobeadistinctcapabilityoftheevent→simula-
+tion→decisionpipeline.Eachtaskhas200trainingsamples
+and 100 held-out test samples, for a total of 2,200 training
+and 1,100 test instances. All subgraphs are sampled fresh
+from Neo4j (20–30 nodes, 30–60 edges per instance) with
+disjointgraphUUIDsbetweentrainingandtest,ensuringno
+memorization of specific graph configurations.
+Tasks 1–8 require only Phase 3 decision derivation (no
+scenario-driven sandbox simulation). Tasks 9–10
+(fc_constraint_connection,fc_constraint_path) require the
+full Phase 2→Phase 3 pipeline: the model must run the
+sandbox simulation to materialize𝐺 before executing any
+connectivityorpathquery.Task11(delta_plus_one_coloring)
+activates the dual-mode architecture: skill mode handles
+graphmutationandretrieval,whilereasoningmodehandles
+the in-context greedy coloring computation on the fused,
+attribute-pruned simulation graph. We note that Task 11
+is a graph-theoretic task selected specifically to probe the
+dual-mode execution boundary; its connection to enterprise
+scenarios (e.g., conflict-free audit slot assignment) is illus-
+trative rather than directly grounded in a deployed business
+process. Future benchmark iterations will replace it with a
+taskderivedfromarealenterpriseworkflowwherethedual-
+mode boundary arises organically from the skill ontology
+coverage gap.
+4.2. Experimental Setup
+LOM-action is compared against two zero-shot frontier
+baselines—Doubao-1.8 and DeepSeek-V3.2—via their na-
+tivefunction-callingAPIswiththefull19-functionschema.
+The comparison is inherently asymmetric (LOM-action is
+fine-tuned;baselinesarezero-shot),butthisreflectsthemost
+realisticenterprisedeploymentalternative.Thekeymetricis
+tool-chain F1, not Acc: fine-tuning teaches domain answer
+quality;theevent→simulation→decisionpipelineteaches
+simulation-grounded reasoning chains—categorically dif-
+ferent capabilities. The F1 = 0.00 result on basic traversal
+tasks for zero-shot baselines cannot be explained by do-
+mainknowledgegaps,sincethosetasksrequirenoscenario-
+specific knowledge; the failure is architectural. All models
+are evaluated on the same 1,100-sample held-out test set
+(disjointgraph_idUUIDs from training); baselines report
+means over three independent runs.
+4.3. Evaluation Metrics
+Answer Accuracy (Acc):exact match on the final ex-
+tracted answer—inflatable via simulation bypass, hence in-
+sufficient alone.
+Tool-ChainF1:let ̂𝐶=[̂ 𝑐1,…, ̂ 𝑐𝑚]and𝐶 ∗=[𝑐 ∗
+1,…,𝑐 ∗
+𝑛]
+be the predicted and ground-truth tool-call sequences. Calls
+are matched order-sensitively:̂ 𝑐𝑖 matches𝑐 ∗
+𝑖 iff names are
+equal and all required argument key-value pairs appear
+exactly. Let𝑀be the number of matched positions; then
+P=𝑀∕𝑚(0if𝑚= 0), R=𝑀∕𝑛(1if𝑛= 0),
+F1= 2PR∕(P+R)(0if P+R= 0). Skipping Phase 2
+yields F1= 0.00even when the final answer is correct.
+Task-level F1 is mean over 100 test instances; overall F1
+is macro-average across 11 tasks.
+Illusive Accuracy:IA(𝑀)=Acc(𝑀)−F1_chain(𝑀).
+Deployment thresholds F1_chain≥0.90, IA≤0.30
+are heuristic starting points; practitioners should calibrate
+against their audit requirements.
+4.4. Main Results
+Tables 3 and 4 report Answer Accuracy and Tool-Chain
+F1 across all eleven tasks, and must be read together: accu-
+racy alone is insufficient to characterize simulation-capable
+agents. On overall accuracy, LOM-action achieves 93.82%
+against 80.00% and 80.18% for Doubao-1.8 and DeepSeek-
+V3.2 respectively. The F1 gap is far more decisive: 98.74%
+First Author et al.:Preprint submitted to ElsevierPage 11 of 21
+
+[[page 12]]
+Table 3
+Answer Accuracy (Acc)
+Task LOM-action Doubao-1.8 DeepSeek-V3.2
+CONNECTIVITY 1.00 0.98 1.00
+NEIGHBOR 1.00 1.00 0.98
+PREDECESSOR 1.00 1.00 1.00
+EDGE 1.00 1.00 1.00
+fc_graph_info 0.88 0.94 0.78
+fc_node_info 1.00 0.16 0.86
+fc_bipartite_maximum_matching 1.00 1.00 0.90
+fc_maximum_flow 1.00 1.00 0.70
+fc_constraint_connection 1.00 0.66 0.64
+fc_constraint_path 0.98 0.98 0.96
+delta_plus_one_coloring 0.46 0.08 0.00
+Overall 0.9382 0.8000 0.8018
+Table 4
+Tool-Chain F1
+Task LOM-action Doubao-1.8 DeepSeek-V3.2
+CONNECTIVITY 1.00 0.00 0.00
+NEIGHBOR 1.00 0.00 0.00
+PREDECESSOR 1.00 0.00 0.00
+EDGE 1.00 0.00 0.00
+fc_graph_info 1.00 0.00 0.92
+fc_node_info 1.00 0.00 0.06
+fc_bipartite_maximum_matching 1.00 0.02 0.26
+fc_maximum_flow 1.00 0.00 0.02
+fc_constraint_connection 0.987 0.325 0.351
+fc_constraint_path 0.959 0.602 0.671
+delta_plus_one_coloring 1.00 0.22 0.41
+Overall 0.9874 0.2442 0.3621
+versus 24.42% and 36.21%—a four-fold advantage that re-
+flects a categorical difference in reasoning behavior. The
+illusive accuracy indices (Doubao-1.8 = 0.56, DeepSeek-
+V3.2 = 0.44, LOM-action =−0.05) confirm the pattern:
+both baselines achieve high accuracy while systematically
+bypassingsimulation-groundedreasoningchains,mostvisi-
+blyonthefourbasictraversaltaskswhereF1=0.00despite
+near-perfect accuracy.
+The scenario-simulation tasks expose the enterprise-
+critical failure most directly. Onfc_constraint_connection,
+LOM-action achieves 1.00 accuracy against 0.66 and 0.64
+for the baselines—a 34-point gap attributable to Phase 2
+bypass: both baselines invokeshortest_pathdirectly on the
+unrestricted graph rather than first running the sandbox
+simulation to materialize𝐺 , producing decisions for the
+wrong graph scope.
+On the hybrid Mode C task (delta_plus_one_coloring),
+LOM-action records F1 = 1.00 with accuracy = 0.46, con-
+firming that simulation-chain correctness and in-context al-
+gorithmic accuracy are separable capabilities. Skill mode
+executes without error; failures are confined to reasoning
+mode greedy coloring computation, and the improvement
+path is localized accordingly.
+4.5. Analysis
+Grouped Performance Summary.Table 5 aggregates
+results by task category to clarify where LOM-action’s ad-
+vantage is architectural (scenario-simulation, hybrid) ver-
+sus where it reflects fine-tuning efficiency on domain APIs
+(basic traversal, graph algorithms). The 95% confidence
+intervalsarecomputedas𝑝±1.96
+√
+𝑝(1−𝑝)∕𝑛with𝑛=100
+per task, and are reported for LOM-action Acc only—the
+primary method under evaluation. Baseline Acc values are
+meansoverthreeindependentruns;theirpoint-estimatevari-
+ance is smaller than LOM-action’s CI width in all groups.
+The grouped view makes the paper’s central claim pre-
+cise. On Basic Traversal and Graph Algorithms, F1 = 0.00
+for both baselines despite near-perfect Acc—the Illusive
+Accuracy phenomenon at scale, not a performance tie. On
+Scenario-Simulation tasks, both Acc and F1 diverge: non-
+overlapping95%CIs(LOM-actionAccCI=[1.00,1.00]vs.
+Doubao = [0.57, 0.75]) confirm statistical significance. On
+Hybrid tasks, LOM-action CI [0.36, 0.56] does not overlap
+with Doubao [0.03, 0.13] or DeepSeek [0.00, 0.00]. The
+only group where LOM-action does not dominate Acc is
+Information Retrieval, where Doubao-1.8 outperforms on
+fc_graph_info(0.94 vs. 0.88)—consistent with the error
+First Author et al.:Preprint submitted to ElsevierPage 12 of 21
+
+[[page 13]]
+Table 5
+Grouped Results (Acc / F1) with 95% Confidence Interval (CI) on LOM-action Acc
+Group LOM Acc LOM F1 Doubao Acc Doubao F1 DS-V3.2 Acc DS-V3.2 F1
+Basic Traversal (×4) 1.00 [1.00, 1.00] 1.00 0.995 0.00 0.995 0.00
+Information Retrieval (×2) 0.94 [0.89, 0.99] 1.00 0.55 0.00 0.82 0.49
+Graph Algorithms (×2) 1.00 [1.00, 1.00] 1.00 1.00 0.01 0.80 0.14
+Scenario-Simulation (×2) 0.99 [0.97, 1.00] 0.973 0.82 0.464 0.80 0.511
+Hybrid / Mode C (×1) 0.46 [0.36, 0.56] 1.00 0.08 0.22 0.00 0.41
+analysis showing 29% of LOM-action’s errors are incom-
+pletefc_graph_infochains.
+Finding 1: Illusive Accuracy is empirically verified,
+not inferred.To confirm that F1 = 0.00 on basic traversal
+tasks reflects genuine tool-call absence rather than format-
+ting failures, we manually inspected 50 randomly sampled
+Doubao-1.8 outputs on CONNECTIVITY tasks. Of 50
+outputs: 47 produced correct binary answers with zero tool
+calls (pure natural language responses); 3 produced mal-
+formedtoolcallsfailingJSONschemavalidation.Nooutput
+executed a validcheck_graph_connectivityorshortest_path
+call against the sandbox. The model reasons correctly about
+graphconnectivityfromitsparametricknowledge—achieving
+near-perfect accuracy—without any sandbox engagement.
+This is the illusive accuracy phenomenon precisely: correct
+answers derived without simulation-grounded reasoning,
+carrying no audit trail and no compliance evidence.
+Finding 2: The simulation gap is the enterprise-
+criticalgap.ThelargestAccdifferentialoccursonscenario-
+simulation tasks: LOM-action 1.00 vs. Doubao-1.8 0.66 vs.
+DeepSeek-V3.2 0.64 onfc_constraint_connection—a 34-
+point gap that persists against frontier models with vastly
+more parameters. Both baselines skip Phase 2 and call
+shortest_pathontheunrestrictedgraph,producingdecisions
+for the wrong simulation scope. Their occasional correct
+answers onfc_constraint_path(Acc = 0.96–0.98) occur
+when the shortest path in𝐺coincidentally equals the path
+in𝐺 —accidentally simulation-valid guesses that would
+not hold under different scenario configurations. F1 reveals
+theunderlyingfailure:0.464/0.511,confirmingincomplete
+simulation-application chains across roughly half of all
+scenario simulation attempts.
+Finding 3: Mode C decouples simulation-chain cor-
+rectnessfromalgorithmicaccuracy.LOM-actionachieves
+F1 = 1.00 but Acc = 0.46 ondelta_plus_one_coloring. The
+95% CI [0.36, 0.56] is non-overlapping with both base-
+lines, confirming statistical significance. Skill mode exe-
+cuteswithouterrorinalltestinstances;failuresareconfined
+to reasoning mode in-context greedy coloring computation
+(color-sum miscalculationdue tonode orderingambiguity).
+The improvement path is localized: better in-context algo-
+rithmicreasoningforreasoningmode,leavingtheskillmode
+pipeline intact.
+Finding 4: The simulation-first principle reframes
+the performance comparison.The overall Acc gap (0.938
+vs. 0.800/0.802) is partly attributable to the fine-tuning
+advantage over zero-shot baselines. The F1 gap (0.987 vs.
+0.244/0.362)isnot:fine-tuningteachesdomainanswerqual-
+ity; the event→simulation→decision pipeline teaches
+simulation-grounded reasoning chains. These are distinct
+capabilities.Thefour-foldF1advantageisthemeasureofthe
+architecturalcontribution,andthegroupedanalysisconfirms
+itisstatisticallysignificantacrosseverytaskcategorywhere
+simulation-grounded reasoning is exercised.
+Error Analysis.LOM-action’s approximately 68 incor-
+rectpredictions(1,100testsamples,Acc=0.938)distribute
+as: in-context computation errors 47% (color-sum miscal-
+culation indelta_plus_one_coloring), incomplete tool chain
+29% (fc_graph_info—model skipsget_graph_info), argu-
+ment hallucination 15% (minor node-name mismatches in
+scenariotasks),modemisclassification9%(ModeBapplied
+toModeAsamples,incurringtoollatencywithoutaccuracy
+impact).
+4.6. Limitations
+We identify three limitations that bound the current
+results and define the agenda for future work.
+Benchmarkscopeandgeneralization.Allexperiments
+areconductedonsyntheticNeo4jsubgraphsof20–30nodes
+and 30–60 edges. Real enterprise ontologies operate at or-
+ders of magnitude greater scale—hundreds of thousands of
+nodes with complex inheritance hierarchies, heterogeneous
+attribute types, and significant noise and incompleteness.
+We havenot demonstrated thatPhase 2 simulationaccuracy
+and Phase 3 decision quality scale to these conditions, nor
+that a model fine-tuned on graph-domain tasks transfers
+to different ontological domains (e.g., financial ledger on-
+tologies, HR organizational graphs). Cross-scale and cross-
+domaingeneralizationexperimentsareapriorityforthenext
+evaluation cycle.
+Absent fine-tuned baseline ablation.The compari-
+son between LOM-action (fine-tuned) and frontier models
+(zero-shot) does not fully isolate the architectural contribu-
+tion from the training contribution. The ideal ablation—a
+Qwen3.5-27B model fine-tuned on the same 2,200 samples
+withoutthe Phase 2 simulation curriculum—would directly
+measure how much of the F1 gain comes from ontology-
+governed architecture versus domain fine-tuning alone. We
+note that the F1 = 0.00 result on basic traversal tasks for
+frontier zero-shot models provides partial evidence that the
+failureisarchitecturalratherthandomain-knowledge-based,
+since those tasks require no enterprise-specific knowledge;
+First Author et al.:Preprint submitted to ElsevierPage 13 of 21
+
+[[page 14]]
+however, the controlled ablation remains necessary and is
+planned.
+Event throughput and latency.LOM-action processes
+eachbusinesseventthroughamulti-phasepipelineinvolving
+multiple LLM calls (Phase 1 parsing, Phase 2 tool exe-
+cution, Phase 3 decision derivation). For high-frequency
+event streams—financial transaction processing, real-time
+logistics tracking, high-volume approval workflows—end-
+to-end latency and concurrent event handling are critical
+production constraints that we have not measured. Concur-
+rent events sharing agraph_idrequire sandbox locking or
+versioning semantics whose performance implications are
+uncharacterized.Productiondeploymentwillrequirelatency
+profilingandthroughputbenchmarkingunderrealisticevent
+load distributions.
+5. Conclusion
+LOM-action establishes event-driven ontology simula-
+tion as the architectural prerequisite for trustworthy en-
+terprise AI: business events trigger EO-encoded scenario
+conditions, which drive deterministic sandbox graph mu-
+tations to produce the simulation decision graph𝐺 sim,
+from which all decisions are exclusively derived. Fine-
+tuned on Qwen3.5-27B with 2,200 samples across 11 tasks,
+LOM-action achieves 93.82% accuracy and 98.74% tool-
+chain F1 against zero-shot frontier baselines that reach only
+24–36% F1 despite 80% accuracy—the illusive accuracy
+phenomenon. The four-fold F1 advantage confirms that
+ontology-governedsimulationarchitecture,notmodelscale,
+separates genuine enterprise decision intelligence from flu-
+ent but ungrounded answers.
+Future work proceeds along four axes: (1)SKILLS-
+standard integration—replacing natural-language scenario
+descriptionswithaformalontologicalschemainwhichsce-
+narioactivationderivesautomaticallyfromEOgraphtraver-
+sal; (2)RAC governance hardening—deploying the evolu-
+tionaryflywheelinproductionpairedwithanEOversioning
+protocol that assigns explicit audit-chain validity scopes to
+each EO version; (3)cross-scale and cross-domain vali-
+dation—extending the benchmark to enterprise-scale on-
+tologies and evaluating transfer across financial, HR, and
+supply chain domains; (4)controlled ablation and latency
+characterization—isolating architectural from training con-
+tributionsviaaPhase2-ablatedfine-tunedbaseline,andpro-
+filing event-processing latency under high-frequency event
+streams.Togethertheseaxesconstitutetheengineeringpath
+from the current graph-domain prototype to full ontology-
+native enterprise AI.
+References
+[1] Anthropic, 2024. Claude 3 Model Card: October 2024 Addendum.
+Technical Report. Anthropic. URL:https://www-files.anthropic.
+com/production/images/Claude-3-Model-Card-October-Addendum.pdf.
+technical report.
+[2] Beltagy, I., Peters, M.E., Cohan, A., 2020. Longformer: The long-
+document transformer. arXiv preprint arXiv:2004.05150 .
+[3] Cai,Z.,Zhang,Y.,Gao,B.,Liu,Y.,Li,Y.,Liu,T.,Lu,K.,Xiong,W.,
+Dong, Y., Hu, J., et al., 2024. Pyramidkv: Dynamic kv cache com-
+pression based on pyramidal information funneling. arXiv preprint
+arXiv:2406.02069 .
+[4] Dai, Z., Yang, Z., Yang, Y., Carbonell, J.G., Le, Q., Salakhutdinov,
+R.,2019. Transformer-xl:Attentivelanguagemodelsbeyondafixed-
+length context, in: Proceedings of the 57th annual meeting of the
+association for computational linguistics, pp. 2978–2988.
+[5] Edge,D.,Trinh,H.,Cheng,N.,Bradley,J.,Chao,A.,Mody,A.,Truitt,
+S., Metropolitansky, D., Ness, R.O., Larson, J., 2024. From local to
+global:Agraphragapproachtoquery-focusedsummarization. arXiv
+preprint arXiv:2404.16130 .
+[6] Floratou,A.,Psallidas,F.,Zhao,F.,Deep,S.,Hagleither,G.,Tan,W.,
+Cahoon, J., Alotaibi, R., Henkel, J., Singla, A., et al., 2024. Nl2sql is
+a solved problem... not!, in: CIDR.
+[7] Gao, D., Wang, H., Li, Y., Sun, X., Qian, Y., Ding, B., Zhou, J.,
+2023.Text-to-sqlempoweredbylargelanguagemodels:Abenchmark
+evaluation. arXiv preprint arXiv:2308.15363 .
+[8] Hurst,A.,Lerer,A.,Goucher,A.P.,Perelman,A.,Ramesh,A.,Clark,
+A., Ostrow, A., Welihinda, A., Hayes, A., Radford, A., et al., 2024.
+Gpt-4o system card. arXiv preprint arXiv:2410.21276 .
+[9] Li, Y., Huang, Y., Yang, B., Venkitesh, B., Locatelli, A., Ye, H.,
+Cai, T., Lewis, P., Chen, D., 2024. Snapkv: Llm knows what you
+are looking for before generation. Advances in Neural Information
+Processing Systems 37, 22947–22970.
+[10] Lin,Q.,Wen,M.,Peng,Q.,Nie,G.,Liao,J.,Wang,J.,Mo,X.,Zhou,
+J.,Cheng,C.,Zhao,Y.,etal.,2024. Hammer:Robustfunction-calling
+for on-device language models via function masking. arXiv preprint
+arXiv:2410.04587 .
+[11] Liu,W.,Huang,X.,Zeng,X.,Hao,X.,Yu,S.,Li,D.,Wang,S.,Gan,
+W., Liu, Z., Yu, Y., et al., 2024. Toolace: Winning the points of llm
+function calling. arXiv preprint arXiv:2409.00920 .
+[12] Ma, S., Xu, C., Jiang, X., Li, M., Qu, H., Guo, J., 2024. Think-
+on-graph 2.0: Deep and interpretable large language model rea-
+soning with knowledge graph-guided retrieval. arXiv preprint
+arXiv:2407.10805 .
+[13] Mavromatis, C., Karypis, G., 2024. Gnn-rag: Graph neural retrieval
+forlargelanguagemodelreasoning. arXivpreprintarXiv:2405.20139
+.
+[14] Pan,Z.,Wu,Q.,Jiang,H.,Xia,M.,Luo,X.,Zhang,J.,Lin,Q.,Rühle,
+V.,Yang,Y.,Lin,C.Y.,etal.,2024. Llmlingua-2:Datadistillationfor
+efficient and faithful task-agnostic prompt compression, in: Findings
+of the Association for Computational Linguistics: ACL 2024, pp.
+963–981.
+[15] Patil, S.G., Mao, H., Yan, F., Ji, C.C.J., Suresh, V., Stoica, I., Gonza-
+lez,J.E.,2025.Theberkeleyfunctioncallingleaderboard(bfcl):From
+tool use to agentic evaluation of large language models, in: Forty-
+second International Conference on Machine Learning.
+[16] Qiao, S., Fang, R., Qiu, Z., Wang, X., Zhang, N., Jiang, Y., Xie,
+P., Huang, F., Chen, H., 2024. Benchmarking agentic workflow
+generation. arXiv preprint arXiv:2410.07869 .
+[17] Schick,T.,Dwivedi-Yu,J.,Dessì,R.,Raileanu,R.,Lomeli,M.,Ham-
+bro,E.,Zettlemoyer,L.,Cancedda,N.,Scialom,T.,2023.Toolformer:
+Language models can teach themselves to use tools. Advances in
+neural information processing systems 36, 68539–68551.
+[18] Team, G., Anil, R., Borgeaud, S., Alayrac, J.B., Yu, J., Soricut,
+R., Schalkwyk, J., Dai, A.M., Hauth, A., Millican, K., et al., 2023.
+Gemini:afamilyofhighlycapablemultimodalmodels.arXivpreprint
+arXiv:2312.11805 .
+[19] Team, G., Georgiev, P., Lei, V.I., Burnell, R., Bai, L., Gulati, A.,
+Tanzer, G., Vincent, D., Pan, Z., Wang, S., et al., 2024. Gemini
+1.5: Unlocking multimodal understanding across millions of tokens
+of context. arXiv preprint arXiv:2403.05530 .
+[20] Xue, S., Jiang, C., Shi, W., Cheng, F., Chen, K., Yang, H., Zhang,
+Z., He, J., Zhang, H., Wei, G., et al., 2023. Db-gpt: Empowering
+database interactions with private large language models. arXiv
+preprint arXiv:2312.17449 .
+First Author et al.:Preprint submitted to ElsevierPage 14 of 21
+
+[[page 15]]
+[21] Yao, S., Shinn, N., Razavi, P., Narasimhan, K., 2024.𝑡𝑎𝑢-bench:
+A benchmark for tool-agent-user interaction in real-world domains.
+arXiv preprint arXiv:2406.12045 .
+[22] Yao, S., Zhao, J., Yu, D., Du, N., Shafran, I., Narasimhan, K.R.,
+Cao, Y., 2022. React: Synergizing reasoning and acting in language
+models, in: The eleventh international conference on learning repre-
+sentations.
+[23] Zhang, J., Lan, T., Zhu, M., Liu, Z., Hoang, T.Q., Kokane, S., Yao,
+W., Tan, J., Prabhakar, A., Chen, H., et al., 2025. xlam: A family
+of large action models to empower ai agent systems, in: Proceedings
+of the 2025 Conference of the Nations of the Americas Chapter
+of the Association for Computational Linguistics: Human Language
+Technologies (Volume 1: Long Papers), pp. 11583–11597.
+[24] Zhang, Y., Zhu, H., 2026. Construct, align, and reason: Large on-
+tology models for enterprise knowledge management. arXiv preprint
+arXiv:2602.00029 .
+[25] Zhu, H., 2024. Node classification via semantic-structural
+attention-enhanced graph convolutional networks. arXiv preprint
+arXiv:2403.16033 .
+[26] Zhu, H., 2026. Unifying ontology construction and semantic align-
+ment for deterministic enterprise reasoning at scale .
+[27] Zhu, H., Hu, W., Zeng, Y., 2019. Flexner: A flexible lstm-cnn
+stack framework for named entity recognition, in: CCF International
+ConferenceonNaturalLanguageProcessingandChineseComputing,
+Springer. pp. 168–178.
+[28] Zhu,H.,Li,Y.,Liu,L.,Tong,H.,Lin,Q.,Zhang,C.,2025. Retracted:
+Pre-training graph autoencoder incorporating hierarchical topology
+knowledge.
+[29] Zhu,H.,Peng,H.,Lyu,Z.,Hou,L.,Li,J.,Xiao,J.,2023. Pre-training
+languagemodelincorporatingdomain-specificheterogeneousknowl-
+edge into a unified representation. Expert Systems with Applications
+215, 119369.
+[30] Zhu, H., Tiwari, P., Zhang, Y., Gupta, D., Alharbi, M., Nguyen,
+T.G., Dehdashti, S., 2022. Switchnet: A modular neural network for
+adaptive relation extraction. Computers and Electrical Engineering
+104, 108445.
+A. Ontology Harness Engineering: The LOM
+Global Architecture
+LOM-actionisonecomponentofalargersystemwhose
+fullinstantiationissubjecttoongoingwork.Thissectionde-
+scribesthecompleteLOMarchitecture—theintendeddesti-
+nationtowardwhichLOM-actionisthefirststep—toclarify
+both the scope of the vision and the engineering path from
+the current graph-domain implementation to real enterprise
+deployment. A foundational aspect of this architecture is
+that LOM extends the ontological scope beyond what tra-
+ditional ontology systems cover: where conventional ap-
+proaches manage only entity-relation semantics and con-
+straint conditions (the EO layer), LOM brings the skill
+network, tool network, memory, and context graph under
+thesameontology-managementparadigm—makingthefull
+operational envelope of the system, not just its knowledge
+base, ontologically governed and auditable.
+A.1. The Engine-Harness Architecture Model
+A.1.1. What a Harness Is and What It Is Not
+An engine is not the same as a vehicle. An engine pro-
+duces force; a vehicle converts that force into directed mo-
+tion through a harness—a mechanical coupling that adapts
+the engine’s output to the specific load, terrain, and task at
+hand.Withouttheharness,enginepoweriswasted.Without
+the engine, the harness has nothing to transmit. The harness
+is therefore not a diminished version of the engine, nor a
+container for it—it is thedynamic execution environment
+that makes the engine’s power productive in a specific op-
+erational context.
+ThisdistinctionisfoundationaltounderstandingLOM’s
+architectural role. The enterprise ontology is the engine: it
+encodesthefullorganizationalauthorityoftheenterprise—
+every entity, relation, constraint, authorization boundary,
+and computation formula. Its power is real, but latent: the
+ontology does not execute itself. LOM is the harness: it
+creates the dynamic, executable environment in which the
+ontology’s authority is coupled to live business tasks—
+natural language inputs, streaming data events, multi-step
+graph simulations, and auditable decision outputs.
+The harness metaphor clarifies a common misidentifi-
+cation. Practitioners accustomed to thinking of LLMs as
+the primary reasoning engine tend to position the ontology
+as a data source—something the modelconsults. This in-
+verts the correct relationship. In enterprise AI, the ontology
+governsthe model: every entity the model reasons about
+must be EO-grounded, every constraint it enforces must be
+EO-authorized, every computation it performs must satisfy
+EO.Logic-Constraint. The model is not the engine; it is
+part of the harness—the component that converts natural
+language interaction into ontologically typed operations on
+the enterprise ontology.
+A.1.2. Harness Design Is Domain-Specific
+The correct harness design is not universal—it is de-
+termined by the domain’s productive task structure. Two
+contrasting examples illustrate this clearly.
+First Author et al.:Preprint submitted to ElsevierPage 15 of 21
+
+[[page 16]]
+AI coding harness (agentic long-horizon execution).
+Whentheproductivetaskisautonomoussoftwaregeneration—
+for example, building a complete ERP module from a
+high-level specification—the engine is the model’s code
+generation capability and the load is a long, multi-stage
+development pipeline. The harness for this domain must
+sustain thousands of model calls over hours or days: it
+maintains a persistent execution environment (file system,
+build tools, test runner, version control), routes model out-
+puts to appropriate execution steps, captures feedback from
+automated tests, and re-queues failed steps for retry. This is
+along-horizon agentic harness: its defining characteristic
+is that it keeps an autonomous agent productive across an
+extended, largely unsupervised execution trajectory. The in-
+frastructurecomplexityofthisharnessisjustifiedbythetask
+structure—ataskthatgenuinelyrequiresautonomousmulti-
+day execution cannot be replaced by a five-turn clarification
+loop.
+Ontology intelligence harness (enterprise semantic
+execution).When the productive task is enterprise decision
+derivation—approval routing, policy evaluation, resource
+allocation, audit scheduling—the engine is the enterprise
+ontology’s semantic authority and the load is a stream of
+business events requiring scenario-grounded decisions. The
+harness for this domain has a categorically different design
+requirement:itmustnotsustainlongautonomousexecution,
+but must insteadprecisely coupleeach incoming event to
+the correct ontological scope, simulate the scenario in a
+sandboxed graph copy, and derive a traceable decision from
+the evolved graph state. The defining characteristic of this
+harness isontological precision, not execution duration.
+Five turns of human-in-the-loop clarification to correctly
+ground an ambiguous entity reference is not a failure of
+automation—it is the harness doing its job: ensuring that
+every operation the ontology engine performs is performed
+on the correct scope with the correct authorization.
+A.1.3. The LOM Harness Design
+LOM-action instantiates the ontology intelligence har-
+nessthroughfourcoupledengineeringlayers,eachdesigned
+to transmit a specific dimension of the ontology’s authority
+into productive output.
+Layer1:Intent-to-OntologyCoupling(HITL+Align-
+ment).The first transmission point is the intent boundary:
+converting a user’s natural language input or an arriving
+dataeventintoafullyontology-groundedoperationrequest.
+This layer runs the confidence-gated alignment function
+Align(𝑞)→(𝑣,𝑐)overeveryentityandrelationintheinput.
+Entities that clear the acceptance threshold are immediately
+coupled to their EO.Standard-ID canonical nodes. Entities
+that fall below threshold trigger a HITL clarification turn,
+which is itself a harness operation: it surfaces the alignment
+candidates, requests user confirmation, and re-runs the
+alignment on the clarified input. The layer is complete only
+whenallentitiesinthescenarioconditionsetarefullyEO-
+grounded.Atthispoint—andonlyatthispoint—theharness
+hassuccessfullycoupledtheincomingintenttotheontology
+engine, and Phase 2 simulation may begin.
+Layer 2: Scenario-to-Sandbox Coupling (Phase 2
+Simulation).The second transmission point is the graph
+boundary: materializing the ontology-authorized scenario
+conditions as a concrete, mutated graph state in the iso-
+lated sandbox. This layer executes the scenario program
+produced by Phase 1 as a sequence of deterministic sand-
+box operations (match_nodes,delete_nodes,create_edges,
+update_edges).Eachoperationisitselfaharnesstransmission
+act: it takes an EO-authorized constraint predicate and
+converts it into a structural modification of the sandbox
+graph copy, narrowing the reasoning substrate from the full
+enterprise ontology to the scenario-valid subgraph𝐺. The
+sandbox is the execution environment the harness provides;
+the ontology’s constraint authority is what the sandbox
+enforces.
+Layer 3: Simulation-to-Skill Coupling (Phase 3 De-
+cision Derivation).The third transmission point is the ca-
+pability boundary: coupling the evolved sandbox state to
+the registered skill that can derive the required decision
+from it. This layer inspects the skill ontology registry for
+nodes whose preconditions Pre(𝑠)are satisfied by the active
+scenarioconditionsetandwhoseinputsignaturesmatchthe
+current𝐺  state. In skill mode, the harness invokes the
+matched skill against the sandbox—transmitting the ontol-
+ogy’s structural authority into a deterministic computation
+whose output is typed back into the EO namespace. In rea-
+soning mode, when no registered skill matches, the harness
+loads the attribute-pruned, event-fused𝐺 into context and
+delegates to LOM’s own graph reasoning capability—the
+harness’s fallback transmission path that ensures graceful
+degradation rather than hard failure.
+Layer 4: Decision-to-Evidence Coupling (SO Deci-
+sion Trace).The fourth transmission point is the account-
+ability boundary: converting every decision output into
+an ontologically typed, fully replayable evidence artifact
+whose operation sequence can be replayed by any auditor
+against the original EO graph snapshot. This layer writes
+thecompleteexecutiontrace—entityalignmentswithconfi-
+dencescores,scenarioconditionsetwithEOprovenance,
+Phase 2 sandbox mutation log, Phase 3 skill invocation and
+result—tothesessionontologyasastructureddecisiontrace.
+The evidence chain is the harness’s final output: it is not
+a log file, but an ontologically governed artifact that any
+auditorcanreplayagainsttheoriginalEOgraphsnapshotto
+verify that the harness transmitted the ontology’s authority
+correctly at every step.
+A.1.4. Harness Quality Criterion
+A harness is well-engineered when it transmits the en-
+gine’s power with minimal loss and maximal precision. For
+the ontology intelligence harness, this criterion translates
+directly:
+Every operation the LLM performs should be traceable
+to an EO-authorized constraint, and no operation should
+First Author et al.:Preprint submitted to ElsevierPage 16 of 21
+
+[[page 17]]
+reachtheLLMwithoutfirstpassingthroughtheappropriate
+harness layer.
+Violationsofthiscriterionmanifestintwocharacteristic
+failuremodes.Ontologybypass:anoperationproceedswith-
+out full EO grounding—an entity enters the sandbox unre-
+solved, a scenario condition is drawn from model-internal
+knowledge rather than EO authority, or a skill is invoked
+without satisfying its EO-linked preconditions. The result
+is a fluent but unauthorized decision: the engine’s power
+was not transmitted through the harness, it leaked around
+it.Ontology underuse: the harness is simplified to the point
+whereEOauthorityistreatedasoptionalcontextratherthan
+mandatory coupling—the ontology is consulted rather than
+enforced. The result is a system that works in testing but
+degradesinproductionasedgecasesexposethegapbetween
+consultation and enforcement.
+Bothfailuremodesaredetectedbythetool-chainF1met-
+ric: an agent that produces correct answers without travers-
+ing all four harness layers receives F1 penalties precisely
+because it has bypassed one or more transmission points.
+The illusive accuracy phenomenon—high Acc with near-
+zero F1—is the empirical signature of ontology bypass at
+scale: the model answers correctly, but the harness has not
+transmitted the ontology’s authority into the decision.
+A.2. The Extended Ontological Scope
+Traditional enterprise ontology systems govern only the
+EO layer: entity definitions, relation schemas, constraint
+conditions,andaccesspolicies—thesemanticauthorityover
+whatexistsandwhatispermitted.Thiscoverageisnecessary
+but insufficient for a system that must also govern what can
+bedone,howitisdone,andinwhatexecutioncontext.LOM
+extends the ontological scope to six coupled layers, each
+carryingadistinctgovernancefunctionyetallderivingtheir
+authority from the EO foundation. These layers are orga-
+nized byfunctional role—what each layer stores, declares,
+or enforces—rather than by abstraction level; they form a
+coupled ensemble, not a strict hierarchy.
+Layer 1: Enterprise Ontology (EO).The permanent
+semantic authority of the enterprise. It comprises five con-
+straint families:EO.Standard-IDcanonical identifiers for
+every entity and relation;EO business scenario conditions
+encodingtheconstraintpredicatesthatrestrictaccessibleen-
+tities and permissible operations;EO.Authorization-Model
+governing which users may invoke which skills;EO.Logic-
+Constraintspecifying exact computation formulas for met-
+rics; andEO.Enumeration-Systemdefining legal value sets
+for categorical attributes. The EO is read-only at inference
+time and is never modified by any pipeline phase. It is
+the engine whose authority all downstream layers transmit.
+Every entity, relation, and constraint entering the reasoning
+pipeline must be EO-grounded before simulation proceeds.
+Layer 2: Bridge Layer Ontology.The semantic in-
+terface between raw enterprise inputs and the EO. Rather
+than recording operations (which Section A.4 covers), this
+layer stores theartefactsthose operations produce: align-
+ment mapping nodes pairing each surface expression with
+its EO.Standard-ID canonical target; confidence-annotated
+triple records carrying the alignment score𝑐∈ [0,1]
+alongside the grounded(𝑠,𝑝,𝑜)triple; and HITL interaction
+artefacts logging which candidate EO nodes were surfaced,
+which was confirmed, and at what confidence threshold
+resolutionwasachieved.Allartefactsaretypedbridge-layer
+ontology nodes persisted in the SO for full provenance
+acrosseveryentity-groundingdecisionthatprecedesPhase2
+simulation.
+Incross-domainenterprisedeployments,alignmentmap-
+ping nodes are naturally expressed as OWL alignment ax-
+ioms.owl:equivalentClassis appropriate for strict semantic
+identity; when the correspondence is directional or subject
+to drift,rdfs:subClassOfis the safer primitive, preserving
+one-way inheritance without forcing bidirectional coupling.
+Layer 3: Skill Ontology.The capability registry of
+the harness. Every registered capability—deterministic tool
+calls, computation engines, and delegated frontier-LLM
+invocations—is declared as a typed node carrying formal
+preconditions Pre(𝑠), postconditions, input/output type sig-
+natures, and EO-linked authorization constraints. The skill
+ontology is not a flat API registry: activation conditions
+derive from EO graph traversal, invocation boundaries are
+enforcedbyEO.Authorization-Model,andoutputsaretyped
+back into the EO namespace.
+This layer also encodesimplementation bindings: con-
+cretetoolendpoints(ERPqueryinterfaces,documentwork-
+flow triggers, approval-chain APIs, financial computation
+services)arerepresentedasimplementationvariantsoftheir
+parent capability nodes, with endpoint signatures, retry and
+fallbackcontracts,dependencyrelationships,andversioning
+metadata all traceable to EO authority. A single capabil-
+ity node (e.g.,shortest_path) may admit multiple bindings
+acrossruntimeenvironments;theharnessontology(Layer6)
+governs which binding is active for a given session. LOM-
+action’s19-functiongraphAPIsuiteisthecurrentinstantia-
+tion of this layer.
+Layer 4: Context Graph.The session-scoped, mutable
+simulation substrate on which Phase 2 sandbox operations
+and Phase 3 decision derivation execute. Every node and
+edge in the context graph carries EO.Standard-ID prove-
+nance; every mutation is a typed delta written under on-
+tological governance. The context graph is not a free-form
+scratchpad—it is an auditable extension of the EO knowl-
+edge space, sandboxed to the current session viagraph_id
+and constrained to the active scenario condition set.
+Within the six-layer scope, it serves as thelive execution
+surfaceof the EO: where the EO encodes permanent orga-
+nizationalauthority,thecontextgraphencodesthescenario-
+evolvedstateofthatauthorityforthecurrentbusinessevent.
+Layer 5: Memory Ontology.Conversational memory
+in LOM is an ontologically typed artefact, not raw text
+history. The session ontology (SO) stores three artefact
+classes:graphdeltas—typedtriplemutationsannotatedwith
+EO node references and turn indices;turn logs—per-turn
+execution traces recording active scenario conditions, exe-
+cutionmode,andproduceddeltas;anddecisiontraces—the
+First Author et al.:Preprint submitted to ElsevierPage 17 of 21
+
+[[page 18]]
+session’sprimarygovernancedeliverablespanningallturns.
+All SO entries conform to the same ontological typing dis-
+ciplineasEOentitiesandskillontologynodes,enablingEO
+provenance to propagate transitively through every memory
+artefact and making every recalled fact traceable to an au-
+thoritative source.
+Layer 6: Harness Ontology.The meta-governance
+layer that manages the lifecycle of the execution environ-
+ment itself: the sandbox session registry, the skill ontology
+registry, the HITL clarification protocol, and the LOM-as-
+Judge evaluation contract. The harness ontology encodes
+which execution modes are admissible for which event
+types,whichsandboxoperationsareauthorizedunderwhich
+scenario conditions, and how the four transmission layers
+(Section A.1.3) are sequenced and enforced. It is the layer
+that makes LOM a harness rather than a wrapper: it does
+not merely route calls through the ontology—it governs the
+environment in which ontological authority is coupled to
+everyexecutionstep.Critically,theharnessontologyisself-
+governing: its schema is fixed at design time and does not
+participate in the RAC evolutionary cycle (Section A.8),
+avoiding an infinite regress in which the governance layer
+would itself require a meta-governance layer.
+Together, these six layers—EO, bridge layer ontology,
+skillontology,contextgraph,memoryontology,andharness
+ontology—constitutethefullLOMontologicalscope.Their
+unification under a single ontology-management paradigm
+makes LOM’s audit guaranteestransitive: an authorization
+established at the entity level in Layer 1 propagates con-
+sistently through skill activation (Layer 3), sandbox graph
+mutation (Layer 4), memory persistence (Layer 5), and
+execution governance (Layer 6), with every inference step
+traceable to the same ontological authority. This transitivity
+is what distinguishes a system that produces plausible out-
+puts from one that produces auditable decisions.
+A.3. The Three Ontological Stores
+The EO layer is operationalized through three persistent
+storeswithdistinctaccesssemantics.Togethertheyformthe
+horse that drives all LOM reasoning; no inference proceeds
+without grounding in one of them.
+Enterprise ontology (EO) [global, read-only]is the
+permanent semantic authority. It comprises five families of
+constraintsandidentifiers,eachplayingaspecificroleinthe
+CAR reasoning cycle: EO.Standard-ID provides canonical,
+unique codes for every entity and relation; EO business
+scenarioconditionsencodetheconstraintpredicatesthatre-
+strict which entities are accessible and which operations are
+permissible; EO.Authorization-Model governs which users
+may invoke which skills; EO.Logic-Constraint specifies ex-
+actcomputationformulasformetrics;andEO.Enumeration-
+Systemdefinesthelegalvaluesetsforcategoricalattributes.
+The EO is never modified at inference time. It is the horse.
+Personalontology(PO)[per-user,read-only]isauser-
+scoped semantic overlay that carries alias mappings, pre-
+ferredmetriccalibrations,andfieldsuppressionpreferences.
+POoperatesstrictlywithinEO.Authorization-Modelbound-
+aries and never overrides any EO constraint.
+Session ontology (SO) [per-session, read-write]is the
+mutable simulation substrate for the current conversation.
+It stores three artifact types: graph deltas (typed triple ad-
+ditions and deletions annotated with the EO nodes they
+reference and the execution mode that produced them); turn
+logs (per-turn execution traces recording which scenario
+conditions were active, which execution mode was used,
+and which graph deltas were produced); and decision traces
+(thefullaudittrailacrossallturns,constitutingthesession’s
+primary governance deliverable).
+A.4. Semantic Parsing and Ontological Alignment
+A.4.1. Natural Language to Semantics
+A foundational capability of LOM is the semantic pars-
+ing layer that converts both user-facing natural language
+queries and system-level business scenario conditions into
+ontology triples—the universal currency of the LOM rea-
+soningengine.Thisunificationisarchitecturallysignificant:
+it means that user intent and organizational scenario con-
+ditions are expressed in the same representation, enabling
+them to be reasoned over jointly rather than reconciled at
+the prompt level.
+Eventandinputsemanticparsing.Auser’snaturallan-
+guage input is parsed by the alignment function Align(𝑞)→
+{(𝑠𝑖,𝑝𝑖,𝑜𝑖,𝑐𝑖)}, producing a set of typed ontology triples
+(𝑠,𝑝,𝑜)where𝑠and𝑜areEO.Standard-ID-anchoredentities
+orvaluesand𝑝isanEO-authorizedpredicate,eachcarrying
+a confidence score𝑐𝑖∈[0,1].
+Business scenario semantic parsing.Enterprise busi-
+nessscenariosundergothesametriple-groundingprocess.A
+scenario such as “only cost-center L2 nodes are traversable
+for this user’s role” is not injected as a natural language
+instructionintotheprompt;itisparsedintoconstrainttriples
+and registered as activepredicates in the ontological
+sessionstate.ThisiswhatmakesPhase2sandboxsimulation
+a computation over triples rather than a pattern-matching
+exercise over scenario text.
+Precisesubgraphlocalizationthroughtripleground-
+ing.Because both the event payload and the active scenario
+condition set are expressed as ontology triples anchored to
+EO.Standard-ID entities, subgraph localization reduces to a
+well-definedgraphoperation:identifythesubgraph𝐺  that
+satisfies all constraint triples fromand contains all entity
+nodesreferencedbytheeventpayloadtriples.Thistriple-to-
+subgraph mapping is exact and deterministic.
+A.4.2. The LOM Interface Contract
+The semantic parsing layer defines LOM’s external in-
+terface contract. LOM is a bidirectional semantic trans-
+ducer that accepts inputs and produces outputs in two rep-
+resentationregisters—naturallanguageandformalontology
+(OWL/triple notation)—independently on each side:
+NL ||| OWL
+LOM
+← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← →NL||| OWL
+First Author et al.:Preprint submitted to ElsevierPage 18 of 21
+
+[[page 19]]
+Table 6
+Mapping of Input/Output Modalities and Use Cases
+Input Output Typical Use Case
+Natural Language Natural Language Business event or user request→human-readable decision with evidence narrative
+Natural Language OWL / Triples Business event or user request→machine-readable ontology delta for downstream
+systems
+OWL / Triples Natural Language Formal scenario or graph state→explanation, audit report, clarification dialogue
+OWL / Triples OWL / Triples System-to-system ontology enrichment, automated scenario verification, RAC-driven
+EO update
+This yields four canonical interaction modes, summa-
+rized in Table 6:
+A.5. The CAR–RAC Closed Loop: Forward
+Execution and Evolutionary Feedback
+LOM operates through a self-reinforcing closed loop
+composed of two coupled cycles. CAR (Construct→Align
+→Reason) is theforward pass: it transforms raw enterprise
+data and incoming business events into auditable, onto-
+logically grounded decisions. RAC (Reason→Align→
+Construct) is thefeedback pass: it is the exact reverse of
+CAR,scanningeveryforward-passoutputfororganizational
+knowledge not yet formally represented in the EO and rout-
+ingvalidatedcandidatesbackintotheontologyaspermanent
+entries. Together they form a single governed flywheel—
+each forward decision strengthens the ontological substrate
+that future forward decisions depend on.
+A.5.1. CAR: The Forward Execution Pipeline
+CAR transforms raw enterprise inputs into auditable
+decisions through three EO-constrained steps.
+Constructis the autonomous ontology construction
+step. Rather than requiring a hand-crafted schema, LOM
+ingests raw enterprise data and autonomously identifies
+entitytypes,relationtypes,constraintpredicates,andcanon-
+icalidentifiers.EO.Enumeration-Systemconstrainsthelegal
+value sets for categorical attributes discovered during con-
+struction;EObusinessscenarioconditionsgovernwhichen-
+tity classes and relation types are admissible for the current
+organizationalscope.Theoutputisatypedontologicalgraph
+whosenodesandedgescarryEO.Standard-IDprovenance—
+the structural substrate on which all downstream alignment
+and reasoning operate.
+Alignperforms two coupled operations: dynamic on-
+tology update and multimodal ontology–language align-
+ment. On the update side, newly constructed ontological
+elements are reconciled with the existing EO—resolving
+synonym merges, deduplicating entities, and propagating
+constraint inheritance—so the ontology remains consistent
+as new data arrives. On the alignment side, a graph-aware
+encoder bridges the structural ontology representation with
+the natural language surface of user queries and business
+events, mapping free-form language onto EO.Standard-ID-
+anchored entities and EO-authorized predicates. The order-
+ing within Align is architecturally enforced: EO constraints
+are resolved first, PO preferences applied second—never
+reversed. EO.Authorization-Model is the non-bypassable
+arbiter for all entity access decisions.
+Reasonexecutes deterministic inference over the con-
+structedandalignedontologicaltopology,operatingonnode
+attributes, relation types, and the constraint predicates es-
+tablished in the preceding two steps. Every inference step
+produces a confidence score written to the SO alongside
+its result. Steps falling below the configurable confidence
+threshold trigger the compliance gate: the system either
+requests clarification, escalates to a registered top-tier LLM
+skill, or issues a structured refusal—never silently con-
+tinuing with a low-confidence inference. High-confidence
+resultsarewrittentotheSOdecisiontracewithfullEOnode
+provenance, forming the auditable output of the forward
+pass.
+A.5.2. RAC: The Evolutionary Feedback Pass
+RAC runs as the reverse cycle after every CAR execu-
+tion, closing the loop between deployment experience and
+ontological knowledge.
+Specifically, RAC scans the SO decision trace for enti-
+ties, relations, metric names, and scenario patterns whose
+confidencescoresexceedtheacceptancethresholdbutwhich
+are not yet formally represented in the current EO. Each
+suchelementiscapturedasatypedcandidatenodeannotated
+withitsprovenance—theturnthatproducedit,theexecution
+modeused,andtheSOdeltainwhichitappears—androuted
+to a governance queue for enterprise knowledge manager
+review.
+Validated candidates are promoted to permanent EO
+entriesviatheConstructstep,expandingthecanonicaliden-
+tifiernamespaceandtighteningtheconstraintspace.Theup-
+datedEOthenfeedsanewAlignpass,makingtheontology–
+language alignment function more precise for future ses-
+sions. This creates the flywheel property: high-quality for-
+warddecisionsproducehigh-confidenceSOartefacts;high-
+confidence artefacts surface well-evidenced EO candidates;
+validated candidates sharpen the ontology that governs fu-
+ture forward decisions.
+Three properties of the RAC cycle are architecturally
+significant. First,provenance preservation: every candidate
+nodecarriesacompletelineage—whichsession,whichturn,
+First Author et al.:Preprint submitted to ElsevierPage 19 of 21
+
+[[page 20]]
+which execution mode, which SO delta—so that any pro-
+moted EO entry can be retrospectively audited against the
+interaction that generated it. Second,governed promotion:
+candidates never enter the EO autonomously; the human
+governance review queue is a mandatory gate, ensuring
+the ontology grows from deployment interactions through a
+versioned, auditable process rather than through unchecked
+modelinference.Third,gracefulexpansion:becausethehar-
+nessontology(Layer6)isself-governingandexcludedfrom
+the RAC cycle, the evolutionary flywheel cannot corrupt
+its own governance mechanism—the loop is closed at the
+knowledge layer, not at the control layer.
+Theontologyisthehorse;RACensuresthehorsegrows
+stronger with every ride without ever changing the rules by
+which it is guided.
+A.6. Ontological Gating and Authorization
+Control
+LOMenforcesatwo-stagesafetyenvelopearoundevery
+reasoning pipeline execution. The first stage—ontological
+injectionandconfidencegating—operatesattheinputbound-
+ary, ensuring that no entity enters the pipeline without EO
+grounding. The second stage—scenario and authorization
+hard stops—operates throughout all CAR steps, halting
+execution whenever an EO constraint is violated during
+simulation or decision derivation. Together, they constitute
+the harness’s non-bypassable correctness guarantee.
+A.6.1. Ontological Injection and Confidence Gating
+BeforeCARbegins,everyincominginputundergoeson-
+tologicalinjection:thesystemresolvesentitiestoEO.Standard-
+ID canonical codes—building on entity recognition foun-
+dations established by neural sequence labeling architec-
+tures[27]—validatesvaluesagainstEO.Enumeration-System,
+injects applicable EO.Logic-Constraint into the semantic
+representation, and surfaces PO alias preferences.
+Each entity resolution produces a confidence score𝑐∈
+[0,1]from the alignment function Align(𝑞)→(𝑣,𝑐). Three
+thresholds govern what happens next. If𝑐≥𝜃 accept, the
+entity is grounded and reasoning proceeds immediately. If
+𝜃clarify ≤𝑐 < 𝜃 accept, a targeted clarification question is
+generated and the pipeline is held until the user confirms or
+correctsthecandidateEOnode.If𝑐 <𝜃 clarify,theexpression
+is flagged as an ontology gap candidate: it is written to the
+SOasatypedcandidatenodefortheRACevolutionarycycle
+(Section A.8), and execution is suspended until the gap is
+resolved.
+This confidence-gated alignment ensures that no entity
+entersthereasoningpipelineatbelow-thresholdprecision—
+andthateverygroundingdecisionisitselfatyped,auditable
+SO artefact with full EO provenance.
+A.6.2. Scenario and Authorization Hard Stops
+Three hard stops apply throughout all CAR steps, each
+triggering an immediate, structured halt rather than a silent
+degradation.
+Stop1:Entitynon-existence(EO.Standard-IDnotfound).
+The incoming event references an entity with no corre-
+sponding EO node. Execution halts; a targeted clarification
+citing the nearest ontological neighbours is returned to the
+requester.
+Stop 2: Permission violation(EO.Authorization-Model
+check failed). The requested skill invocation or data access
+falls outside the user’s authorized scope. Execution halts; a
+structuredrefusalcitingthespecificpermissionboundaryis
+returned—no partial result is written to the sandbox.
+Stop 3: Calibration conflict(EO.Logic-Constraintmis-
+match). The requested computation would apply a metric
+calibration inconsistent with EO standards. Execution halts;
+the conflict is surfaced for explicit resolution before any
+numerical inference proceeds.
+In all three cases, the halt itself writes a decision trace
+entrytotheSO:failedqueriesarefullyauditable,notsilently
+discarded. This means the audit trail is complete regardless
+ofwhetherexecutionsucceedsorstops—apropertyessential
+for regulated enterprise environments where the absence of
+a decision carries as much compliance significance as the
+decision itself.
+A.7. From Reasoning to Action: LOM-action as
+the Operative Extension of LOM
+A.7.1. The Capability Progression: Reason→Act
+LOM’sfoundationalcontributionisontologicallygrounded
+reasoning: the CAR pipeline transforms raw enterprise
+data into auditable decisions whose every inference step
+is traceable to an EO-authorized constraint. LOM-action
+extends this foundation along a single, precise axis—from
+reasoning aboutthe enterprise ontology toacting uponit.
+Thedistinctionisarchitectural,notmerelyfunctional.In
+pure reasoning mode, LOM produces conclusions: it reads
+the ontological graph, applies EO-encoded constraints, and
+returns a grounded answer. In action mode, LOM-action
+producesmutations: it receives a business event, simulates
+its scenario conditions as deterministic graph operations in
+anisolatedsandbox,andderivesadecisionexclusivelyfrom
+the evolved graph state—a decision that is itself a typed,
+replayable operation on the ontological substrate. The rea-
+soningcapabilityisnotreplaced;itisextended.LOM-action
+is LOM with an operative harness attached—a harness that
+convertsontologicalauthorityintodirected,auditableaction
+rather than grounded text.
+This progression can be stated compactly as:
+Construct→Align→Reason
+⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟
+LOM: grounded reasoning
+harness
+← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← ← →Simulate→Decide⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟
+LOM-action: operative extension
+The CAR cycle produces the ontologically grounded
+knowledge state that the harness requires as its input. The
+harness—realized as the event→simulation→decision
+pipeline described in Section 3—converts that state into
+action: it instantiates an isolated sandbox, applies EO-
+authorized scenario conditions as deterministic graph mu-
+tations, and derives every downstream decision exclusively
+First Author et al.:Preprint submitted to ElsevierPage 20 of 21
+
+[[page 21]]
+from the resulting simulation-valid graph𝐺 sim. Neither
+half is sufficient alone. CAR without the harness produces
+grounded reasoning with no operative output. The harness
+without CAR produces sandbox mutations with no onto-
+logical authority. LOM-action is their coupling: the point
+at which enterprise knowledge becomes enterprise action.
+A.7.2. The Onto OS Vision: An Ontological Operating
+System for the Enterprise
+Thesix-layerontologicalscope(SectionA.2),theCAR–
+RACclosedloop(SectionA.6),andtheLOM-actionopera-
+tive harness are not independent engineering contributions.
+Theyarethreecomponentsofasinglelong-horizonarchitec-
+turaltrajectorywhoseterminaldestinationisanOntological
+Operating System—Onto OS.
+An operating system governs a computational environ-
+ment: it manages resources, enforces access control, sched-
+ulesexecution,andprovidesastableinterfacethroughwhich
+applications interact with hardware without requiring direct
+hardware access. Onto OS applies this paradigm to enter-
+prise knowledge and decision infrastructure. Its governed
+resource is the enterprise ontology; its access control layer
+is EO.Authorization-Model; its execution scheduler is the
+harness ontology; its stable interface is the skill ontology
+registry through which every capability—tool calls, LLM
+invocations, computation engines—interacts with organiza-
+tional authority without bypassing it.
+Concretely, Onto OS is the system in which:
+•Every business eventis an operating system call—a
+structuredpayloadthatactivatesEO-encodedscenario
+conditions, enters the simulation pipeline, and pro-
+duces an auditable decision trace as its return value.
+•EverycapabilityinvocationisanOS-mediatedsystem
+call—a skill ontology node whose preconditions are
+EO-grounded, whose execution is sandbox-isolated,
+andwhoseoutputistypedbackintotheEOnamespace
+before any downstream system receives it.
+•Everyreasoningstepisagovernedprocess—scheduled
+by the harness ontology, constrained by EO.Logic-
+Constraint,andloggedtotheSOwithfullprovenance,
+so that no inference executes outside the ontological
+authority of the enterprise.
+•The enterprise ontology itselfevolves continuously
+throughtheRACflywheel—aversioned,governance-
+gated process analogous to a kernel update: each
+promotion expands the capability surface of the OS
+while preserving the integrity guarantees of all prior
+sessions.
+Under Onto OS, the enterprise is not an information
+source to be queried—it is a continuously operating event
+environment whose data streams and business events arrive
+asstructuredsystemcallsintotheontologicalpipeline.Each
+incoming event activates EO-encoded scenario conditions,
+enters the simulation sandbox, and exits as an auditable
+decision trace—not a response to a human prompt, but a
+governed operative output of the ontological runtime. The
+frontier LLM is neither the engine nor the authority—it
+is one registered capability among many, invoked under
+EO authorization when no smaller LOM variant can cover
+the required computation, evaluated by LOM-as-Judge be-
+fore its output is typed back into the ontological substrate,
+and never permitted to influence any downstream decision
+outside the simulation boundary. Model scale becomes a
+capability parameter, not an architectural dependency.
+LOM-action is the first operative instantiation of this
+vision. Its 19-function graph API suite, sandbox simulation
+engine,dual-modeexecutionarchitecture,anddecisiontrace
+infrastructure are the kernel primitives of Onto OS in their
+current,graph-domainform.Thepathfromthisprototypeto
+a full enterprise Onto OS runs through the four future work
+axesidentifiedinSection5:SKILLS-standardintegrationto
+replace natural-language scenario descriptions with formal
+ontologicaldeclarations;RACgovernancehardeningtopro-
+vide versioned audit-chain validity scopes; cross-scale and
+cross-domainvalidationtodemonstratetransferbeyondsyn-
+thetic graph ontologies; and latency characterization to es-
+tablish event-throughput guarantees under production load.
+Thearchitecturalclaimisprecise:trustworthyenterprise
+AI is not a property of model scale—it is a property of
+ontological governance. Onto OS is the environment in
+which that governance is fully instantiated. LOM-action is
+its first working component.
+First Author et al.:Preprint submitted to ElsevierPage 21 of 21
