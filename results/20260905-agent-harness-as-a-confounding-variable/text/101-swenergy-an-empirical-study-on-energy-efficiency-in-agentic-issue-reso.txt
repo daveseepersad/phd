@@ -1,0 +1,787 @@
+[[page 1]]
+SWEnergy: An Empirical Study on Energy Efficiency in Agentic
+Issue Resolution Frameworks with SLMs
+Arihant Tripathy
+SERC, IIIT-Hyderabad
+Hyderabad, Telangana, India
+arihant.tripathy@research.iiit.ac.in
+Ch Pavan Harshit
+SERC, IIIT-Hyderabad
+Hyderabad, Telangana, India
+pavan.harshit@research.iiit.ac.in
+Karthik Vaidhyanathan
+SERC, IIIT-Hyderabad
+Hyderabad, Telangana, India
+karthik.vaidhyanathan@iiit.ac.in
+Abstract
+Context.Autonomous agents powered by Large Language Models
+(LLMs) are increasingly used for software engineering, but their
+reliance on large, proprietary models limits deployment on local
+hardware. This has spurred interest in Small Language Models
+(SLMs), but their practical effectiveness and efficiency within com-
+plex agentic frameworks for automated issue resolution remain
+poorly understood.
+Goal.We investigate the performance, energy efficiency, and re-
+source consumption of four leading agentic issue resolution frame-
+works when deliberately constrained to using SLMs. Our goal is to
+understand the viability of these systems for this task in resource-
+limited settings and characterize the resulting trade-offs.
+Method.We conduct a controlled evaluation of four leading agen-
+tic frameworks (SWE-Agent, OpenHands, Mini SWE Agent, Au-
+toCodeRover) using two SLMs (Gemma-3 4B, Qwen-3 1.7B) on the
+SWE-bench Verified Mini benchmark. On fixed hardware, we mea-
+sure energy, duration, token usage, and memory over 150 runs per
+configuration.
+Results.We find that framework architecture is the primary driver
+of energy consumption. The most energy-intensive framework,
+AutoCodeRover (Gemma), consumed 9.4x more energy on average
+than the least energy-intensive, OpenHands (Gemma). However,
+this energy is largely wasted. Task resolution rates were near-zero
+(4% for AutoCodeRover, 0% for all others), demonstrating that cur-
+rent frameworks, when paired with SLMs, consume significant
+energy on unproductive reasoning loops. The SLM’s limited rea-
+soning was the bottleneck forsuccess, but the framework’s design
+was the bottleneck forefficiency.
+Conclusions.Current agentic frameworks, designed for powerful
+LLMs, fail to operate efficiently with SLMs. We find that frame-
+work architecture is the primary driver of energy consumption,
+but this energy is largely wasted due to the SLMs’ limited reason-
+ing. Achieving viable, low-energy solutions requires a paradigm
+shift from passive orchestration to new architectures that actively
+manage the SLM’s weaknesses.
+CCS Concepts
+•Software and its engineering → Software creation and manage-
+ment;Software creation and management;•Hardware → Impact
+on the environment;Power estimation and optimization;•Gen-
+eral and reference→Empirical studies;Experimentation.
+Keywords
+Agentic Issue Resolution, Empirical Study, Energy Efficiency, Small
+Language Models
+1 Introduction
+Autonomous software engineering agents, powered by Large Lan-
+guage Models (LLMs), have emerged as a transformative paradigm
+in software development [9, 21], demonstrating impressive capa-
+bilities in resolving real-world code issues on benchmarks like
+SWE-bench. However, this success comes at a cost: massive, cloud-
+hosted models create significant barriers to local deployment due
+to their high computational costs and energy consumption [ 22].
+As the environmental impact of AI systems has become a central
+concern in the push toward sustainable software engineering prac-
+tices [5], resource efficiency, in terms of computation, cost, and
+power consumption, has emerged as a critical factor for widespread
+adoption.
+The challenge of resource efficiency has intensified interest in
+Small Language Models (SLMs)—open-weight models with billions,
+rather than hundreds of billions, of parameters [ 7, 8], offering
+a path toward democratizing autonomous agents via consumer-
+grade hardware, albeit with inherent limitations in reasoning and
+instruction-following capabilities. The effectiveness of these SLMs
+within complex agentic frameworks remains largely unmeasured.
+An agentic framework defines how a language model structures its
+reasoning, coordinates external tools, and executes problem-solving
+workflows [14, 18]. It remains uncertain whether existing frame-
+works, originally tuned to leverage the capabilities of large models,
+can maintain their effectiveness when driven by more limited ones.
+Agentic frameworks extend beyond single-turn code genera-
+tion by enabling language models to autonomously plan, execute,
+and verify the sequence of steps required to resolve software is-
+sues. Systems such asSWE-Agent,OpenHands, andAutoCodeRover
+have demonstrated strong performance on benchmarks likeSWE-
+bench, which evaluates real-world GitHub issues as problem state-
+ments [11, 20, 23, 25]. While typically built around large proprietary
+models, emerging work suggests SLMs may offer resource-efficient
+alternatives for narrow, well-defined agentic tasks [3, 12]. However,
+it remains unclear whether existing agentic architectures, originally
+optimized for powerful LLMs, can effectively utilize SLMs without
+significant degradation in performance.
+Moreover, the energy consumption of multi-turn agentic work-
+flows remains unmeasured, particularly when constrained to SLMs
+on local hardware. Which raises some important questions such as
+how much energy do these systems consume in resource-limited
+settings? How do different architectures influence energy efficiency
+and task success under these constraints? What trade-offs emerge
+when accuracy is no longer guaranteed?
+As autonomous agents become prevalent and as interest grows
+in SLMs as a more sustainable alternative to LLMs, this study ad-
+dresses these questions by exploring the viability of SLMs in agentic
+arXiv:2512.09543v2 [cs.SE] 11 Dec 2025
+
+[[page 2]]
+Arihant Tripathy, Ch Pavan Harshit, and Karthik Vaidhyanathan
+frameworks through a systematic, hardware-level energy evalua-
+tion. We position our work not as a direct benchmark but as an
+investigation into how these agentic frameworks, combined with
+SLM capabilities, jointly impact resource consumption under realis-
+tic constraints of using SLMs on local hardware. Unlike LLM-driven
+systems, where resource usage is often opaque and hidden behind
+API abstractions, our setup enables transparent, reproducible mea-
+surement of actual CPU and GPU energy consumption. This re-
+frames the evaluation around the joint consideration of correctness
+and efficiency in resource-limited settings, a critical step toward
+greening AI-enabled software engineering practices [5].
+The main contributions of this study are: (i) a reproducible
+methodology for measuring the energy consumption of agentic
+systems running SLMs, (ii) an empirical characterization of the
+performance-efficiency frontier for SLM-powered agents, revealing
+that current frameworks are ill-equipped to handle their limitations,
+and (iii) actionable guidance for designing future agentic systems
+that can effectively leverage smaller, more accessible models.
+2 Related Work
+Research on the resource footprint of AI systems in software engi-
+neering generally follows two complementary directions: (1) quan-
+tifying the operational cost of running AI models, and (2) assessing
+the energy efficiency of the code produced by those models.
+The first direction focuses on the energy and carbon costs of
+large-scale language models, revealing their substantial operational
+and environmental impact [15, 22]. These findings have motivated
+a growing interest in SLMs, which enable lightweight, local de-
+ployment and lower hardware requirements. Recent discussions
+advocate for a shift toward smaller, specialized models, arguing
+that deploying massive general-purpose models for narrow agentic
+tasks is an inefficient use of computational resources [3].
+The second direction examines the efficiency of theoutputsgen-
+erated by such models. Multiple studies report that human-written
+programs tend to be more energy-efficient than those generated by
+systems like Code Llama or ChatGPT [1, 6, 17, 19]. However, these
+works primarily evaluate static outputs and do not account for
+the energy cost of the problem-solvingprocess, i.e., the multi-step
+reasoning, planning, and repair cycles typical in agentic workflows.
+To our knowledge, limited research has explored the energy effi-
+ciency of issue resolution when performed by autonomous agentic
+systems. This gap is especially important because such systems can
+incur substantial energy and cost overheads through iterative inter-
+actions, redundant tool use, and repeated model invocations. Un-
+derstanding this dimension is crucial for designing sustainable and
+cost-effective agentic frameworks, particularly as they transition
+from experimental prototypes to large-scale industrial deployment.
+Our work addresses this overlooked aspect by providing the first
+end-to-end, hardware-level energy analysis of multi-turn agentic
+workflows powered by SLMs. Unlike prior studies that isolate either
+model execution or code efficiency, we present a unified evaluation
+of both the computational cost and the functional effectiveness of
+SLM-based agentic systems originally designed for LLMs.
+3 Study Design
+Following the Goal Question Metric template by Basili et al. [2], the
+goalof this study isto analyzeissue resolution frameworks powered
+by SLMsfor thepurpose ofevaluating their energy efficiency and
+effectivenessfrom thepoint of view ofdevelopersin thecontext
+ofsoftware development. This goal is achieved by answering the
+following research questions.
+𝑅𝑄1 – How do different agentic frameworks compare in terms
+of energy efficiency and task resolution effectiveness when
+paired with the same underlying SLM?
+This question aims to establish the relative performance of each
+framework, focusing on the trade-offs between successfully resolv-
+ing an issue and the energy consumed to do so. By controlling for
+the model and hardware, we can isolate the impact of the frame-
+work’s architecture on overall efficiency.
+𝑅𝑄2 – To what extent do framework-level architectural choices
+account for observed differences in energy consumption and
+runtime when using SLMs?
+This question investigates the root causes behind any performance
+differences identified in𝑅𝑄 1.
+Figure 1 outlines the main phases of the study, which are detailed
+in the following sections. For independent verification, we pro-
+vide a full replication package including the source code, logs, and
+measurements for each phase.1
+3.1 Agentic Frameworks and Benchmark
+Selection
+We evaluate four leading agentic frameworks:SWE-Agent,Open-
+Hands, andAutoCodeRover. As of October 2025, the first three sys-
+tems ranked among the top three performers on the SWE-bench
+Full leaderboard2, making them representative of state-of-the-art
+approaches to autonomous issue resolution.Mini SWE Agentwas
+additionally chosen from the SWE Bench Verified leaderboard for
+its simplicity. Each embodies a distinct architectural philosophy,
+allowing us to examine how different design choices affect energy
+consumption. The following paragraphs provide additional back-
+ground on each of them.
+SWE-Agentintroduces a specialized agent-computer interface
+(ACI) with curated commands for repository navigation, file in-
+spection, and code editing. It employs ReAct-style prompting [24],
+where each iteration consists of thought, action, and observation
+until the issue is resolved or a stopping condition is reached.
+OpenHandsprovides a general-purpose framework with a broader
+action space including shell commands, file operations, and multi-
+agent collaboration. It supports sandboxed Docker execution en-
+vironments and accommodates diverse architectures from simple
+ReAct loops to complex planning approaches.
+AutoCodeRoverdecomposes issue resolution into three sequential
+phases: fault localization, context retrieval, and patch generation.
+This structured pipeline minimizes unnecessary LLM calls and
+reduces context accumulation by focusing on relevant code portions
+early in the workflow.
+Mini SWE Agentis a minimal variant ofSWE-Agentexecuting
+within a sandboxed Docker container with a single bash access
+1https://github.com/sa4s-serc/swenergy
+2https://www.swebench.com
+
+[[page 3]]
+SWEnergy: An Empirical Study on Energy Efficiency in Agentic Issue Resolution Frameworks with SLMs
+SWE Bench Full
+1. Agentic Framework Selection
+Framework
+Selection
+Selected Frameworks
+AutoCodeRover
+OpenHands
+SWE Agent
+2. Large Language Model Selection
+Berkeley FC
+Leaderboard
+Model
+Selection
+3. Metrics Selection
+Resolution
+Status
+Energy
+Usage
+Wall Clock
+Duration
+Token
+Usage
+LLM Call
+Count
+Memory
+UsageLLM Cost
+Failure
+Mode
+4. Experimentation 5. Results and Data Analysis
+Monitoring Script
+Setup Scaffolds Data Exploration Statistical Analysis Answers to RQs
+Plots and Summary
+Tables Statistical Results
+Run Experiments twice
+Logs Patches Metrics
+Define Evaluation
+Dimensions
+Gemma 3 4B Qwen 3 1.7B
+Mini SWE Agent
+Workstation PC
+Effectiveness Efficiency Resource Utilization
+Selected Models
+Figure 1: Overall study design showing the major phases.
+point, relying solely on the model’s internal reasoning to sequence
+commands, reducing orchestration overhead.
+For our evaluation dataset, we useSWE-bench Verified Mini, a
+curated 50-task subset of SWE-bench Verified. This benchmark
+preserves the distribution of difficulty, repository diversity, and
+test pass rates observed in the full 500-task dataset while reducing
+storage requirements from approximately 130 GB to 5 GB [ 10].
+The reduced scale enables intensive replication while maintaining
+representativeness.
+3.2 SLMs Selection
+To ensure representativeness while maintaining feasibility on con-
+sumer grade hardware, we restrict our study to open-weight SLMs
+with no more than four billion parameters. Model selection was
+guided by three criteria: (1) strong performance on public leader-
+boards within the≤4B parameter range, (2) architectural diversity
+across model families, and (3) support for stable local inference. We
+selected two models that jointly satisfy these conditions:Gemma-3
+4B[ 8] andQwen-3 1.7B Instruct[ 7]. Both were among the top-
+ranking models fitting these criteria on the Berkeley Function-
+Calling leaderboard [16].
+Gemma-3 4Bis an instruction-tuned model with 4 billion parame-
+ters, optimized for general coding and reasoning. It provides a base-
+line for conventional instruction-tuned architectures on consumer-
+grade hardware.Qwen-3 1.7B Instruct, with 1.7 billion parameters, is
+smaller and more memory-efficient, enabling faster inference and
+lower energy usage, while remaining competitive in reasoning and
+coding tasks. Comparing the two allows us to study whether frame-
+work efficiency can offset reduced model capacity in multi-turn
+workflows.
+3.3 Metrics Selection
+To provide a holistic view of agent performance, we established a
+comprehensive set of metrics through a structured selection pro-
+cess. Our approach began by defining three core dimensions for
+evaluation:effectiveness,efficiency, andresource utilization.
+We then cataloged all measurable outputs from a run, including
+status, time, energy, tokens, memory, and cost, ensuring each can-
+didate metric was compatible with the SWE-bench benchmark and
+common evaluation practices. After validating our instrumentation
+sources (i.e., Intel’s RAPL for CPU energy and NVIDIA’s NVML for
+GPU energy) for accuracy, we finalized the metric set.
+This process resulted in the following metrics, grouped by the
+evaluation dimensions they address:
+3.3.1 Effectiveness Metrics.This group measures the agent’s ability
+to successfully resolve the given software issue.
+• Resolution Status:A binary outcome (passorfail) for each
+run, determined by the official SWE-bench evaluation script.
+A run passes only if the agent-generated patch correctly
+resolves the issue and all associated tests pass.
+• Failure Mode:For failed runs, the reason for termination
+is categorized according to the Multi-Agent System Failure
+Taxonomy [4].
+
+[[page 4]]
+Arihant Tripathy, Ch Pavan Harshit, and Karthik Vaidhyanathan
+3.3.2 Efficiency Metrics.This group quantifies the speed and com-
+putational effort of the agent’s solution process.
+• Wall-Clock Duration:Total elapsed time (minutes) from
+initiation to completion or timeout. This measures end-to-
+end task latency.
+• Token Usage:The sum of input (prompt) and output (com-
+pletion) tokens processed by the LLM across all calls within
+a run. This serves as a proxy for the computational load on
+the model and correlates with API costs.
+• LLM Call Count:The total number of model invocations
+during a run. This metric reflects the "chattiness" and com-
+plexity of the framework’s orchestration strategy.
+3.3.3 Resource Utilization Metrics.This group captures the hard-
+ware and financial costs incurred during a run.
+• Total Energy Consumption:The cumulative CPU+GPU
+energy per run, reported in kilojoules ( kJ), measured via
+RAPL (CPU) and NVML (GPU).
+• Peak Memory Usage:The maximum Resident Set Size
+(RSS) for system RAM and the maximum allocated VRAM
+in gigabytes (𝐺𝐵) observed during a run. This indicates the
+minimum hardware memory requirements for deployment.
+• Cost:The API costs for each LLM were multiplied by the
+tokens used in each run to estimate the inference cost, using
+per-token pricing from their public APIs (as of October
+2025) for both Gemma3 and Qwen4.
+4 Experimental Procedure
+Our experimental procedure is designed to ensure control, repro-
+ducibility, and measurement accuracy.
+4.1 Controlled Environment
+All experiments were executed on a dedicated workstation with
+a fixed hardware configuration (Intel Xeon w3-2435 CPU, 32 GB
+RAM, NVIDIA RTX A2000 16 GB GPU). To prevent measurement
+interference, each run was run in complete isolation, with no other
+user or non-essential system workloads active. We recorded the
+machine’s idle draw (51.69 W CPU, 2.70 W GPU) and subtracted
+this baseline from every RAPL and NVML trace to isolate agent-
+induced energy usage. Both models were loaded in FP16 for memory
+efficiency. Peak VRAM usage was 11 to 12 GB for Gemma-3 4B and
+8 to 9 GB for Qwen-3 1.7B, within our 16 GB limit. All experiments
+used a 32K token context window to ensure fair comparison.
+4.2 Execution and Instrumentation
+In total, we performed 1,200 experimental runs. Each run involved
+executing one framework and model pair on a single issue from
+theSWE-bench Verified Mini dataset. Runs were executed with a
+30-minute wall-clock timeout and a 32K token context window
+limit. A custom monitoring script, launched concurrently with the
+agent, collected resource data throughout each run.
+3https://aistudio.google.com
+4https://www.alibabacloud.com/help/en/model-studio/models
+4.3 Repetitions and Verification
+To account for variability and ensure the stability of our results,
+we performed three full repetitions for each framework and model
+configuration. This yielded 150 data points, with 3 repetitions for
+each of the 50 issues, for each experimental condition. The official
+SWE-bench evaluation harness was used to independently verify
+the generated patch and assign a final pass or fail status. All raw
+logs and computed metrics were stored in a structured JSON format
+to ensure transparency and facilitate downstream analysis.
+4.4 Qualitative Log Analysis
+To understand behavioral patterns underlying the quantitative
+results, we analyzed execution logs from the first run of each
+framework-model configuration (200 runs total). We used Gem-
+ini 2.5 Flash to assist in processing the logs, identifying: (i) the
+sequence of actions leading to each failure modes (context loss,
+reasoning mismatch, etc., as per the MAST taxonomy [4]), and (ii)
+specific behavioral patterns such as repetitive failed commands,
+verbose output generation, and inefficient information-gathering
+strategies.
+5 Results
+Our experiments reveal a significant trade-off between task-resolution
+effectiveness and energy efficiency, driven primarily by the architec-
+tural choices of each agentic framework. The quantitative findings,
+summarized in Table 1, are organized by our first two research
+questions.
+5.1 RQ1: Comparing Framework Efficiency and
+Task Success
+Across all 150 runs, task resolution rates were exceptionally low.
+The only configuration to achieve any success wasAutoCodeRover
+paired with Qwen 1.7B, resolving an average of 2 out of 50 tasks, a
+4% success rate. However, this minimal success came at a steep price.
+AutoCodeRoverwas, by a significant margin, the most resource-
+intensive framework, consuming a mean of216.21 kJ (Gemma) and
+208.42 kJ(Qwen) per run after idle subtraction.
+In stark contrast,OpenHandswas the most energy-efficient
+framework, with its Gemma configuration consuming just23.05 kJ
+on average (and23.33 kJ for Qwen). Yet, this efficiency was coupled
+with a 0% resolution rate. This difficult trade-off is evident across
+all configurations: nearly all frameworks achieved zero resolutions
+while consuming varying amounts of energy.AutoCodeRoverstands
+alone with non-zero success but at a significantly higher energy
+cost. As illustrated in Figure 2,AutoCodeRoverconfigurations show
+the widest spread and highest median energy whileOpenHandsre-
+mains tightly clustered below 30 kJ.SWE-AgentandAutoCodeRover
+exhibit erratic energy patterns with large interquartile ranges, re-
+flecting inconsistent termination behavior across runs.
+
+[[page 5]]
+SWEnergy: An Empirical Study on Energy Efficiency in Agentic Issue Resolution Frameworks with SLMs
+Figure 2: Energy usage distribution across different scaffolds
+and models.
+Answer to RQ1:When using SLMs, the frameworks
+demonstrate a severe trade-off between efficiency and
+effectiveness. The only successful configuration (Au-
+toCodeRover) was also the most energy-intensive (mean
+of208–216 kJ). The most efficient framework,OpenHands
+(mean of≈ 23 kJ), resolved zero issues, forcing a choice
+between minimal success at a high cost or complete failure
+at a lower cost.
+5.2 RQ2: Architectural Choices as the Primary
+Driver of Cost
+The vast differences in resource consumption are directly linked to
+architectural patterns. The correlation heatmap (Figure 3) reveals
+Total Energy Usage is strongly correlated with Wall-Clock Duration
+(𝑅= 0.89) and Output Tokens (𝑅= 0.88). This confirms energy
+cost is driven by runtime and the “chatty” generation volume of
+ReAct-style agents (Figure 4). In contrast, memory metrics show
+near-zero correlation, as memory is allocated statically upfront and
+does not vary with the computational workload.
+The failure analysis (Figure 5) shows how architectures cre-
+ate distinct failure “signatures” from core SLM reasoning errors.
+AutoCodeRoverexhibits a balanced profile of failures like Follow
+Task Requirements and Step Repetition , where Timeout is
+a secondaryconsequenceof these unresolved loops, not the pri-
+mary cause. In contrast, ReAct-style agents are dominated by Step
+Repetition, which directly causes frequentContext Loss failures
+as high token output exceeds the context window. Finally,Open-
+Handsshows a broad-spectrum failure signature, struggling across
+Follow Task Requirements , Step Repetition , and Missing or
+Incomplete Verification , suggesting its general-purpose design
+lacks specialized guardrails.
+Figure 3: Correlation analysis across all frameworks.
+Figure 4: Token usage histograms for different frameworks.
+Answer to RQ2:Energy consumption is primarily driven
+by runtime and output token usage (𝑅≈ 0.88). Framework
+architecture dictates how SLM reasoning failures manifest:
+“Chatty” ReAct-style agents get stuck in repetitive loops,
+leading to high token counts and eventual Context Loss .
+Deliberative frameworks likeAutoCodeRoveralso suffer
+from reasoning loops, consuming high energy through
+long runtimes that often end in Timeout as a secondary
+consequence.
+6 Discussion
+Our quantitative results establish that under realistic hardware con-
+straints, current agentic frameworks struggle to resolve software
+
+[[page 6]]
+Arihant Tripathy, Ch Pavan Harshit, and Karthik Vaidhyanathan
+Table 1: Performance Metrics Comparison Across All Repetitions. Energy columns report CPU/GPU draw after subtracting the
+measured idle baseline (51.69 W CPU, 2.70 W GPU).
+Framework Model Statistic Time (min) CPU (kJ) GPU (kJ) Total Energy (kJ) RAM (MB) VRAM (MB) Tokens Cost (USD) Resolved
+AutoCodeRover
+Gemma
+Min26.46 105.77 106.23 212.00 865.09 11,623.81 392,337.68 0.0077 0.0
+P5027.20 107.49 107.75 217.99 882.45 11,733.89 396,991.10 0.0079 0.0
+Mean27.08 108.05 108.16 216.21 876.98 11,724.22 405,436.60 0.0081 0.0
+Max27.59 110.89 110.50 218.65 883.39 11,814.96 426,981.02 0.0085 0.0
+Std0.57 2.61 2.17 3.66 10.30 95.94 18,802.53 0.0004 0.0
+Qwen
+Min22.91 111.25 91.01 202.26 793.82 8163.81 446,642.64 0.1200 1.0
+P5024.20 112.00 96.42 208.42 795.63 8170.28 463,378.38 0.1262 2.0
+Mean23.79 113.72 94.70 208.42 795.45 8208.77 460,457.63 0.12452.0
+Max24.26 117.91 96.67 214.58 796.89 8292.21 471,351.88 0.1273 3.0
+Std0.76 3.65 3.20 6.16 1.55 72.33 12,610.90 0.0039 1.0
+Mini SWE Agent
+Gemma
+Min3.12 12.00 8.97 20.73 99.07 11,504.44 495,699.42 0.0199 0.0
+P503.18 12.98 10.84 23.30 99.24 11,505.47 555,194.60 0.0223 0.0
+Mean 3.2013.54 10.23 23.41 99.21 11,527.25 547,710.07 0.0220 0.0
+Max3.30 15.63 10.86 26.19 99.32 11,571.84 592,236.18 0.0238 0.0
+Std0.09 1.88 1.09 2.73 0.13 38.62 48,701.64 0.0020 0.0
+Qwen
+Min7.80 26.23 26.23 49.31 99.32 8285.59 1,796,615.00 0.2084 0.0
+P508.27 29.47 27.69 53.62 99.73 8286.01 1,902,548.94 0.2217 0.0
+Mean8.54 28.83 28.96 54.13 99.65 8285.93 1,874,298.96 0.2178 0.0
+Max9.54 30.80 32.95 59.44 99.89 8286.19 1,923,732.94 0.2232 0.0
+Std0.90 2.35 3.54 5.08 0.29 0.31 68,104.98 0.0082 0.0
+OpenHands
+Gemma
+Min2.38 7.91 6.61 14.36 53.84 11,030.14 92,548.56 0.0038 0.0
+P504.11 14.16 7.17 20.43 81.22 11,517.47 110,753.42 0.0045 0.0
+Mean4.1312.9810.8723.05 74.3011,427.27106444.17 0.00430.0
+Max5.89 16.87 18.83 34.36 87.84 11,734.19 116,030.54 0.0047 0.0
+Std1.75 4.60 6.90 10.25 18.03 360.59 12,319.82 0.0005 0.0
+Qwen
+Min6.37 17.09 5.37 20.56 69.50 8122.04 106,271.78 0.0126 0.0
+P506.86 20.01 5.52 23.47 99.10 8163.81 111,827.50 0.0133 0.0
+Mean6.89 20.185.5923.33 89.408149.89110,228.31 0.0131 0.0
+Max7.44 23.44 5.86 25.95 99.60 8163.81 112,585.66 0.0133 0.0
+Std0.54 3.18 0.25 2.70 17.24 24.12 3447.36 0.0004 0.0
+SWE Agent
+Gemma
+Min5.03 19.61 11.01 31.63 164.54 11,504.44 707,680.86 0.0277 0.0
+P505.47 20.61 12.99 32.60 181.66 11,504.44 819,349.52 0.0324 0.0
+Mean5.59 22.05 12.73 34.78 177.03 11,711.76 788,841.29 0.0311 0.0
+Max6.26 25.93 14.20 40.12 184.88 12,126.42 839,493.48 0.0333 0.0
+Std0.62 3.40 1.61 4.65 10.93 359.10 71,004.97 0.0030 0.0
+Qwen
+Min8.85 27.17 18.44 41.80 210.66 8163.81 1,177,137.68 0.1349 0.0
+P508.94 30.25 19.31 45.32 216.11 8163.81 1,238,045.34 0.1413 0.0
+Mean9.02 29.84 19.22 44.87 215.27 8204.60 1,250,213.61 0.1428 0.0
+Max9.26 32.09 19.90 47.49 219.04 8286.19 1,335,457.80 0.1521 0.0
+Std0.21 2.49 0.73 2.87 4.25 70.65 79,858.41 0.0087 0.0
+Figure 5: Failure reasons stacked bar chart.
+issues reliably or efficiently. To explain these outcomes, we con-
+ducted a qualitative analysis of the execution logs from the first
+run of each framework and model pair. This analysis, performed
+with the assistance of the Gemini 2.5 Flash model, revealed that
+the architectural flaws do not lie in the frameworks themselves,
+but in their implicit assumption of a highly capable reasoning en-
+gine. This core mismatch leads to several key lessons and has direct
+implications for both future research and current practice.
+6.1 Lessons Learned
+Our qualitative analysis of failure modes revealed critical lessons
+about the interaction between framework design and SLM limita-
+tions.
+Lesson 1: Frameworks lacking SLM-aware safeguards waste energy
+on unproductive loops.High resource consumption was a direct re-
+sult of frameworks allowing the SLM to enter unproductive reason-
+ing loops without intervention.AutoCodeRover, the only framework
+with any success, frequently became trapped. Its rigid, multi-phase
+design proved brittle when the SLM failed to provide a correct in-
+put for the next stage. Lacking robust reasoning, the SLM would
+repeatedly submit the same failing test script or malformed API call.
+
+[[page 7]]
+SWEnergy: An Empirical Study on Energy Efficiency in Agentic Issue Resolution Frameworks with SLMs
+The framework, unable to recognize this failure pattern, allowed
+the SLM to burn time and energy in a futile loop. Similarly,Open-
+Handsagents often entered loops of inefficient exploration, issuing
+broad grep commands that returned massive, unfiltered outputs
+and overwhelmed their context windows.
+Lesson 2: Low energy consumption is not synonymous with effi-
+ciency.Conversely, low energy consumption did not necessarily
+indicate efficiency. In the case ofMini-SWE Agent, a low energy
+profile was the result of two distinct failure patterns. First, a sig-
+nificant number of runs terminated prematurely when the agent’s
+context management generated prompts that exceeded the SLM’s
+token limit. The agent failed before it could begin substantive work.
+Second, our analysis uncovered a pattern of “false positives, ” where
+the framework reported a task as “successful” despite producing a
+destructive or syntactically invalid patch (e.g., replacing a 2,000-line
+file with a single invalid line). This demonstrates that low energy
+metrics can conceal critical functional failures.
+Lesson 3: Current agentic architectures are fundamentally mis-
+matched with SLM capabilities.The common thread is that current
+frameworks are designed as passive orchestrators thatassumea
+competent reasoning engine. They provide tools and wait for the
+model to use them correctly. This paradigm collapses when the
+model’s reasoning is weak. The frameworks lack the necessary
+mechanisms to guide, scaffold, or correct a struggling SLM, lead-
+ing directly to the high-consumption loops and low-consumption
+failures we observed.
+6.2 Implications for Research
+These lessons point to a clear need for a new class of agentic frame-
+works, aligning with the broader research agenda for environmen-
+tally sustainable AI practices [5]. Future work must move beyond
+architectures that encourage brute-force interaction and toward
+those that foster intelligent, adaptive reasoning. Frameworks should
+integrate adaptive strategy management to detect and break unpro-
+ductive reasoning loops, forcing the agent to revise its approach
+when progress stalls. They should also include guided exploration
+and context filtering mechanisms to prevent context overload, ac-
+tively curating relevant tool outputs before passing them to the
+model. Finally, robustness demands the inclusion of independent
+verification layers, separating patch generation from evaluation.
+This would allow the framework to detect “false positives” and
+provide higher-fidelity feedback throughout the resolution process.
+6.3 Implications for Practice
+For developers and practitioners seeking to leverage SLMs for au-
+tonomous tasks, the findings offer practical guidance and caution.
+Plug-and-play substitution of an LLM with an SLM is ineffective
+and often counterproductive, as existing frameworks are not built
+for the limited reasoning capacity of smaller models. Practitioners
+must instead adopt or design frameworks explicitly tailored for
+SLMs. Moreover, evaluation should consider the total cost of own-
+ership (TCO), not just the absence of API costs. Local execution may
+appear cheaper but often incurs heavy time and energy costs, such
+as the 24–27 minute mean runtimes forAutoCodeRoverconfigura-
+tions. Practitioners can use decision maps [13], to explicitly model
+these trade-offs and evaluate whether their own agentic architec-
+tures are sustainable across technical, economic, and environmental
+dimensions.Finally, given the frequency of “false positive” task com-
+pletions, it is critical that all SLM-driven systems employ rigorous
+external verification, such as CI-based build and test validation,
+before any generated patches are accepted or presented for human
+review.
+7 Threats to Validity
+We identify several potential threats to the validity of our find-
+ings, categorized according to established guidelines for empirical
+studies.
+Internal Validity.We mitigated this threat by executing all exper-
+iments on a single, dedicated machine in an isolated environment,
+with no other significant user or system processes running. How-
+ever, minor, non-deterministic background OS activity could still
+have a marginal effect on measurements.
+Construct Validity.Our measurements focus on primary con-
+sumers (CPU and GPU) via standard interfaces (RAPL and NVML).
+While this is a common and accepted practice, it does not capture
+the total "wall plug" energy, as consumption from RAM, storage,
+and other motherboard components is excluded. Furthermore, our
+effectiveness metric is the binarypass/failstatus from the SWE-
+bench harness, which, while standard, does not account for partial
+progress or the quality of a generated solution. For our qualita-
+tive analysis (Section 4.4), we used Gemini 2.5 Flash to process
+execution logs. This introduces a potential threat, as the AI as-
+sistant may influence pattern identification and interpretation of
+failure behaviors. To mitigate this, two of the authors randomly
+sampled and manually analysed the logs to verify the accuracy of
+the AI-assisted findings. We also provide complete raw logs in our
+replication package to enable independent re-analysis.
+External Validity.Three main threats affect generalizability: First,
+we used theSWE-bench Verified Minibenchmark. While represen-
+tative, its 50 tasks are a small subset of real-world software engi-
+neering problems, and our findings may not generalize to different
+types or scales of issues. Second, our experiments were limited to
+two small, open-weight models. The observed performance and
+efficiency trade-offs could differ substantially with larger, more
+capable models (e.g., GPT-5 or Llama-3 70B), which are often used
+in state-of-the-art systems. Our choice was deliberate to focus on
+resource-constrained, local deployment scenarios. Third, all mea-
+surements were performed on a single hardware configuration. The
+energy profiles may vary on different CPU/GPU architectures (e.g.,
+AMD or Apple Silicon).
+Conclusion Validity.This relates to the statistical reliability of
+our conclusions. A significant threat arises from the extremely low
+task resolution rate across all configurations. With only one frame-
+work achieving any success, our conclusions about the resource
+consumption of failed runs are far more robust than those about
+successful ones. The correlations and comparisons are based on a
+dataset heavily skewed toward failure, limiting our ability to draw
+firm conclusions about the energy cost of a successfully resolved
+issue.
+
+[[page 8]]
+Arihant Tripathy, Ch Pavan Harshit, and Karthik Vaidhyanathan
+8 Conclusion
+In this study, we investigated the energy efficiency and effective-
+ness of autonomous software engineering agents when powered
+by Small Language Models (SLMs). We conducted a controlled ex-
+periment evaluating four prominent agentic frameworks with two
+SLMs on theSWE-bench Verified Minibenchmark, collecting de-
+tailed measurements of energy consumption and other resource
+metrics on a fixed hardware platform.
+Our results highlight a significant gap: current agentic frame-
+works, designed for the strengths of large models, are ill-equipped
+to handle the reasoning limitations of SLMs. As expected, task
+resolution rates were extremely low. We found that while frame-
+work architecture is a primary driver of energy consumption, the
+SLM’s capacity was the bottleneck for success. High-energy failures
+were often caused by frameworks allowing the SLM to enter unpro-
+ductive loops, while low-energy consumption sometimes masked
+premature terminations or flawed outputs from the model.
+This work reframes the challenge from simply making agents
+more accurate to designing them to be effective within realistic
+resource constraints. Future work must focus on developing frame-
+works that actively guide and assist SLMs. This includes creating
+mechanisms for adaptive strategy management, integrating tools
+for guided exploration, and establishing robust, independent verifi-
+cation protocols as standard. By treating the model’s limitations as
+a core design constraint, the research community can build the next
+generation of autonomous agents that are not only effective but
+also sustainable and accessible for real-world, local deployment.
+Acknowledgments
+This research was funded by the ANRF Prime Minister Early Career
+Research Grant (ANRF/ECRG/2024/003379/ENS).
+References
+[1] Radu Apsan, Vincenzo Stoico, Michel Albonico, Rudra Dhar, Karthik Vaid-
+hyanathan, and Ivano Malavolta. 2025. Generating Energy-Efficient Code via
+Large-Language Models – Where are we now?arXiv preprint arXiv:2509.10099
+(2025).
+[2] Victor R. Basili, Gianluigi Caldiera, and H. Dieter Rombach. 1994. The Goal
+Question Metric Approach. InEncyclopedia of Software Engineering, John J.
+Marciniak (Ed.). Vol. 2. John Wiley & Sons, 528–532.
+[3] Peter Belcak, Greg Heinrich, Shizhe Diao, Yonggan Fu, Xin Dong, Saurav Mu-
+ralidharan, Yingyan Celine Lin, and Pavlo Molchanov. 2025. Small Language
+Models are the Future of Agentic AI.arXiv preprint arXiv:2506.02153(2025).
+[4] Mert Cemri, Melissa Z Pan, Shuyi Yang, Lakshya A Agrawal, Bhavya Chopra,
+Rishabh Tiwari, Kurt Keutzer, Aditya Parameswaran, Dan Klein, Kannan Ram-
+chandran, et al. 2025. Why Do Multi-Agent LLM Systems Fail?arXiv preprint
+arXiv:2503.13657(2025).
+[5] Luís Cruz, João Paulo Fernandes, Maja H. Kirkeby, Silverio Martínez-Fernández,
+June Sallou, Hina Anwar, Enrique Barba Roque, Justus Bogner, Joel Castaño,
+Fernando Castor, Aadil Chasmawala, Simão Cunha, Daniel Feitosa, Alexandra
+González, Andreas Jedlitschka, Patricia Lago, Henry Muccini, Ana Oprescu,
+Pooja Rani, João Saraiva, Federica Sarro, Raghavendra Selvan, Karthik Vaid-
+hyanathan, Roberto Verdecchia, and Ivan P. Yamshchikov. 2025. Greening
+AI-enabled Systems with Software Engineering: A Research Agenda for En-
+vironmentally Sustainable AI Practices.SIGSOFT Softw. Eng. Notes50, 3 (July
+2025), 14–23. doi:10.1145/3743095.3743099
+[6] {Vlad Andrei} Cursaru, Laura Duits, Joel Milligan, Damla Ural, {Berta Rodriguez}
+Sanchez, Vincenzo Stoico, and Ivano Malavolta. 2024. A Controlled Experiment
+on the Energy Efficiency of the Source Code Generated by Code Llama. InQuality
+of Information and Communications Technology (Communications in Computer
+and Information Science), Antonia Bertolino, João {Pascoal Faria}, Patricia Lago,
+and Laura Semini (Eds.). Springer Science and Business Media Deutschland
+GmbH, Germany, 161–176. doi:10.1007/978-3-031-70245-7_12 Publisher Copy-
+right:©The Author(s), under exclusive license to Springer Nature Switzerland
+AG 2024.; 17th International Conference on the Quality of Information and Com-
+munications Technology, QUATIC 2024 ; Conference date: 11-09-2024 Through
+13-09-2024.
+[7] Yang et al. 2025. Qwen3 Technical Report. arXiv:2505.09388 [cs.CL] https:
+//arxiv.org/abs/2505.09388
+[8] Gemma Team, Google DeepMind. 2024. Gemma: Open Models Based on Gemini
+Research and Technology. arXiv:2403.08295 https://arxiv.org/abs/2403.08295
+[9] Junda He, Christoph Treude, and David Lo. 2025. LLM-Based Multi-Agent
+Systems for Software Engineering: Literature Review, Vision, and the Road
+Ahead.ACM Trans. Softw. Eng. Methodol.34, 5, Article 124 (May 2025), 30 pages.
+doi:10.1145/3712003
+[10] Marius Hobbhahn. 2025. SWE-bench Verified Mini. https://huggingface.co/
+datasets/MariusHobbhahn/swe-bench-verified-mini. Hugging Face dataset;
+50-instance subset of SWE-bench Verified.
+[11] Carlos E Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir
+Press, and Karthik R Narasimhan. 2024. SWE-bench: Can Language Models
+Resolve Real-world Github Issues?. InThe Twelfth International Conference on
+Learning Representations. https://openreview.net/forum?id=VTF8yNQM66
+[12] Ishan Kavathekar, Raghav Donakanti, Ponnurangam Kumaraguru, and Karthik
+Vaidhyanathan. 2025. Small Models, Big Tasks: An Exploratory Empirical Study
+on Small Language Models for Function Calling. arXiv:2504.19277 [cs.AI] https:
+//arxiv.org/abs/2504.19277
+[13] Patricia Lago. 2019. Architecture design decision maps for software sustainability.
+In2019 IEEE/ACM 41st International Conference on Software Engineering: Software
+Engineering in Society (ICSE-SEIS). IEEE, 61–64.
+[14] Yue Liu, Sin Kit Lo, Qinghua Lu, Liming Zhu, Dehai Zhao, Xiwei Xu, Stefan
+Harrer, and Jon Whittle. 2025. Agent design pattern catalogue: A collection of
+architectural patterns for foundation model based agents.Journal of Systems
+and Software220 (2025), 112278.
+[15] Alexandra Sasha Luccioni, Sylvain Viguier, and Anne-Laure Ligozat. 2023. Es-
+timating the Carbon Footprint of BLOOM, a 176B Parameter Language Model.
+Journal of Machine Learning Research24, 224 (2023). https://www.jmlr.org/
+papers/volume24/23-0069/23-0069.pdf
+[16] Shishir G. Patil, Huanzhi Mao, Charlie Cheng-Jie Ji, Fanjia Yan, Vishnu Suresh, Ion
+Stoica, and Joseph E. Gonzalez. 2025. The Berkeley Function Calling Leaderboard
+(BFCL): From Tool Use to Agentic Evaluation of Large Language Models. InForty-
+second International Conference on Machine Learning.
+[17] Christoph Treude and Margaret-Anne Storey. 2025. Generative AI and Empirical
+Software Engineering: A Paradigm Shift. arXiv:2502.08108 [cs.SE] https://arxiv.
+org/abs/2502.08108
+[18] Karthik Vaidhyanathan and Henry Muccini. 2025. Software Architecture in the
+Age of Agentic AI. InSoftware Architecture. ECSA 2025 Tracks and Workshops:
+Limassol, Cyprus, September 15–19, 2025, Proceedings(Limassol, Cyprus). Springer-
+Verlag, Berlin, Heidelberg, 41–49. doi:10.1007/978-3-032-04403-7_5
+[19] Tina Vartziotis, Ippolyti Dellatolas, George Dasoulas, Maximilian Schmidt, Flo-
+rian Schneider, Tim Hoffmann, Sotirios Kotsopoulos, and Michael Keckeisen.
+2024. Learn to Code Sustainably: An Empirical Study on Green Code Generation.
+In2024 IEEE/ACM International Workshop on Large Language Models for Code
+(LLM4Code). 30–37.
+[20] Xingyao Wang, Boxuan Li, Yufan Song, Frank F. Xu, Xiangru Tang, Mingchen
+Zhuge, Jiayi Pan, Yueqi Song, Bowen Li, Jaskirat Singh, Hoang H. Tran, Fuqiang
+Li, Ren Ma, Mingzhang Zheng, Bill Qian, Yanjun Shao, Niklas Muennighoff,
+Yizhe Zhang, Binyuan Hui, Junyang Lin, Robert Brennan, Hao Peng, Heng Ji,
+and Graham Neubig. 2025. OpenHands: An Open Platform for AI Software
+Developers as Generalist Agents. InThe Thirteenth International Conference on
+Learning Representations. https://openreview.net/forum?id=OJd3ayDDoF
+[21] Yanlin Wang, Wanjun Zhong, Yanxian Huang, Ensheng Shi, Min Yang, Jiachi
+Chen, Hui Li, Yuchi Ma, Qianxiang Wang, and Zibin Zheng. 2025. Agents in
+software engineering: survey, landscape, and vision.Automated Software Engg.
+32, 2 (Aug. 2025), 36 pages. doi:10.1007/s10515-025-00544-2
+[22] Grant Wilkins, Srinivasan Keshav, and Richard Mortier. 2025. Offline Energy-
+Optimal LLM Serving: Workload-Based Energy Models for LLM Inference on
+Heterogeneous Systems.SIGENERGY Energy Inform. Rev.4, 5 (April 2025),
+113–119. doi:10.1145/3727200.3727217
+[23] John Yang, Carlos E. Jimenez, et al . 2024. SWE-Agent: Agent-Computer
+Interfaces Enable Automated Software Engineering. InNeurIPS. https://papers.
+nips.cc/paper_files/paper/2024/file/5a7c947568c1b1328ccc5230172e1e7c-Paper-
+Conference.pdf
+[24] Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan,
+and Yuan Cao. 2023. ReAct: Synergizing Reasoning and Acting in Language
+Models. InInternational Conference on Learning Representations (ICLR).
+[25] Yiheng Zhang et al. 2024. AutoCodeRover: Autonomous Program Improvement.
+InProceedings of the 32nd ACM ESEC/FSE. doi:10.1145/3650212.3680384

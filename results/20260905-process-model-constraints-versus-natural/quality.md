@@ -1,4 +1,4 @@
-# Quality Assessment — BPMN process model driven multi-agent workflow automation
+# Quality Assessment — process model constraints versus natural language policy for compliance critical LLM business process agents
 
 Generated 2026-09-05. Rigor = mean of scored checklist items (0/0.5/1). Papers below 0.5 are flagged; weight synthesis claims accordingly.
 

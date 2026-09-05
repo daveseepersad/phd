@@ -1,0 +1,598 @@
+[
+ {
+  "order": 1,
+  "status": "read",
+  "read_order": 5,
+  "concepts": [
+   "memory-context",
+   "deployment-production",
+   "model-versus-scaffold",
+   "cost-latency",
+   "evaluation-validity",
+   "governance-safety"
+  ],
+  "extraction": {
+   "study_type": "empirical-experiment",
+   "framework": "HLTM (Hierarchical Long-Term Semantic Memory), deployed as the long-term memory of LinkedIn's Hiring Assistant",
+   "agent_count": "multi",
+   "topology": "supervisor-worker (plan-and-execute supervisor agent orchestrating specialized sub-agents and tools; HLTM exposed as a memory tool)",
+   "benchmark": "Internal LinkedIn Hiring Assistant dataset (1,341 human-labeled queries; ~53M tokens of history) and LongMemEval-s (500 questions)",
+   "baseline": "Full-context prompting, conventional RAG, Schema Filter, A-Mem, HippoRAG, RAPTOR, GraphRAG, SimpleMem, Mem0, ReadAgent",
+   "key_results": "On the LinkedIn dataset with GPT-4o mini, HLTM reaches 0.892 semantic correctness on summary-style queries (best baseline HippoRAG 0.833) and 0.782 retrieval-style F1 (best baseline ReadAgent 0.617), both significant under Wilcoxon signed-rank (p<10^-7), with Cliff's delta +0.058 and +0.328. On LongMemEval-s overall accuracy is 0.778 vs A-Mem 0.716. Query latency ~3.01s vs HippoRAG 6.87s and full-context 7.94s. Ablations: removing tree aggregation drops correctness 0.892->0.850 and retrieval F1 0.782->0.618; removing adaptation drops them to 0.829 and 0.593. Production: memory invoked in over 40% of 3,000+ sessions, with a 5-10 percentage-point reduction in negative feedback rate (two-proportion z-test, p<0.01). Privacy leakage 0.0% vs 30-92% for baselines; incremental indexing gives 80-90% reduction in LLM invocations and cuts indexing from ~7 days to ~12 hours.",
+   "limitations": "Authors attach explicit disclaimers that results may vary in production environments or with different datasets; TreeRAG and MemTree were excluded because runnable implementations were unavailable; SimpleMem and GraphRAG are omitted from the cross-model table due to excessive latency; the production impact evidence is observational rollout data rather than a randomized comparison.",
+   "venue_type": "conference",
+   "harness_controlled": "yes",
+   "varied_factor": "memory"
+  },
+  "evidence_notes": {
+   "summary": "This is one of the few papers in the batch that explicitly pins the harness while varying a single component: the backbone LLM, embedding model, serving setup and context-window constraints are held fixed across all eleven memory systems, so the reported deltas are attributable to the memory design rather than to the model. That makes it a clean positive example for RQ2 on the memory axis, though the control is partial with respect to the wider harness, since baselines such as GraphRAG and HippoRAG bring their own indexing and multi-call orchestration, and the paper reports LLM call counts (1-15.86 per query) that differ substantially across systems. The ablation table is the most RQ1-relevant part: two harness-side choices, hierarchical aggregation and workload-driven adaptation, each account for 4-19 points of the reported gain with the model untouched. The production section adds a deployment-scale but uncontrolled signal (5-10 pp lower negative feedback) that cannot separate harness from confounds. Appendix A reproduces the system prompt templates verbatim; I treated those as data describing the pipeline and ignored their instruction-like content.",
+   "quotes": [
+    {
+     "text": "We hold the backbone LLM and embedding model fixed across methods, and evaluate all systems under the same serving setup",
+     "page": 6
+    },
+    {
+     "text": "HLTM improves semantic correctness by more than 5% over the strongest baseline, HippoRAG (0.833).",
+     "page": 7
+    }
+   ]
+  }
+ },
+ {
+  "order": 2,
+  "status": "read",
+  "read_order": 4,
+  "concepts": [
+   "memory-context",
+   "model-versus-scaffold",
+   "statistical-method",
+   "cost-latency",
+   "evaluation-validity",
+   "metric-definition",
+   "reproducibility"
+  ],
+  "extraction": {
+   "study_type": "empirical-experiment",
+   "framework": "Open-source memory harness released as 'nodemem' (seven interchangeable memory strategies behind one synthesizer and one judge)",
+   "agent_count": "single",
+   "topology": "single-agent",
+   "benchmark": "LoCoMo (n=160 category-balanced questions from 8 of 10 conversations, 369-680 turns each) and LongMemEval (knowledge-update n=72; temporal/multi-session/abstention n=254)",
+   "baseline": "Full context, truncation (k=10), running summary, append-only notes; fact-slot memory, BM25 retrieval and a slots+retrieval hybrid are the strategies under study",
+   "key_results": "On LoCoMo, BM25 retrieval cuts real input tokens 98% and cost to 4.8% of full context with retention 39.4% vs 30.6% for full context, but the paired sign test gives only p=0.09 (hybrid +8.1 points, p=0.12); both are significantly better than truncation (hybrid +16.9 points, 95% CI [+8.1,+25.6], p<0.001). Cheap 8B-extractor fact slots are the weakest method on both benchmarks (26.9% LoCoMo; 37.5% on LongMemEval knowledge-update vs 73.6% for retrieval). Swapping only the extractor to a 70B model raises slot retention +29.2 points (23 wins vs 2 losses, p<10^-4) while BM25, which bypasses the extractor, is unchanged (1 win vs 1 loss) - but 70B extraction then costs 1.8-2.2x full context. Error analysis over all 281 LoCoMo multi-hop questions: BM25 top-5 recovers only ~13% of gold evidence turns (20% at top-10). On LongMemEval temporal/multi-session (n=254), BM25 trails full context by -10.2 points (p=0.004) and only the hybrid stays statistically indistinguishable.",
+   "limitations": "Authors rank their own limitations: the retrieval-vs-full-context comparison is underpowered (n=160 of 1,986; power analysis says 360-430 questions needed); the 17B synthesizer forced by free-tier caps weakens the full-context baseline and could reverse the ordering; the LLM judge has only moderate agreement with a second judge (Cohen's kappa 0.47 on 30 questions), comparable to some effect sizes tested; retrieval is sparse BM25 only; the extractor ablation covers one LongMemEval category and short oracle histories; LongMemEval cost figures understate savings; +8-point run-to-run drift on full context between runs.",
+   "venue_type": "preprint",
+   "harness_controlled": "yes",
+   "varied_factor": "memory"
+  },
+  "evidence_notes": {
+   "summary": "This is the cleanest single-variable memory study in the batch and a strong RQ2 exemplar: seven memory strategies are run under one harness, one synthesizer and one judge, with question-level paired statistics rather than aggregate comparisons. Its most direct RQ1 contribution is the extractor-size ablation, which changes exactly one harness component (the 8B write-side extractor becomes 70B) and recovers +29.2 points on knowledge-update questions while the retrieval arm that bypasses the extractor is unchanged as a control - a rare within-paper demonstration that a scaffold component, not the representation and not the synthesizer, carried the effect. The paper is also unusually explicit about the limits of its own harness: the authors flag that a free-tier token cap forced a 17B synthesizer, that this weakens the full-context baseline through lost-in-the-middle degradation, and that the ordering must be re-tested on a stronger synthesizer before being treated as general. They further observe +8 points of run-to-run drift on the full-context arm from judge/synthesizer nondeterminism, which bounds how finely single-run orderings can be read.",
+   "quotes": [
+    {
+     "text": "We compare seven memory strategies under one harness, one synthesizer, and one judge",
+     "page": 3
+    },
+    {
+     "text": "The cheap-cascade premise—that a small model can maintain memory for a large one—is what fails: with a cheap extractor the slots are wrong, and with a capable extractor they are not cheap.",
+     "page": 10
+    },
+    {
+     "text": "The synthesizer is a 17B model, which weakens the full-context baseline.",
+     "page": 12
+    }
+   ]
+  }
+ },
+ {
+  "order": 3,
+  "status": "read",
+  "read_order": 7,
+  "concepts": [
+   "memory-context",
+   "benchmark-design",
+   "evaluation-validity",
+   "reproducibility",
+   "confounding-attribution",
+   "deployment-production"
+  ],
+  "extraction": {
+   "study_type": "case-study",
+   "framework": "Agent Brain (eleven-layer memory system: perception gate, dedup guard, typed stores, NER, knowledge graph, query expansion, hybrid RRF search, cross-encoder re-ranking, FSRS feedback loop, nightly Dream Cycle, workspace isolation)",
+   "agent_count": "multi",
+   "topology": "workspace-isolated specialist agents (eight production workspaces with row-level security; no inter-agent coordination protocol described)",
+   "benchmark": "weaviate/longmemeval-m-cleaned (500 QA pairs over 510 multi-turn workspaces, GPT-4o rubric judge) plus an internal 20-query production retrieval benchmark over 2,351 memories",
+   "baseline": "The system's own pgvector-only control (same ingestion, no entity extraction, no hybrid retrieval, pure vector top-5, run twice); cross-system peer comparison was withdrawn in v3",
+   "key_results": "71.7% on LongMemEval-M-cleaned without consolidation, 69.8% with the Dream Cycle enabled (-1.9 pp), and 72.2-73.9% for the pgvector-only control - i.e. the simpler control beats the full pipeline by up to 2.2 pp. Production retrieval ablation: hybrid RRF P@5 0.200 -> +LLM query expansion 0.285 -> +cross-encoder re-ranking 0.740 -> +content completion 0.787 (MRR 0.762, hit rate 85%). NER upgrade spaCy->flair raises F1 ~85% -> 92.31% and entities per 1,000 memories ~200 -> ~1,500.",
+   "limitations": "Authors state: domain-specific query expansion (Swiss property management) and German-only NER; the production benchmark (20 queries, 10 topics) is not standardized; the consolidation regression on quiz-style benchmarks is attributed to over-aggressive detail pruning; single-VPS scaling limit (8 GB RAM); the implicit feedback loop only fires when a store follows a recall within 30 minutes; cosine thresholds were set empirically and may be suboptimal elsewhere. v3 explicitly retracts v1/v2 cross-system comparisons as not apples-to-apples across LongMemEval variants.",
+   "venue_type": "preprint",
+   "harness_controlled": "partial",
+   "varied_factor": "memory"
+  },
+  "evidence_notes": {
+   "summary": "The scientific value here for RQ1 is almost entirely negative and self-reported: the authors hold ingestion corpus, embedding model and judging rubric fixed across four of their own configurations and find that adding harness machinery makes things worse - the Dream Cycle consolidation loses 1.9 pp and the full hybrid-plus-entity pipeline loses up to 2.2 pp against a plain pgvector top-5 control on the same corpus. That is a clean within-harness demonstration that scaffold complexity is not monotonically beneficial and that the benefit depends on task shape (they argue their design optimizes continuity, while LongMemEval rewards verbatim single-hop lookup). For RQ2 the paper is also instructive as a documented failure of cross-harness comparison: v1 and v2 compared their m-cleaned number against Zep, Mem0, LangMem and OpenAI Memory figures measured on LongMemEval-S, and v3 withdraws the whole table because the dataset variants, judges and system configurations differed. The changelog even records mis-attributing a baseline row (63.8%) to Zep. Peer numbers are not directly comparable and no peer had published on m-cleaned at the time of writing.",
+   "quotes": [
+    {
+     "text": "All four configurations share the same ingestion corpus and judging rubric and are therefore directly comparable. The table deliberately does not include peer-system numbers; see §15.4 for why.",
+     "page": 26
+    },
+    {
+     "text": "A surprising — and instructive — result is that enabling our Dream Cycle consolidation pipeline reduces accuracy by 1.9 pp (71.7% → 69.8%), and that our own pgvector-only baseline without entity extraction outperforms Brain by 2.2 pp on one run (73.9% vs 71.7%).",
+     "page": 27
+    }
+   ]
+  }
+ },
+ {
+  "order": 4,
+  "status": "read",
+  "read_order": 8,
+  "concepts": [
+   "benchmark-design",
+   "memory-context",
+   "evaluation-validity",
+   "metric-definition",
+   "model-versus-scaffold",
+   "reproducibility"
+  ],
+  "extraction": {
+   "study_type": "benchmark",
+   "framework": "MEMORYCD (cross-domain lifelong personalization benchmark; evaluation pipeline with 4 tasks x 2 memory-source settings)",
+   "agent_count": "single",
+   "topology": "single-agent",
+   "benchmark": "MEMORYCD, built from Amazon Reviews 2023: 12 domains, context lengths 11K-387K tokens, ~100 users per domain, 323 cross-domain users; tasks are rating prediction (MAE/RMSE), item ranking (NDCG@K), review summarization and review generation (ROUGE-L/BLEU-1)",
+   "baseline": "Direct long-context prompting (no explicit memory module) plus five memory-augmented agents: LoCoMo, Mem0, ReadAgent, MemoryBank, A-Mem; 'Source N/A' (no memory) for the cross-domain radar comparison",
+   "key_results": "14 frontier long-context LLMs x 6 memory methods x 12 domains. No memory method dominates: on Books with GPT-5, long-context prompting has the best MAE (0.330) while LoCoMo gives the best ranking and MemoryBank the best generation ROUGE-L (0.132->0.166); Mem0 with Claude-4 Sonnet raises summarization ROUGE-L 0.145->0.202; A-Mem raises Claude-4 Sonnet summarization BLEU-1 0.089->0.150. Cross-domain on Home & Kitchen, LoCoMo raises GPT-5 NDCG@3 to 0.355 (vs 0.299 long-context) and Gemini-2.5 Pro to 0.349 (vs 0.255). Semantically aligned single sources can beat aggregation on error metrics (Electronics memory improves GPT-5 MAE 0.43->0.30 and Claude-4 Sonnet 0.9->0.55), while aggregating all three sources gives the best ranking. Absolute scores remain low across the board, and model scaling alone does not fix personalization.",
+   "limitations": "Authors state that cross-domain evaluation is restricted to fixed memory operations rather than learned memory mechanisms; that privacy and safety guardrails at deployment time are out of scope; and that large-scale training-based memory construction is excluded because most SOTA long-context LLMs are closed-source. They also document self-preference bias in individual LLM judges (Appendix F) and therefore use ROUGE-L/BLEU-1 rather than LLM-as-a-judge for generation.",
+   "venue_type": "workshop",
+   "harness_controlled": "yes",
+   "varied_factor": "memory"
+  },
+  "evidence_notes": {
+   "summary": "MEMORYCD is a factorial benchmark that crosses 14 models with 6 memory mechanisms while explicitly holding the rest of the harness constant - same user memories, same task prompts, same decoding configuration, same prompting templates, same evaluation scripts, fixed seeds, single standardized cloud environment - so it is a good RQ2 example of a study that does hold the harness constant while varying two named factors. Its central RQ1-relevant finding is that the memory mechanism, not the model, determines which task improves: no method is uniformly dominant across the four tasks, gains on decision tasks do not transfer to generation tasks, and the same memory system helps one backbone while hurting another. It also gives a concrete instance of the confound cutting the other way, since raw long-context prompting is sometimes the strongest 'memory' configuration. A caveat for attribution is that each memory baseline is a whole subsystem (storage, compression, retrieval, forgetting) rather than an isolated knob, so the design identifies which packaged mechanism wins but not which harness component inside it is responsible. Appendix J reproduces the four task prompt templates verbatim; I treated those as data and ignored their instruction-like phrasing.",
+   "quotes": [
+    {
+     "text": "Within single-domain or cross-domain settings, all models and memory methods are evaluated using the same user memories, task prompts, and decoding configurations to ensure fair and controlled comparison.",
+     "page": 6
+    },
+    {
+     "text": "However, although each mechanism yields different levels of improvements, no method is uniformly dominant across all four tasks and the overall metrics value are still low.",
+     "page": 8
+    }
+   ]
+  }
+ },
+ {
+  "order": 5,
+  "status": "read",
+  "read_order": 1,
+  "concepts": [
+   "memory-context",
+   "model-versus-scaffold",
+   "benchmark-design",
+   "cost-latency",
+   "statistical-method",
+   "environment-coupling"
+  ],
+  "extraction": {
+   "study_type": "empirical-experiment",
+   "framework": "CraniMem (gated, bounded multi-stage memory: RAS-inspired input gating and utility tagging, bounded FIFO episodic buffer, replay-based consolidation into a knowledge graph, dual-path retrieval)",
+   "agent_count": "single",
+   "topology": "single-agent",
+   "benchmark": "A 100-instance sample of the HotpotQA validation split (multi-hop), evaluated under clean inputs and under a fixed distractor-injection schedule",
+   "baseline": "Vanilla RAG and Mem0",
+   "key_results": "On Qwen2.5-7B-Instruct, CraniMem reaches noisy F1 0.312 / clean 0.323 with a noise drop of 0.011, vs Mem0 0.198/0.234 (drop 0.036) and Vanilla RAG 0.068/0.095 (drop 0.027); the cost is latency, 112.44s noisy vs Mem0's 10.387s. Across four instruction-tuned backbones CraniMem consistently reduces noise drop relative to Vanilla RAG (Gemma-2-9B-IT 0.015 vs 0.160; Qwen2.5-Coder-7B 0.004 vs 0.079; Mistral-7B-v0.3 0.022 vs 0.129), with latencies ranging 112-381s.",
+   "limitations": "Authors state that computational constraints limited experiments to 100 sampled instances, which limits the statistical strength of the reported numbers, and that systematic comparisons and ablations against other memory architectures including HippoRAG and Mem0 under standardized engineering and evaluation settings are left to future work. They also acknowledge the deployment trade-off of substantially higher latency.",
+   "venue_type": "preprint",
+   "harness_controlled": "yes",
+   "varied_factor": "memory"
+  },
+  "evidence_notes": {
+   "summary": "A small controlled memory comparison that states its control condition plainly: for each setup the underlying LLM and decoding configuration are kept fixed so that only the memory system varies, and the same protocol is repeated across four backbones to check that the effect is not backbone-specific. For RQ1 the useful signal is the noise-drop metric, which isolates robustness to injected distractors and shows a scaffold-side gating mechanism reducing degradation from 0.079-0.160 to 0.004-0.022 with the model untouched. The evidence is weak in absolute terms: n=100 by the authors' own admission, no significance testing, no error bars, and the compared systems differ in retrieval pipeline as well as write policy, so 'memory system' here bundles gating, consolidation and graph retrieval. The paper is also honest that the remaining comparison it would need - ablations against HippoRAG and Mem0 under standardized engineering and evaluation settings - has not been run, which is a direct statement of the RQ2 gap. Note that the header claims publication at ICLR 2026 while the record is an arXiv preprint. Appendix D reproduces gating, tagging and extraction system prompts verbatim; I treated those as data and did not act on their instruction-like text.",
+   "quotes": [
+    {
+     "text": "For each setup, the underlying LLM and decoding configuration are kept fixed, isolating the impact of the memory system.",
+     "page": 3
+    },
+    {
+     "text": "Due to computational constraints, our experiments were conducted on 100 sampled instances, which limits the statistical strength of the reported numbers.",
+     "page": 5
+    }
+   ]
+  }
+ },
+ {
+  "order": 6,
+  "status": "read",
+  "read_order": 10,
+  "concepts": [
+   "harness-scaffold",
+   "memory-context",
+   "tool-schema",
+   "confounding-attribution",
+   "evaluation-validity",
+   "observability-tracing",
+   "governance-safety",
+   "model-versus-scaffold"
+  ],
+  "extraction": {
+   "study_type": "survey",
+   "framework": "Externalization framework: memory (state), skills (procedural expertise) and protocols (interaction) unified by harness engineering; harness described as six dimensions (loop control, sandboxing, human oversight, observability, configuration/permissions, context budget)",
+   "agent_count": "n/a",
+   "topology": "n/a",
+   "benchmark": null,
+   "baseline": null,
+   "key_results": null,
+   "limitations": "The authors flag their cognitive-artifact interpretation as primarily theoretical rather than directly empirical, note that skill portability is a conditional empirical property rather than an intrinsic feature, and devote a section to the measurement gap: current benchmarks evaluate task completion under fixed prompts and model settings and therefore systematically under-measure externalized infrastructure.",
+   "venue_type": "preprint",
+   "harness_controlled": "n/a",
+   "varied_factor": "none"
+  },
+  "evidence_notes": {
+   "summary": "A conceptual survey whose value for RQ1 is that it names the attribution problem directly rather than measuring it: it argues that many of the largest reliability gains do not come from changing the base model at all but from changing the environment around it, and then observes that current evaluation cannot distinguish the two because a harness improvement surfaces only as a higher pass rate. Its §8.6 proposal is the most operational part for RQ2 - it asks for ablation studies that remove individual harness components, cross-model transfer tests that hold the harness constant while varying the base model, and long-horizon reliability metrics, plus five named quality dimensions (transferability, maintainability, recovery robustness, context efficiency, governance quality). It also supplies useful decomposition vocabulary for coding the corpus: memory transforms recall into retrieval, skills transform reconstruction into guided execution, protocols transform ad hoc coordination into structured contracts, and the harness composes the three while mediating their competition for the same context budget. No new empirical results are reported, so it functions as framing and taxonomy rather than evidence.",
+   "quotes": [
+    {
+     "text": "Many of the largest gains in reliability do not come from changing the base model at all. They come from changing the environment around the model: adding persistent memory, organizing reusable skills, standardizing tool interfaces, constraining execution, instrumenting behavior, and routing work through explicit control logic",
+     "page": 5
+    },
+    {
+     "text": "A harness that improves reliability through better memory retrieval, more precise skill loading, or tighter execution governance will show up only as a higher pass rate, with no way to attribute the gain to its actual source.",
+     "page": 43
+    },
+    {
+     "text": "Concrete evaluation strategies might include ablation studies that remove individual harness components and measure the resulting degradation; cross-model transfer tests that hold the harness constant while varying the base model; and long-horizon reliability metrics that track success rates, cost, and drift over extended multi-session interactions rather than single-turn completions.",
+     "page": 43
+    }
+   ]
+  }
+ },
+ {
+  "order": 7,
+  "status": "read",
+  "read_order": 2,
+  "concepts": [
+   "harness-scaffold",
+   "failure-attribution",
+   "evaluation-validity",
+   "observability-tracing",
+   "reproducibility",
+   "metric-definition",
+   "cost-latency"
+  ],
+  "extraction": {
+   "study_type": "empirical-experiment",
+   "framework": "Layer-isolated evaluation: a no-LLM 'pure mode' test harness over a fixed taxonomy of architectural layers for a deployed per-tenant food-and-beverage ordering agent (built on PydanticAI)",
+   "agent_count": "single",
+   "topology": "single-agent (multi-turn ordering agent decomposed into L0 ontology/intent, L2 routing, L3 decomposition/escalation, L4 safety/knowledge/memory, plus cross-cutting slices)",
+   "benchmark": "Custom locked baseline of 238 cases across 23 assertion slices (225 pure cases + 13 legacy end-to-end); controlled single-layer regression injection over seven non-safety layers; cross-tenant replication on a second tenant (Starbucks SG, 16 authored cases)",
+   "baseline": "The frozen per-slice baseline at 100% pass rate, and the aggregate pure-suite pass rate used as the comparison metric that masking is measured against",
+   "key_results": "For the six local regressions the aggregate pure-suite pass-rate drops only 1.7-5.9 pp while the responsible slice drops 25-91 pp; the foundational ontology regression drops the aggregate 26.47 pp and its own slice 95.24 pp while tinting 9 slices. The injected layer's own slice is the single worst-hit in 5 of 7 injections and top-3 in 7 of 7, mean rank 1.29 of 19, with a near-flat off-diagonal (#moved <= 2 for three local regressions, exactly 1 for defense and OOD). All seven matching slices crater on the second tenant (-50 to -100 pp) and the local-vs-foundational signature replicates. Cost: 225 cases in 2.39s (~10ms/case, $0) vs a live multi-turn episode with median latency 73s (p95 192s). Two replayed organic regressions moved no slice and were correctly dropped as no-effect.",
+   "limitations": "Authors state that results come from one F&B ordering agent on one agent framework and that the taxonomy is theirs; that N=7 author-chosen faults cannot stand in for organic regressions; that cross-tenant replication validates localization but not masking magnitude; that the locked baseline makes the suite a drift detector rather than a correctness oracle, so a green slice certifies 'unchanged from the baselined contract' not 'correct'; that four slices are uncovered and two are low-N (N=1 and N=3) with near-binary rates; and that an earlier version of the experiment leaked order-store state across passes and invented off-diagonal coupling until a fresh runtime per pass was introduced.",
+   "venue_type": "preprint",
+   "harness_controlled": "yes",
+   "varied_factor": "scaffold"
+  },
+  "evidence_notes": {
+   "summary": "The most methodologically direct RQ1 evidence in this batch: the model is removed from the loop entirely (deterministic pure mode, no LLM call), so every measured delta is attributable to a single deliberately degraded scaffold layer while all other layers and the tenant catalog stay fixed. The headline finding is a masking result that speaks straight to the confounding question - a real single-layer scaffold regression moves an aggregate pass rate by only 1.7-5.9 pp, small enough to be dismissed as run-to-run noise, while the responsible layer's own assertion slice collapses by 25-91 pp. The authors are careful about what is by construction (a slice reacting to its own layer) versus what is measured (aggregate masking and off-diagonal flatness), and they distinguish a local signature, a tight single-slice crater, from a foundational one, a wide blast radius. For RQ2 the relevant caveat is scope: this holds the model constant and varies the scaffold, which is the mirror image of the usual comparison, and the authors concede that whether per-slice gates localize organic rather than author-chosen regressions is still unproven - both replayed real regressions fell outside coverage.",
+   "quotes": [
+    {
+     "text": "The effect we did not design in is masking—the aggregate pass-rate barely moves (−1.7 to −5.9 pp for six local regressions), small enough to vanish into dashboard noise, while the matching slice craters (−25 to −91 pp).",
+     "page": 1
+    },
+    {
+     "text": "Masking is the discovered phenomenon; clean separation is the property that makes the gate actionable.",
+     "page": 5
+    },
+    {
+     "text": "Results are from one F&B ordering agent on one agent framework (PydanticAI); the specific taxonomy is ours.",
+     "page": 10
+    }
+   ]
+  }
+ },
+ {
+  "order": 8,
+  "status": "read",
+  "read_order": 13,
+  "concepts": [
+   "harness-scaffold",
+   "confounding-attribution",
+   "evaluation-validity",
+   "benchmark-design",
+   "tool-schema",
+   "memory-context",
+   "governance-safety",
+   "reproducibility"
+  ],
+  "extraction": {
+   "study_type": "survey",
+   "framework": "Six-component agent harness definition H = (E, T, C, S, L, V): execution loop, tool registry, context manager, state store, lifecycle hooks, evaluation interface; plus a labeled-transition-system semantics for the execution loop",
+   "agent_count": "n/a",
+   "topology": "n/a",
+   "benchmark": null,
+   "baseline": null,
+   "key_results": "No new experiments; the survey aggregates secondary evidence. Reported third-party numbers include: an edit-tool-format change alone moving one model from 6.7% to 68.3% on coding benchmarks; LangChain DeepAgents 52.8% -> 66.5% on TerminalBench 2.0 (+26%) with harness-only changes; Meta-Harness reaching 76.4% on TerminalBench-2 (vs 74.7% hand-engineered) and +4.7 pp on IMO-level mathematics across five held-out models with no model change; SkillsBench attributing 16.2 percentage points of average improvement to harness-level skill management while 16 of 86 tasks show negative deltas; HAL's 21,730 rollouts across nine models and nine benchmarks eliminating common implementation bugs; SandboxEscapeBench container-escape rates of ~15-35%; a documented ~28% false-negative rate on OSWorld from environment-state management; and METR's finding that maintainer merge rates run 24.2 pp below SWE-bench automated grader scores, a gap widening by 9.6 pp per year. A completeness matrix rates 22 systems, with V (evaluation interface) and L (lifecycle hooks) most often partial or absent.",
+   "limitations": "Authors state the 22-system corpus excludes proprietary enterprise-internal harnesses and may undercount specialized domain harnesses; closed-source component ratings derive from documentation that may overstate deployed sophistication and should be read as 'at least partial'; the six-component decomposition is a theoretically proposed framework rather than an inductively derived taxonomy, with empirical validation (factor analysis, developer interviews, predictive testing) left as future work; the LTS formalization is proposed not established; several quantitative claims come from preprints flagged as pending peer review; and the survey is a snapshot as of March 2026.",
+   "venue_type": "preprint",
+   "harness_controlled": "n/a",
+   "varied_factor": "none"
+  },
+  "evidence_notes": {
+   "summary": "This survey is the closest thing in the batch to a literature-level statement of RQ1: it argues the harness is the binding constraint rather than the model, and it decomposes the evaluation-unreliability problem into three structurally distinct causes - environment drift, task specification ambiguity, and harness coupling - of which only the third is an infrastructure problem and the only one whose solution lies at the harness layer. Its formulation of harness coupling as a measurement validity problem, where reported performance is a property of the (agent, harness, environment) triplet while evaluation infrastructure implicitly assumes the harness is neutral, is exactly the confound RQ1 asks about. For RQ2 the most actionable contribution is the five benchmark design principles, beginning with a requirement that every published evaluation report the full harness configuration - execution loop type, context management strategy, tool registry contents and versions, state persistence mechanism, and active lifecycle hooks - alongside model and task specifications; the authors endorse the concurrent HARNESSCARD disclosure artifact and note an audit finding that a majority of harness-relevant papers do not report critical configuration details. Caveat for use as evidence: the paper runs no experiments of its own and several of its most quotable numbers come from unreviewed preprints that it explicitly flags as requiring corroboration.",
+   "quotes": [
+    {
+     "text": "harness coupling affects all benchmarks, because the measured performance is a property of the (agent, harness, environment) triplet rather than of the agent alone.",
+     "page": 52
+    },
+    {
+     "text": "Harness coupling is a measurement validity problem. The measured performance is a property of the (agent, harness, environment) triplet, not of the agent alone—yet evaluation infrastructure implicitly assumes that the harness is neutral.",
+     "page": 53
+    },
+    {
+     "text": "Every published evaluation result should report the complete harness configuration alongside model and task specifications",
+     "page": 53
+    }
+   ]
+  }
+ },
+ {
+  "order": 9,
+  "status": "read",
+  "read_order": 3,
+  "concepts": [
+   "benchmark-design",
+   "evaluation-validity",
+   "metric-definition",
+   "observability-tracing",
+   "failure-attribution",
+   "model-versus-scaffold"
+  ],
+  "extraction": {
+   "study_type": "framework-proposal",
+   "framework": "A modular benchmarking framework with four layers (configuration, execution, evaluation, analysis) and a four-part metric taxonomy (output quality, contextual grounding, conversational dynamics, safety), all scored by LLM-as-judge rubrics on a 0-3 ordinal scale",
+   "agent_count": "single",
+   "topology": "single-agent (three compared variants: RAG-only, tool-augmented, multi-step planning agent)",
+   "benchmark": "An anonymized synthetic benchmark referred to only as 'Dataset-A', described as derived from real-world agent workloads",
+   "baseline": "Variant-A (RAG-only) and an anonymized 'Baseline-Run' used as the comparison anchor",
+   "key_results": "Only ordinal 0-3 rubric scores are reported, with no sample sizes, variances, or significance tests. Variant-C (multi-step agent) scores 3 on accuracy, relevance, completeness, coherence, contextual precision and contextual recall, against Variant-A's 2/2/2/2/2/1; Variant-B (tool-augmented) improves completeness to 3 but drops conciseness from 3 to 2. Toxicity and bias score 3 (lower-is-better direction applied) for all three variants. The stated finding is that retrieval relevance stays high across variants while agent strategy determines whether the retrieved evidence is actually used.",
+   "limitations": "Authors state that rubric-based LLM-as-judge scoring can exhibit systematic effects such as verbosity sensitivity, position effects and style preference that shift scores away from user-perceived quality, requiring calibration and periodic audits; that trace-aware evaluation depends on consistent instrumentation and uniform trace schemas across agent implementations; and that reporting anonymized variants and normalized scores improves shareability but reduces interpretability compared with publicly reproducible benchmarks. Systematic ablations and effect sizes are deferred to future work.",
+   "venue_type": "journal",
+   "harness_controlled": "partial",
+   "varied_factor": "scaffold"
+  },
+  "evidence_notes": {
+   "summary": "This paper states the RQ1 problem crisply in its related-work section - agent performance is often tightly coupled to implementation details including prompt structure, tool schemas and orchestration logic, obscuring the relative contributions of models versus agents - and then proposes trace-first, component-decoupled benchmarking as the remedy. Its experimental design nominally holds the harness constant, fixing dataset, judge configuration, retrieval settings (top-k, chunk policy, metadata filters) and decoding parameters while varying one factor per experiment, which is the right shape for RQ2. In practice the control is only partial: the three compared variants differ simultaneously in orchestration, tool access and number of retrieval calls, so 'a single factor' is really a bundled scaffold change, and no model is reported. The evidential weight is low - no dataset identity, no n, no variance, no statistics, only anonymized 0-3 rubric scores, all judged by an LLM whose systematic biases the authors themselves flag as unmitigated. The framework's practical contribution to RQ2 is the argument that trace metrics are what make regressions attributable to retrieval settings, tool behaviour or orchestration logic rather than being treated as opaque model variance. The journal (IJRCAIT/IAEME) advertises a Google-Scholar-derived impact factor of 38.42, which should be weighed when grading this source.",
+   "quotes": [
+    {
+     "text": "In addition, agent performance is often tightly coupled to implementation details, including prompt structure, tool schemas, and orchestration logic, obscuring the relative contributions of models versus agents.",
+     "page": 5
+    },
+    {
+     "text": "We evaluate agent applications under a controlled benchmark configuration by holding the dataset and judge settings fixed while varying a single factor per experiment.",
+     "page": 12
+    },
+    {
+     "text": "Across variants, retrieval relevance remains strong, but agent strategy determines whether evidence is used effectively.",
+     "page": 13
+    }
+   ]
+  }
+ },
+ {
+  "order": 10,
+  "status": "read",
+  "read_order": 11,
+  "concepts": [
+   "harness-scaffold",
+   "retry-recovery",
+   "reflection-planning",
+   "confounding-attribution",
+   "evaluation-validity",
+   "reproducibility",
+   "observability-tracing"
+  ],
+  "extraction": {
+   "study_type": "position",
+   "framework": "Graph Harness (Structured Graph Harness, SGH): static immutable DAG plan, three-layer separation of planning/execution/recovery, and a three-level recovery escalation protocol (local retry -> local patch -> request replan)",
+   "agent_count": "single",
+   "topology": "multi-ready-unit DAG scheduler contrasted with the single-ready-unit Agent Loop; multi-agent decomposition discussed but out of scope",
+   "benchmark": null,
+   "baseline": "Agent Loop (ReAct-style), LangGraph, TDP, Plan-and-Act, GPTSwarm, DynTaskMAS, and classical workflow engines (Airflow, Luigi, Prefect); the proposed protocol defines seven comparison groups G0-G6",
+   "key_results": null,
+   "limitations": "Authors state the most significant limitation is the complete absence of experimental validation - the framework, principles and predictions are theoretical and the seven-group protocol has not been executed. They further list the static-DAG assumption (failing for exploratory, dynamically evolving and creative tasks), increased LLM error propagation from parallel dispatch, a cold-start planning problem, no complexity-theoretic guarantees, and an estimated 3,300-6,500 lines of implementation complexity versus ~300-500 for a simple Agent Loop. The 70-project survey is explicitly labelled not peer-reviewed, subjectively sampled, and based on manual GitHub inspection whose failure-loop classification different reviewers might dispute.",
+   "venue_type": "preprint",
+   "harness_controlled": "n/a",
+   "varied_factor": "none"
+  },
+  "evidence_notes": {
+   "summary": "A design proposal rather than a study, but it contributes the single most explicit attribution protocol in the batch: a seven-group ladder (naive loop, SOTA prompt-augmented loop, planner loop, structured loop, graph core, +patch, +replan) in which each adjacent pair isolates exactly one harness factor, yielding named gains G_plan, G_scaffold, G_graph, G_patch and G_replan that decompose total improvement. Crucially the design holds task set, base model, decoding parameters, tool set, timeout and token budget constant across all groups, and includes G0 specifically so that improvements attributed to graph structure cannot be confused with the benefit of richer task information - this is a direct methodological answer to RQ1's attribution problem, including an acknowledgment that the additive decomposition may conflate a plan-by-structure interaction term. It also names likely biases (task selection favouring parallelizable tasks, LLM non-determinism requiring 10 runs per task, tool contention, order effects). None of it has been run: the authors repeatedly state the predictions are not empirically validated and that G_graph > 0 remains an untested logical consequence of their assumptions, so this is a source for method design and vocabulary rather than for effect sizes.",
+   "quotes": [
+    {
+     "text": "Note: This section describes the design of an experimental protocol, not completed experimental results. We present this framework to (1) make our design choices falsifiable and (2) provide a rigorous protocol for future empirical evaluation.",
+     "page": 29
+    },
+    {
+     "text": "The most significant limitation is the lack of experimental validation.",
+     "page": 35
+    }
+   ]
+  }
+ },
+ {
+  "order": 11,
+  "status": "read",
+  "read_order": 12,
+  "concepts": [
+   "harness-scaffold",
+   "confounding-attribution",
+   "evaluation-validity",
+   "statistical-method",
+   "tool-schema",
+   "observability-tracing",
+   "governance-safety",
+   "model-versus-scaffold"
+  ],
+  "extraction": {
+   "study_type": "framework-proposal",
+   "framework": "Cognitive Impedance Matching Theory (CIMT): an observable-only, no-meta compiler theory in which an 'affordance compiler' transforms a raw task world and raw infrastructure into an executable affordance field for a fixed model-policy",
+   "agent_count": "single",
+   "topology": "single-agent (fixed model-policy operating through a compiled affordance field of typed handles, validators, repair operators, authority scopes and receipts)",
+   "benchmark": null,
+   "baseline": "A baseline compiler C0 compared against a candidate compiler C1 under a protocol-conformant paired experiment with committed sampling, world snapshots, randomization, interference controls and reducers",
+   "key_results": null,
+   "limitations": "The authors prove a no-universal-compiler impossibility result (Theorem 28): for any non-identity compiler that changes a target-relevant observation, action menu, summary, validator, macro-operation, authority surface or target binding, there exists a task distribution and fixed model-policy for which it does not improve and may strictly reduce target-channel capability. They further state the theory is model-policy-relative, that a compiler-level transfer claim between model-policies requires bounds on handle selection, argument formation, repair behaviour, validator interpretation, context sensitivity, policy compliance and cost, and that impedance dominance is diagnostic and explicitly not sufficient for promotion. Failure modes enumerated include affordance clutter, target-channel circularity, holdout leakage, proxy Goodhart, summary loss and model-specific overfitting.",
+   "venue_type": "preprint",
+   "harness_controlled": "n/a",
+   "varied_factor": "none"
+  },
+  "evidence_notes": {
+   "summary": "A formal theory paper that treats RQ1 as its central object: it defines world-side capability amplification, the claim that a fixed model-policy's realized capability depends strongly on how the world is surfaced to it, and then builds the machinery required to certify that claim without a privileged evaluator. The most directly useful contribution for RQ2 is its definition of what holding the harness constant actually requires - a paired compiler comparison must fix model weights, system prompts outside the compiler-controlled view, decoding parameters, tool-call syntax, context limits, randomness policy and service commitments, either identically or replay-equivalently across both arms, and anything unmonitored becomes declared model-policy debt. It also formalizes the target-firewall condition that prevents a candidate harness from defining its own success criterion, the search-correction requirement for comparing K candidate harnesses, and a component-attribution theorem that explicitly refuses to infer which compiler pass caused an improvement without separate observable ablation certificates. No empirical study is reported: the two worked instantiations (a code-editing agent and a RAG pipeline) carry hypothetical numbers used to illustrate certificate arithmetic, not measurements. Note a metadata problem in the ledger record: the citation lists the RAG authors (Lewis, Perez, Piktus et al.) while the paper's stated author is K. Takahashi.",
+   "quotes": [
+    {
+     "text": "These systems suggest a general phenomenon: a fixed model-policy's realized capability is strongly affected by the form in which the world is presented to it.",
+     "page": 5
+    },
+    {
+     "text": "model weights, system prompts outside the compiler-controlled view, decoding parameters, tool-call syntax, context limits, randomness policy, and service commitments are identical or replay-equivalent across baseline and candidate trials.",
+     "page": 10
+    },
+    {
+     "text": "A model's unobserved competence is not identical to a system's target-channel capability. Poorly surfaced worlds produce unrecorded dependencies, ambiguous handles, delayed validation, irreversible errors, and context overload. A better compiled world can reduce these obstacles without changing model weights or the fixed model-policy.",
+     "page": 67
+    }
+   ]
+  }
+ },
+ {
+  "order": 12,
+  "status": "read",
+  "read_order": 9,
+  "concepts": [
+   "memory-context",
+   "topology-comparison",
+   "failure-attribution",
+   "prompt-sensitivity",
+   "evaluation-validity",
+   "tool-schema",
+   "benchmark-design"
+  ],
+  "extraction": {
+   "study_type": "empirical-experiment",
+   "framework": "Adaptive orchestration architecture with a dual cross-episode memory layer: per-agent playbooks (capability/limitation/strategy bullets with confirmation and contradiction counts) plus reusable delegation blueprints",
+   "agent_count": "multi",
+   "topology": "orchestrator plus black-box specialist agents drawn from a 50-agent pool (8 real OfficeBench agents and 42 synthetic distractors); ReAct-style orchestrator control loop with optional planning",
+   "benchmark": "OfficeBench (300 tasks across three difficulty tiers, split 40/60 warm-up/evaluation over three seeds), extended by the authors with gold agent annotations",
+   "baseline": "BL-Lower (stateless orchestrator, no cross-episode memory, no runtime judge) and BL-Upper (stateless plus an in-episode judge implemented with a stronger model giving one round of corrective feedback)",
+   "key_results": "Under rich Agent Cards the adaptive system reaches 41.2% overall vs BL-Lower 28.9% and BL-Upper 43.0%, using 46% fewer orchestrator turns (3.07 vs 5.70). Under sparse cards it reaches 47.4% vs BL-Upper 26.5% and BL-Lower 21.9%. Retrieval recall rises 0.755 -> 0.953 (rich) and 0.640 -> 0.881 (sparse) while precision falls 0.334 -> 0.275 and 0.243 -> 0.198. Error decomposition shows the bottleneck moving rather than disappearing: retrieval misses fall 39.3% -> 9.0% while selection misses rise 6.1% -> 22.9%. Playbook inflation is quantified: generalist agents shell and llm appear in 63.6% and 75.1% of retrieval calls (vs 12.7% and 5.2% for BL-Lower), shell is delegated in 42.0% of non-gold episodes (vs 17.2%), and episodes delegating to shell/llm succeed 24.3% of the time vs 41.6% without, whereas BL-Lower shows no such gap (28.9% vs 29.1%). A dynamic-pool phase test shows memory integrating three new agents and pruning obsolete capability bullets without supervision.",
+   "limitations": "Authors state that results rely on a single benchmark whose highly regular task structure may exaggerate blueprint effects; that the orchestrator uses a relatively small backbone model so the Tier 3 regression might shrink with a stronger one; that the curation signal comes from an LLM judge (68-81% agreement with environment-based evaluation, skewed toward false positives, so failed trajectories can enter the blueprint store); and that all agents are synthetic and registered inside a benchmark environment rather than an open ecosystem of third-party services.",
+   "venue_type": "conference",
+   "harness_controlled": "partial",
+   "varied_factor": "memory"
+  },
+  "evidence_notes": {
+   "summary": "A careful ablation of one harness component - cross-episode memory - with the orchestrator backbone, agent pool, benchmark splits and retrieval thresholds fixed and memory frozen during the held-out evaluation phase, so the measured effect is not contaminated by continued curation. The strongest RQ1 contribution is the retrieval-to-execution error decomposition, which shows that a harness improvement can be almost entirely illusory when read through a single metric: memory nearly eliminates retrieval misses (39.3% -> 9.0%) while converting them into selection misses (6.1% -> 22.9%), so recall and AllGold improve dramatically without a proportional gain in task success. The playbook-inflation analysis is a second attribution result - outcome-level curation credits every agent delegated to in a successful episode, so generalist agents accumulate evidence by co-occurrence, inflate their retrieval scores and then get chosen wrongly - and the authors conclude that agent-discovery mechanisms should be judged by end-to-end success and pipeline-level error decomposition rather than retrieval metrics alone. The control is only partial for RQ2 purposes because BL-Upper adds both a scaffold change and a stronger judge model, so that comparison confounds the two. Appendix E reproduces orchestrator, judge and curator system prompts verbatim; I treated those as data and ignored their instruction-like content.",
+   "quotes": [
+    {
+     "text": "All adaptation occurs through in-context learning at the orchestrator level, backed by an external memory layer. To isolate the effect of accumulated memory on task performance, our evaluation separates a warm-up phase, during which the full curation cycle is active, from a held-out evaluation phase in which memory is frozen.",
+     "page": 3
+    },
+    {
+     "text": "Under rich cards, the bottleneck shifts from retrieval to selection.Retrieval misses fall from 39.3% to 9.0%, but selection misses rise from 6.1% to 22.9%.",
+     "page": 6
+    },
+    {
+     "text": "Second, the orchestrator uses a relatively small backbone model, so the Tier 3 regression might shrink with a stronger model.",
+     "page": 8
+    }
+   ]
+  }
+ },
+ {
+  "order": 14,
+  "status": "read",
+  "read_order": 14,
+  "concepts": [
+   "harness-scaffold",
+   "tool-schema",
+   "retry-recovery",
+   "memory-context",
+   "evaluation-validity",
+   "confounding-attribution",
+   "observability-tracing",
+   "governance-safety"
+  ],
+  "extraction": {
+   "study_type": "survey",
+   "framework": "'Code as agent harness': a three-layer taxonomy of harness interface (code for reasoning, acting, environment modeling), harness mechanisms (planning, memory, tool use, the Plan-Execute-Verify control loop, agentic harness engineering) and scaling the harness (multi-agent orchestration over shared code artifacts)",
+   "agent_count": "n/a",
+   "topology": "n/a",
+   "benchmark": null,
+   "baseline": null,
+   "key_results": null,
+   "limitations": "The authors' open-problems section is essentially a list of stated limitations for the field: harness-level evaluation and oracle adequacy (end-task metrics conflate model, harness, tools, feedback and environment difficulty); semantic verification beyond executable feedback (execution feedback can create false confidence when the oracle is weak); self-evolving harnesses without regression; transactional shared program state and semantic conflict resolution across agents; human-in-the-loop safety and accountability as durable harness state; and multimodal code-harness systems. They note that planning gains in particular may not reflect genuine agent-level improvement when execution signals are weak or revision budgets unrealistic.",
+   "venue_type": "preprint",
+   "harness_controlled": "n/a",
+   "varied_factor": "none"
+  },
+  "evidence_notes": {
+   "summary": "A large survey that reframes code as the operational substrate of the harness rather than as model output, and whose §5.2.1 is a direct statement of RQ1's confound: once an LLM is embedded in a code-agent harness, performance depends on which repository files are retrieved, which tools are exposed, how many retries are allowed, whether tests can be executed, how failures are summarized and what verifier decides success, so end-task success metrics conflate base-model capability, harness quality, tool reliability, feedback informativeness and environment difficulty. It proposes six harness-level metric dimensions - trajectory efficiency, verification strength, recovery ability, state consistency, safety compliance and replayability - as the complement to accuracy, and identifies oracle adequacy as the central bottleneck. It also makes the same point specifically about the planning literature, warning that reported planning gains may not survive once execution environments, feedback quality, tool access and trajectory budgets are accounted for. For RQ2 it usefully separates model-internal capabilities, system-provided harness infrastructure and agent-initiated code artifacts as three distinct sources of behaviour, and it catalogues the recent line of work that treats the harness itself as an optimization object (AutoHarness, Meta-Harness, observability-driven harness engineering, Live-SWE-agent). No new experiments are reported.",
+   "quotes": [
+    {
+     "text": "Many current conclusions about the benefits of planning depend heavily on the surrounding execution conditions, including execution environments, feedback quality, tool access, trajectory budgets, and whether the benchmark truly stresses long-range dependency management rather than localized patch generation.",
+     "page": 21
+    },
+    {
+     "text": "In this setting, performance is no longer determined by the base model alone, but also by the surrounding runtime: which repository files are retrieved, which tools are exposed, how many retries are allowed, whether the agent can execute tests, how failures are summarized, and what verifier decides success.",
+     "page": 62
+    },
+    {
+     "text": "Such metrics conflate the capabilities of the base model, the quality of the harness, the reliability of tools, the informativeness of feedback, and the difficulty of the environment.",
+     "page": 62
+    }
+   ]
+  }
+ },
+ {
+  "order": 15,
+  "status": "read",
+  "read_order": 6,
+  "concepts": [
+   "harness-scaffold",
+   "confounding-attribution",
+   "model-versus-scaffold",
+   "statistical-method",
+   "evaluation-validity",
+   "reproducibility",
+   "retry-recovery",
+   "tool-schema"
+  ],
+  "extraction": {
+   "study_type": "position",
+   "framework": "Binding Constraint Thesis plus a harness-aware evaluation framework: the ETCSOVG Harness Card (Execution, Tool, Context, Scheduling, Observability, Verification, Governance), a variance decomposition protocol, and three trajectory-level metrics (Recovery Rate, Context Retention, Control Lag)",
+   "agent_count": "single",
+   "topology": "single-agent, with three harness configurations H1 (minimal/open-loop), H2 (compressed context, minimal tool schema, structured retry with backoff), H3 (H2 plus per-step self-checking, drift checks, anomaly detection, full output validation, checkpoint rollback)",
+   "benchmark": "SWE-bench Verified 'subset100' (100 tasks sampled with seed 42, stratified by difficulty label), two independent runs per cell; supplemented by observational leaderboard evidence from SWE-bench Pro, Terminal-Bench 2, SWE-bench Verified Mini (HAL) and third-party monitoring",
+   "baseline": "H1 as the minimal open-loop harness baseline, and within-harness cross-model comparison as the model-variance baseline",
+   "key_results": "Controlled 3x3 factorial (GPT-5.4, Kimi K2.6, GLM-5.1 x H1/H2/H3) with shared task order, Docker environment, SWE-bench evaluation pipeline, 50-step budget and 120s per-step timeout: average harness-induced variance 18.48 pp^2 vs average model-induced variance 2.37 pp^2, a ratio of 7.80x; run-level ratios 8.72x and 6.76x. Changing the harness moves GLM-5.1 by 13.0 pp and GPT-5.4 and Kimi K2.6 by 8.5 pp each, while changing the model within a fixed harness moves scores by only 3.0, 2.5 and 5.0 pp. Six ranking reversals occur across the nine model-pair/harness-pair comparisons. Observational evidence: SEAL -> Claude Code +9.5 pp for a fixed Claude Opus 4.5 on SWE-bench Pro; a WarpGrep search subagent adds 2.1-2.2 pp and flips a model ordering; HAL reports cross-scaffold gaps of 34 pp and nearly 48 pp on SWE-bench Verified Mini; independent monitoring reports 11-15 pp of scaffold-only variation on SWE-bench Verified. Resource accounting: $215.79 and 261.1M tokens across the grid.",
+   "limitations": "Authors state they do not claim the 7.80x ratio is universal; the thesis is scoped to long-horizon tasks with comparable frontier models and explicitly excludes short-horizon tasks and large capability gaps; the three trajectory-level metrics are specified as future reporting requirements and are not estimated on the grid; the perturbation stress test in Appendix C is recorded as a planned protocol that has not been run; the operational definition of 'comparable frontier models' is informal and anchored to leaderboard proximity that is itself harness-confounded; harness diversity lacks a principled distance measure so HV depends on the sampling distribution over harnesses; and the attribution from trajectory metrics to harness layers is described as descriptive co-movement, not causal.",
+   "venue_type": "preprint",
+   "harness_controlled": "yes",
+   "varied_factor": "scaffold"
+  },
+  "evidence_notes": {
+   "summary": "This is the single most on-target paper in the batch for both research questions. It formalizes RQ1 as a variance decomposition - total benchmark variance splits into model variance, harness variance and a model-by-harness interaction term - and then measures it in a controlled 3x3 factorial on SWE-bench Verified with everything else pinned (same tasks and order, same Docker runtime and evaluation pipeline, same 50-step and 120s budgets, same default API settings, two runs per cell). The result is that harness-induced variance exceeds model-induced variance by 7.80x on this distribution, that a harness change moves a fixed model by 8.5-13.0 pp while a model change within a fixed harness moves scores by 2.5-5.0 pp, and that six of nine model-pair comparisons reverse ordering depending on which harness is used - which is the interaction term made visible. For RQ2 it answers directly: it argues that valid cross-model comparison requires either a locked-harness protocol or a factorial protocol reporting variance components, and that leaderboard comparisons should be treated as incomplete and potentially misleading until the harness is disclosed. It also surveys what happens when the harness is not held constant, collecting fixed-model scaffold-only swings of 9.5, 13.7, 14-16, and up to ~48 percentage points. The authors are appropriately restrained about generality, disclaiming universality of the ratio and flagging that their trajectory-level diagnostics were never estimated on the grid.",
+   "quotes": [
+    {
+     "text": "Every benchmark score is jointly produced by a model and a harness, but the harness is rarely disclosed and almost never held constant across comparisons.",
+     "page": 1
+    },
+    {
+     "text": "Average HV is 18.48 pp2 versus average MV of 2.37 pp2, a ratio of 7.80×.",
+     "page": 7
+    },
+    {
+     "text": "We do not claim that the 7.80× ratio is universal. The grid demonstrates that harness variance can dominate model variance under controlled conditions and that the decomposition protocol produces interpretable estimates on a realistic task distribution.",
+     "page": 7
+    }
+   ]
+  }
+ }
+]

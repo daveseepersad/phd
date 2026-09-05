@@ -1,0 +1,986 @@
+[[page 1]]
+RCAgentBench: An Agent-Oriented Benchmark for
+Multimodal Root Cause Analysis in Microservices
+Hengyue Jiang 1, Zexin Wang 2*, Xiaohui Nie 2, Di Gao 1, Jingjing Li 2, Changhua Pei 1 2
+1Hangzhou Institute for Advanced Study, University of Chinese Academy of Sciences
+2Computer Network Information Center, Chinese Academy of Sciences
+Abstract—Root Cause Analysis (RCA) is pivotal for ensur-
+ing the reliability of microservice systems. Traditional RCA
+approaches are often limited by the scarcity of labeled data
+and insufficient interpretability. Recently, Large Language Model
+(LLM)-based agents have emerged as a promising direction
+for automated RCA, thanks to their broad knowledge, strong
+reasoning, and orchestration capabilities. However, the absence
+of diverse labeled datasets, standardized tools, and systematic
+assessment of agent patterns hinders the rigorous evaluation of
+RCA agents. To address these issues, we propose RCAgentBench,
+the first agent-oriented benchmark tailored for microservice
+RCA. First, we construct a multimodal RCA dataset, covering
+metrics, logs, and traces, and manually annotate each case with
+reasoning keywords to enable comprehensive evaluation of agent
+performance. Second, we introduce standardized tools and agent
+patterns to support reproducible evaluation and decouple tool
+capabilities from agent reasoning power. Finally, we explore dif-
+ferent experimental settings across a diverse spectrum of LLMs,
+spanning from small-scale open-source models to frontier closed-
+source models, and provide actionable insights for the future
+design of RCA agents. All evaluation framework code has been
+made publicly available at: https://github.com/CSTCloudOps/
+RCAgentBench.
+Index Terms —Microservice System, Root Cause Analysis,
+LLM-based Agent, RCA Agent
+I. I NTRODUCTION
+The transition from monolithic architectures to microser-
+vices has become the standard for modern software engi-
+neering, driven by the need for scalability and fault isola-
+tion [1] [2]. However, as the scale of services grows, system
+complexity rises dramatically, making the microservices sys-
+tem prone to failures caused by misconfigurations, resource
+contention, and hardware faults [3] [4]. In this context, Root
+Cause Analysis (RCA) is critical for minimizing Time-To-
+Mitigation (TTM) and ensuring system reliability [5].
+Traditional RCA approaches generally fall into event-based
+or sequence-based categories [6]. These methods typically
+employ graph-based models, such as Graph Neural Networks
+(GNNs) [7] or Graph Attention Networks (GATs) [8], to
+infer causal relationships from multimodal observability data.
+Despite their effectiveness in specific scenarios, they suffer
+from two major limitations: heavy reliance on large-scale
+labeled data, which is scarce in production, and a “black-box”
+nature that provides a final prediction without an interpretable
+reasoning process.
+*Corresponding authors.
+Recent advances in Large Language Model (LLM)-based
+agents offer a paradigm shift [9]. With inherent reasoning
+capabilities and the ability to orchestrate external tools, agents
+can perform complex, step-by-step diagnostics similar to hu-
+man site reliability engineers (SREs). However, while numer-
+ous studies have proposed specific RCA agent architectures,
+the field lacks a standardized framework to rigorously evaluate
+and compare these agents. Constructing a benchmark that is
+truly “Agent-Oriented” faces three substantial challenges:
+• Lack of Reasoning-Oriented RCA Data: Existing RCA
+datasets focus primarily on the final classification of
+fault location and type. Relying solely on accuracy is
+misleading when evaluating agent performance. The ra-
+tionality of the diagnostic path is paramount. There is a
+dearth of datasets annotated with “reasoning traces” or
+key observations required to evaluate the logic integrity
+of an agent.
+• Absence of Standardized, Decoupled Tools: The per-
+formance of an RCA agent is heavily coupled with the
+diagnostic tools it accesses. Current approaches often mix
+powerful tools with specific agent designs, making it
+impossible to determine whether success stems from the
+agent’s intelligence or the tool’s capability. A fair bench-
+mark requires standardized, multimodal tool interfaces
+that decouple tool performance from model reasoning.
+• Lack of Systematic Evaluation of Agent Pattern:
+Agent pattern, how the LLM plans, acts, and reflects, sig-
+nificantly influences performance. Existing benchmarks
+(e.g., OpenRCA [10]) primarily compare LLM backbones
+within a single pattern (usually ReAct), neglecting the
+interaction effects between diverse agent patterns (e.g.,
+Multi-Agent vs. Single-Agent) and model scales.
+To address these challenges, we propose RCAgentBench,
+the first agent-oriented benchmark tailored for microservice
+RCA. First, we construct a high-fidelity benchmark envi-
+ronment where authentic faults are injected into a realistic
+microservice system. Unlike previous datasets that only label
+the final root cause, we engaged expert SREs to meticulously
+annotate the entire diagnostic trajectory: from initial symptom
+detection to final localization. These annotations encompass
+all necessary intermediate information and reasoning logic
+required to bridge the gap between symptoms and root causes.
+This comprehensive annotation strategy enables a granular
+evaluation of an agent’s diagnostic process, ensuring that the979-8-3195-1703-6/26/$31.00 ©2026 IEEE
+2026 IEEE/ACM International Symposium on Quality of Service (IWQoS) | 979-8-3195-1703-6/26/$31.00 ©2026 IEEE | DOI: 10.1109/IWQoS70441.2026.11661026
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:30:53 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 2]]
+Fig. 1: Illustration of RCA multimodal observability data.
+assessment reflects true reasoning capabilities rather than mere
+pattern matching.
+Second, we implement standardized diagnostic tools, in-
+cluding time-series anomaly detection for metrics, pattern
+matching for logs, and span analysis for traces. These tools
+are carefully selected to mirror the high-frequency utilities
+used by real-world SREs in production environments, making
+RCAgentBench the first benchmark for RCA agents explicitly
+equipped with standardized agent-invokable tools. Finally, to
+rigorously dissect the factors contributing to RCA success,
+we conduct extensive controlled experiments. We evaluate 8
+distinct agent frameworks (spanning single-agent and multi-
+agent paradigms [11]) across 3 representative models, and
+further test 11 mainstream LLMs under a mostly used agent
+framework. Through this control-variable approach, we quan-
+titatively decouple and analyze the specific contributions of
+agent architectureversusintrinsic model capabilityto RCA
+performance.
+In summary, the main contributions of this paper are as
+follows:
+•RCAgentBench.We construct a high-fidelity multimodal
+dataset derived from a realistic microservice environment,
+providing the “reasoning traces” necessary to evaluate
+the logic integrity of agents. The dataset has been
+made open-source at: https://github.com/CSTCloudOps/
+RCAgentDataset.
+•Evaluation Paradigm.We introduce a novel evaluation
+framework that decouples tool capabilities from agent
+reasoning power. All evaluation framework code is pub-
+licly available.
+•Actionable Insights.Through rigorous ablation studies,
+we derive critical insights regarding the impact of model
+capacity, tool quality, and auxiliary context, providing
+principled guidance for the future RCA agents design.
+The remainder of this paper is organized as follows: Section
+II introduces the background and task formulation. Section
+III details the construction of the agent-oriented RCA dataset.
+Section IV presents the standardized tools and diverse agent
+patterns. Section V describes the experimental settings and
+evaluation metrics. Section VI analyzes the experimental re-
+sults and discusses key findings. Section VII provides case
+studies, followed by a discussion in Section VIII and related
+work in Section IX. Finally, Section X concludes the paper.
+II. BACKGROUND
+With the rapid development of microservice systems, mod-
+ern software architectures now consist of a large number
+of highly interdependent components. As system scale and
+structural complexity increase, identifying the root cause of
+failures becomes significantly more challenging. Effective root
+cause analysis therefore relies on extensive observability data
+to gain deep insights into system runtime behavior.
+A. RCA Task F ormulation
+A root cause analysis task typically specifies thestart
+timeandend timeof a failure event. InRCAgentBench,
+we formulate the task input as a concise natural language
+description and monitoring data:
+1)Natural Language Query:A natural language query
+containing theUUIDof the fault case and the anomaly
+time window. For example:“The system experienced
+an anomaly from2025-06-13T14:11:24Zto2025-06-
+13T14:21:24Z. Please identify the root cause. ”
+2)Monitoring Data:In addition to this description, the
+agent is granted access to multimodal observability data
+from the microservice system, which will be detailed in
+Section II-B. The agent is not provided with pre-filtered
+root cause information. Instead, it must invoke tools
+to retrieve relevant metrics, logs, and traces from the
+monitoring dataset based on the specified time window.
+Given the input, the RCA agent is required to produce a
+structuredJSONoutput consisting of three key elements:com-
+ponent,reason, andreasoning trace. Thecomponentspecifies
+the faulty service or module, thereasondescribes the under-
+lying cause of the failure, and thereasoning traceprovides
+an interpretable explanation of the diagnostic process.
+B. RCA Multimodal Data
+Observability data in microservice systems generally com-
+prise three modalities: metrics, logs, and traces [12](Fig. 1).
+a) Metrics:Metrics are time-series data collected at
+discrete intervals during system execution. They typically
+include system-level measurements and key performance indi-
+cators (KPIs), such as CPU utilization, memory consumption,
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:30:53 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 3]]
+request latency, and error rates. Metrics provide a quantita-
+tive overview of system performance and are often used for
+anomaly detection.
+b) Logs:Logs are textual records generated by service
+components, including error logs, access logs, and debug
+logs. Through log collection and processing pipelines, these
+records are aggregated, parsed, and transformed into structured
+formats to facilitate querying and analysis. Logs often contain
+fine-grained contextual information about system events and
+configuration states.
+c) Traces:Traces capture end-to-end execution infor-
+mation across distributed services. They record sequences of
+related events and system state transitions, such as function
+calls, inter-service requests, CPU execution steps, memory
+access, and I/O operations. Traces provide detailed insights
+into the causal relationships and performance characteristics
+of distributed workflows.
+Many existing RCA approaches only relate to one or two
+data modalities, which may result in incomplete diagnostic
+information. For instance, network latency anomalies are typ-
+ically reflected in metrics and traces but may not appear ex-
+plicitly in logs, whereas configuration errors are often revealed
+primarily through log messages. Due to the heterogeneous
+manifestations of faults across different modalities [13], mul-
+timodal fusion is essential for constructing a comprehensive
+fault profile through complementary information integration.
+This requirement introduces new challenges for RCA algo-
+rithms.
+C. RCA Agent
+With strong generalization ability and interpretability [9],
+LLMs appeared in RCA tasks but lack inherent capabilities
+for directly parsing and reasoning over multimodal observ-
+ability data. To address this limitation, recent research has
+increasingly adopted agent paradigms. By leveraging external
+tools to access and interpret system observability data, agents
+can integrate heterogeneous modalities and perform more
+automated and intelligent RCA [14].
+Nevertheless, prior studies have largely focused on im-
+proving individual agent architectures without systematically
+comparing different agent design patterns [15] [16]. To better
+understand the limitations and capabilities of RCA agent, we
+adopt a principled approach by formulating a set of scientific
+research questions for empirical evaluation. We then introduce
+theRCAgentBenchframework to rigorously test.
+III. REASONING-ORIENTEDRCAGENTDATASET
+To systematically evaluate agents performance in RCA
+within microservice environments, we collect multimodal fault
+data from aHipsterShopvirtual microservice system. The
+system is deployed with 10 core microservices, each consisting
+of 3 Pods dynamically distributed across 8 virtual machines, as
+illustrated in Fig. 2. In addition, the TiDB distributed database
+is deployed on the same VMs, including its three primary
+components:tidb-tidb,tidb-pd, andtidb-tikv.
+Fig. 2: Architecture of the HipsterShop microservice system.
+A. Diverse Fault Levels
+To simulate diverse fault scenarios, we employChaos-Mesh
+to inject faults at following three hierarchical levels:
+•Service-levelsimultaneously affect all three Pods under
+a given service, simulating configuration errors or broad
+network issues.
+•Node-levelimpact the underlying infrastructure, affecting
+all pods residing on the target VM.
+•Pod-leveltarget a single specific Pod, simulating
+instance-specific failures like JVM exceptions.
+The dataset covers diverse failure types, categorized by
+their symptoms and root causes. Table I summarizes the fault
+taxonomy, detailing fault types, levels, andprimaryobserved
+manifestation modalities across metrics, traces, and logs.
+TABLE I: Taxonomy of Faults
+Fault Category Fault Type Injection Level Manifestation Modalities
+network attack
+network delayService Metrics, Traces
+network lossService Metrics, Logs, Traces
+network corruptService Metrics, Logs, Traces
+stress test cpu stressPod, Service Metrics
+memory stressPod, Service Metrics, Logs
+jvm fault
+jvm cpuPod, Service Metrics, Logs
+jvm gcPod, Service Metrics, Logs
+jvm exceptionPod, Service Metrics, Logs
+jvm latencyPod, Service Metrics, Logs, Traces
+pod fault pod failurePod Metrics, Logs, Traces
+pod killPod Metrics, Traces
+node fault
+node cpu stressNode Metrics
+node memory stressNode Metrics
+node disk fillNode Metrics
+io fault io faultPod Metrics, Traces
+dns fault dns errorPod, Service Metrics, Logs
+misconfiguration target port misconfigService Metrics, Logs
+erroneous change code errorService Metrics, Logs, Traces
+For metric collection, Prometheus is deployed to gather
+architecture-level metrics, including standardized pod-level
+and node-level indicators independent of business. Log data
+are collected via Elasticsearch, and distributed tracing data
+are captured using Jaeger. Each trace represents a complete
+call chain composed of multiple spans, where each span
+corresponds to an individual service invocation.
+B. Diverse Faults Labels
+We collected 400 fault cases in total. To evaluate the
+agent’s reasoning, we provide a structured ground truth file.
+Each entry contains field name as shown in Table II. For
+each case, we adopt rigorousmanualkeywords annotation
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:30:53 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 4]]
+Fig. 3: Overview of Agent Patterns. RCAgentBench systematically incorporates five classical single-agent baselines and three
+collaborative multi-agent configurations designed for RCA.
+TABLE II: Schema Definition of the Dataset Ground Truth
+Field Name Description
+uuidUnique identifier for the fault case.
+start_timeUTC timestamp indicating the start of the fault.
+end_timeUTC timestamp indicating the end of the fault.
+fault_categoryHigh-level fault type (e.g., Network).
+fault_typeSpecific fault type (e.g., network delay).
+instance_typeFault level: Node, Service, or Pod.
+serviceThe microservice to which the instance belongs.
+instanceThe specific target object where the fault is injected.
+sourceSource of network faults.
+destinationDestination of network faults.
+key_observations Manual keywords annotation of symptoms including
+metrics, logs, and traces.
+key_metricsCritical metric names associated with the root cause.
+fault_descriptionFault description for TA evaluation.
+inkey_observationsto make for more agent-oriented
+evaluation and ensure fairness, avoid potential bias (e.g., false
+positives or inherent deviations) that may occur introduced by
+automated machine learning or deep learning tools.
+With these detail and precise label information, our dataset
+is the first one to be capable of evaluating agent reasoning
+ability in RCA tasks. We can evaluate RCA agent performance
+based on reasoning process with more fine-grained metrics
+instead of only relying on fault root cause alignment.
+IV. AGENTPATTERNS ANDTOOLS
+In this section, we present the design principles and imple-
+mentation details ofRCAgentBench.
+A. Agent Patterns
+To systematically evaluate the effectiveness of different
+agent paradigms in addressing RCA tasks,RCAgentBench
+standardizes five single-agent patterns and three multi-agent
+patterns, as illustrated in Fig. 3. These are representative
+patterns in modern agent systems.
+1) Single-Agent Patterns:We choose five classical single-
+agent pattern as our baselines.
+ReAct[17] adopts an iterative reasoning and acting frame-
+work. The agent repeatedly invokes multimodal diagnostic
+tools based on current observations and accumulated evidence
+until sufficient information is gathered to produce the answer.
+Building upon ReAct, theChain-of-Thought (CoT)[18]
+pattern incorporates step-by-step reasoning. The agent alter-
+nates between intermediate reasoning steps and tool invoca-
+tions, making its analytical process transparent and structured.
+TheReflection[19] pattern introduces a self-reflection
+phase. After forming an initial hypothesis, the agent re-
+examines the collected evidence, identifies potential gaps or
+inconsistencies, and considers alternative explanations before
+finalizing the diagnosis. This additional verification stage aims
+to enhance robustness and reduce premature conclusions.
+ThePlan-Executepattern separates planning and execution
+into two explicit stages. The agent first formulates a structured
+investigation plan based on the fault description, all tool
+information and subsequently executes each step through tool
+calls to synthesize the final root-cause result.
+TheWorkflow[20] pattern follows an event-driven, three-
+phase process: (1) understanding the problem and extracting
+the timeline of abnormal events, (2) collecting evidence via
+tool invocation, and (3) analyzing the collected information to
+generate the final diagnosis. This pattern emphasizes procedu-
+ral organization and task decomposition.
+2) Multi-Agent Patterns:To further explore collaborative
+mechanisms, we design three multi-agent configurations.
+RMAgent(Robust Multi-Agent) employs a four agents
+collaboration. TheDataCollectorgathers relevant evidence
+using standardized tools; theDiagnosticAgentcorrelates multi-
+source signals and proposes candidate root causes; theV al-
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:30:53 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 5]]
+idatorAgentverifies the diagnosis against the collected evi-
+dence; and theReviewerAgentensures output consistency and
+structural correctness before returning the finalJSONresult.
+This layered design aims to enhance reliability through role
+specialization and cross-verification.
+DJAgentadopts a streamlined two-stage agents coordina-
+tion. TheDataCollectorAgentfirst retrieves evidence through
+tool interactions, after which a dedicatedJudgeAgentsyn-
+thesizes the collected information, performs reasoning, and
+outputs the final root cause analysis.
+PDAgentalso follows a two-stage pipeline. ThePlannerA-
+gentgenerates a structured investigation plan based on the fault
+description, and theDiagnosticAgentsubsequently executes
+the plan using diagnostic tools to derive the final conclusion.
+Compared with DJAgent, PDAgent explicitly emphasizes plan-
+ning before evidence gathering.
+B. Standardized Tools
+To ensure fair and reproducible comparisons across different
+agent models, we design a set of standardized diagnostic
+tools, including a Metrics-based Tool, a Logs-based Tool, and
+a Traces-based Tool. Building these tools provides unified
+consistent detection logic across all agent patterns and helps
+decouple tool capabilities from agent reasoning abilities.
+a) Metrics-based Tool:The Metrics-based Tool performs
+anomaly detection based on dynamic baseline comparison.
+Given an anomaly time window defined by start and end
+timestamps, the tool uses the preceding 30 minutes as the
+default baseline period.
+By default, anomaly detection follows the classical3-sigma
+statistical rule. Specifically, the mean and standard deviation of
+the baseline data are computed, and any data point exceeding
+the range(µ±3σ)is labeled as anomalous. We adopt this rule-
+based method due to its computational efficiency, interpretabil-
+ity, and practical robustness in production environments.
+In addition, the tool supports a flexible plugin-based archi-
+tecture that enables alternative detection modes. For example,
+a threshold-based method can be applied when predefined met-
+ric thresholds are available, eliminating reliance on historical
+baselines. This modular design allows flexible combinations of
+detection strategies tailored to different metric characteristics,
+thereby balancing efficiency and accuracy.
+b) Logs-based Tool:The Logs-based Tool improves the
+signal-to-noise ratio of application logs through rule-based
+filtering and deduplication. It firstly loads all application logs
+within the specified time window. Using a predefined keyword
+list (e.g., “error”, “fail”, “exception”), the tool performs case-
+insensitive regular expression matching on the message field
+of each log entry.
+Subsequently, logs are grouped by pod name. For each
+pod, the tool extracts unique error messages and records the
+timestamp of their first occurrence. By eliminating repetitive
+log entries and highlighting distinct failure patterns, this design
+enables the agent to efficiently identify the primary fault types
+without being overwhelmed by redundant log information.
+c) Traces-based Tool:The Traces-based Tool adopts a
+baseline comparison approach based on aggregated tracing
+data, analyzing anomalies along two dimensions:latencyand
+request ratio.
+Instead of examining individual spans, the tool aggregates
+trace data by operation name and pod. It then computes the
+average latency and request count during both the anomaly
+and baseline periods. A latency anomaly is flagged if the
+average latency increases by more than 100% relative to the
+baseline. Similarly, a request ratio anomaly is identified if the
+proportion of a service’s requests relative to the total exceeds
+100% compared to the baseline period.
+This two dimensional detection strategy enables the identi-
+fication of both performance degradation (“becoming slow”)
+and traffic imbalance issues, such as those caused by retries or
+routing misconfigurations. By integrating latency and request
+signals, the tool provides a comprehensive view of trace
+anomalies relevant to RCA tasks.
+V. EXPERIMENTALSETTINGS
+A. Evaluation Metrics
+We adopt the following evaluation metrics to comprehen-
+sively assess agent performance on the RCA task.
+•Root Cause Location Accuracy (LA):This metric
+evaluates whether the agent correctly identifies the fault
+component. In microservice architectures, locating the
+service or node responsible for the anomaly accurately
+is a prerequisite for effective RCA. Therefore, LA serves
+as the primary evaluation metric.
+LA = Lc
+Lt
+whereL c denotes the number of correctly predicted
+components (i.e., cases where the predicted component
+matches the ground truth), andL t represents the total
+number of evaluation cases.
+LA-Top1 indicates that the agent’s highest-confidence
+prediction matches the ground truth. LA-Top5 measures
+whether the correct component appears within the top
+five predicted candidates, thereby reducing the influence
+of output randomness.
+•Root Cause Type Accuracy (TA):This metric measures
+whether the agent correctly identifies the fault type or
+underlying cause. It evaluates the ability to comprehend
+fault mechanisms beyond mere component localization.
+TA = Tc
+Tt
+whereT c denotes the cumulative type accuracy score
+across all cases andT t is the total number of evaluation
+cases.
+The scoring of each case is conducted in two stages. First,
+a keyword-matching procedure compares the predicted
+explanation with ground-truth keywords derived from an-
+notated metrics. If any keyword matches, full score is as-
+signed. Otherwise, semantic similarity is computed using
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:30:53 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 6]]
+a sentence embedding model (all-mpnet-base-v2),
+and the prediction is scored based on its normalized
+cosine similarity with the ground-truth fault description.
+Additionally, if the agent fails to correctly localize the
+faulty component, the score is halved, reflecting that
+diagnosis is less credible without correct localization.
+•Explainability:Effective RCA requires interpretable rea-
+soning that can be validated by engineers. We introduce
+Explainability to assess whether the agent’s reasoning
+trace sufficiently supports its predicted root cause.
+Explainability = Em
+Et
+whereE t denotes the total number of annotated key
+observations for a given case, andE m is the cumulative
+hit score across all key observations. For each key obser-
+vation, the hit score depends on its modality: metric-type
+observations yield a score of 1 if any associated keyword
+appears in the reasoning trace, while log- and trace-
+type observations are scored proportionally according to
+number of matched keywords in the observation.
+•Average Path Length (APL):Excessively long call
+chains may lead to increased response latency and inef-
+ficient problem-solving. To discourage redundant explo-
+ration, we introduce Average Path Length (APL), which
+measures the compactness of the agent’s tool invokes.
+APL =
+PN
+k=1Lk
+N
+whereL k denotes the number of diagnostic call steps
+taken in thek-th successfully located case, andNis the
+total number of evaluated cases.
+VI. EXPERIMENTRESULTS
+The primary objective of constructingRCAgentBenchis to
+systematically evaluate the performance of autonomous agents
+on RCA tasks under diverse experimental configurations. By
+providing a rigorous and reproducible evaluation framework,
+RCAgentBenchestablishes a standardized benchmark for the
+design of RCA agents. Through controlled experimentation
+and comprehensive ablation studies, this benchmark aims to
+offer principled insights into effective agent design, thereby
+facilitating sustained progress in automated RCA research.
+To comprehensively evaluate RCA agents, we organize
+our experimental analysis around the following four research
+questions:
+•RQ1: How do different agent patterns affect performance
+on RCA tasks?
+•RQ2: To what extent does the capability of the large
+language model influence RCA agent performance?
+•RQ3: How do different detection modalities impact agent
+performance in RCA tasks?
+•RQ4: What is the effect of incorporating additional con-
+textual information into prompts on RCA performance?
+A. RQ1: Agent Patterns
+Insight 1
+Smaller models benefit from simpler agent patterns,
+while larger models are more effective with more
+complex agent patterns.
+Table III presents the performance comparison across dif-
+ferent agent patterns and backbone models. For relatively
+small-scale models (e.g., Qwen3-8B), single-agent architec-
+tures consistently outperform multi-agent designs in terms of
+localization accuracy (LA Top-1, LA Top-5) and task accuracy
+(TA). Among the single-agent approaches, the ReAct pattern
+achieves the strongest overall performance.
+This trend can be attributed to the limited reasoning capacity
+of smaller models. Single-agent patterns typically involve
+fewer steps, as reflected in APL metric, thereby reducing
+prompt complexity and context length. In contrast, multi-agent
+architectures require coordination and intermediate reasoning
+exchanges, leading to longer contexts. Smaller LLMs are more
+susceptible to context fragmentation and information dilution
+(e.g., the “lost-in-the-middle” phenomenon), which degrades
+performance in complex reasoning pipelines. Consequently,
+simpler architectures are preferable when the backbone model
+only has constrained ability.
+However, this pattern shifts as model scale increases.
+For larger models such as Qwen3-32B and DeepSeek-
+V3 [21], multi-agent architectures exhibit substantial perfor-
+mance gains, particularly in LA Top-1 and LA Top-5 metrics.
+These models possess stronger long-context reasoning and
+memory integration capabilities, enabling them to effectively
+coordinate multi-step interactions across agents.
+Multi-agent systems consistently achieve higher explain-
+ability across scales. This stems from role specialization and
+perspective decomposition, encouraging sufficient reasoning
+traces and explicit justifications. This suggests a trade-off
+between precision and reasoning for smaller LLMs. While
+single-agent systems offer efficiency for smaller models, multi-
+agent designs provide superior interpretability and scalability.
+B. RQ2: LLM Scales
+Insight 2
+RCA agent performance appears to be tool−bounded
+rather than model−bounded.
+Table IV reports performance comparisons across models
+of varying parameter scales using the ReAct pattern as a uni-
+fied agent backbone. Surprisingly, we observe no monotonic
+performance improvement as model size increases. In several
+cases, smaller models (e.g., Qwen3-4B) achieve competitive or
+even superior localization accuracy compared to significantly
+larger counterparts (e.g., Qwen3-235B-A22B).
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:30:53 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 7]]
+TABLE III: Agent Patterns Performance Comparison Using Three Models as LLM Backbone
+Base Model Agent Type Agent Pattern LA Top-1 LA Top-5 TA Explainability APL
+Qwen3-8B
+Single-Agent
+ReAct38.75 58.25 59.3524.00 2.2775
+CoT 38.25 51.50 56.46 23.92 2.5300
+Reflection 28.00 52.50 55.83 16.94 1.5150
+Plan-Execute 30.25 48.50 55.75 17.13 1.9425
+Workflow 30.50 52.25 56.67 22.43 3.7850
+Multi-Agent
+RMAgent 22.50 32.25 49.08 40.59 12.3825
+DJAgent 18.50 35.00 50.00 40.30 12.3025
+PDAgent 22.00 39.25 54.2941.372.8775
+Qwen3-32B
+Single-Agent
+ReAct 38.00 46.50 55.00 22.80 3.9225
+CoT 39.50 42.75 53.56 25.36 4.3800
+Reflection 38.00 45.00 53.09 21.80 3.6525
+Plan-Execute 28.50 31.50 49.04 16.82 3.0225
+Workflow 39.25 53.25 57.49 29.78 6.6650
+Multi-Agent
+RMAgent 40.50 51.0056.76 34.726.4500
+DJAgent41.00 51.00 57.4934.23 6.7300
+PDAgent 36.75 42.50 53.36 30.02 6.7175
+DeepSeek-V3
+Single-Agent
+ReAct 39.00 44.00 52.79 27.22 5.1325
+CoT 41.50 47.50 54.35 32.14 6.0575
+Reflection 39.75 45.25 52.50 27.68 5.0125
+Plan-Execute 19.50 24.25 47.15 13.45 2.7625
+Workflow 31.25 48.50 55.04 26.27 6.7275
+Multi-Agent
+RMAgent 41.75 56.00 57.74 34.0612.1300
+DJAgent 39.75 51.75 56.12 33.28 13.9100
+PDAgent43.00 56.25 58.0532.57 10.1850
+Moreover, enabling or disabling “thinking mode” produces
+only marginal differences in performance. These results sug-
+gest that, within the RCA setting, raw parameter scale and
+advanced reasoning configurations do not constitute the pri-
+mary performance bottleneck.
+We further extend this comparison to large-scale and closed-
+source models (e.g., DeepSeek-V3 and GPT-4o mini). Their
+performance remains comparable to mid-scale open-source
+models under identical agent configurations. This finding
+indicates that RCA agent effectiveness is constrained less by
+the intrinsic reasoning power of the LLM and more by the
+quality of externally retrieved diagnostic information.
+In other words, RCA performance appears to be tool-
+bounded rather than model-bounded. When high-quality diag-
+nostic signals are provided by detection tools, even relatively
+small models can effectively integrate evidence and infer the
+correct root cause. This highlights the critical importance of
+tool design and information extraction quality in RCA tasks.
+C. RQ3: MultiModal Tools
+Insight 3
+Quality of tools matters more than quantity and high
+−signal, low−noise tools drive performance.
+We initially hypothesized that incorporating more detection
+modalities would monotonically improve RCA performance
+by providing richer evidence. However, the ablation results in
+Fig. 4 contradict this assumption to some extent.
+When using Qwen3-8B with the ReAct architecture, remov-
+ing the Metrics-based tool leads to an improvement in LA Top-
+5 accuracy. This suggests that metrics data, although compre-
+hensive, may introduce substantial noise. Time-series metrics
+often reflect symptomatic anomalies without clearly indicating
+causal structure. Furthermore, the complex interdependencies
+among metrics can overwhelm smaller models, increasing the
+difficulty of precise localization.
+In contrast, logs and traces are more directly associated with
+specific components and execution paths. These modalities
+provide semantically dense and contextually grounded evi-
+dence, which enables faster and more precise fault localization
+than metrics. For models with limited context management
+capacity, such structured and component-level signals are
+easier to integrate.
+However, metrics remain essential for comprehensive RCA.
+Although removing the Metrics-based tool may improve lo-
+calization in certain settings, Explainability and overall task
+robustness decline. Metrics provide quantitative symptom ver-
+ification and causal corroboration, enabling agents to justify
+why a component is faulty rather than merely identifying it.
+Thus, while metrics may introduce complexity, they contribute
+significantly to diagnostic completeness.
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:30:53 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 8]]
+TABLE IV: Comparison of LLM Performance Using ReAct as Agent Backbone
+Scale Base Model Parameters LA Top-1 LA Top-5 TA Explainability APL
+Under 500B
+Qwen3-4B 4B 40.25 56.25 59.65 23.33 3.6400
+Qwen3-8B 8B 38.75 58.25 59.35 24.00 2.2775
+Qwen3-8B-None-Thinking 8B 40.00 53.25 58.73 33.03 7.6725
+Qwen3-14B 14B 41.00 52.75 57.46 27.51 4.4575
+Qwen3-32B 32B 38.00 46.50 55.00 22.80 3.9225
+Qwen3-32B-None-Thinking 32B 40.75 43.50 55.06 28.72 5.1725
+Qwen3-Next-80B-A3B-Thinking 80B 39.50 46.00 54.85 18.89 2.6900
+Qwen3-235B-A22B-Think-2507 235B 43.00 48.00 55.94 33.12 5.1975
+Over 500B
+DeepSeek-V3 671B 39.00 44.00 52.79 27.22 5.1325
+GPT-4o mini Closed 40.50 51.25 55.99 32.63 7.0000
+Claude Sonnet 4 Closed 16.00 43.50 56.28 24.18 5.9025
+TABLE V: Ablation Study on Agent Components Using Qwen3-8B as LLM Backbone
+Agent Pattern LA Top-1 LA Top-5 TA Explainability APL
+ReAct 38.7558.25 59.35 24.002.2775
+w/o System Information40.5050.50 56.69 22.23 3.0525
+w/o Fault Level Hierarchy 11.00 20.75 43.94 23.23 4.0225
+LA T op-1 LA T op-5 TA Explainability0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7Score (Normalized)
+ReAct w/o Metrics-based T ool w/o Logs-based T ool w/o Traces-based T ool
+(a) Using Qwen3-8B ReAct as
+Backbone.
+LA T op-1 LA T op-5 TA Explainability0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7Score (Normalized)
+RMAgent w/o Metrics-based T ool w/o Logs-based T ool w/o Traces-based T ool
+(b) Using DeepSeek-V3 RMA-
+gent as Backbone.
+LA T op-1 LA T op-5 TA Explainability0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7Score (Normalized)
+DJAgent w/o Metrics-based T ool w/o Logs-based T ool w/o Traces-based T ool
+(c) Using DeepSeek-V3 DJAgent
+as Backbone.
+LA T op-1 LA T op-5 TA Explainability0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7Score (Normalized)
+PDAgent w/o Metrics-based T ool w/o Logs-based T ool w/o Traces-based T ool
+(d) Using DeepSeek-V3 PDAgent
+as Backbone.
+Fig. 4: LA Accuracy of absence of detection tools.
+Interestingly, when employing a larger backbone model
+such as DeepSeek-V3, the negative impact of metrics di-
+minishes. Larger models demonstrate stronger capacity to
+process and synthesize complex time-series signals, mitigating
+the noise introduced by metrics. This suggests that modality
+effectiveness is conditional on model scale and reasoning
+capacity.
+Overall, our findings indicate that all modalities play com-
+plementary roles in RCA. Logs and traces support efficient
+localization, whereas metrics enhance causal validation and
+interpretability.
+D. RQ4: Additional Information
+Insight 4
+System information and fault level hierarchy hints
+have vital instruction significance for RCA agent.
+Table V demonstrates that removing Fault Level Hierarchy
+information results in substantial performance degradation,
+particularly in localization accuracy. In microservices architec-
+tures, cascading failures are common and a pod-level malfunc-
+tion may also trigger service-level anomalies. Without explicit
+hierarchical guidance, agents may correctly detect anomalous
+components but fail to precisely identify the true root-level
+cause.
+Notably, Explainability does not degrade proportionally,
+suggesting that agents still detect anomalous behaviors but
+struggle with precise hierarchical attribution. This observation
+aligns with operational practices in real-world workflows,
+where engineers rely heavily on hierarchical system decom-
+position to isolate faults.
+Similarly, removing System Information, such as Kuber-
+netes interdependencies, service call chains, and pod states,
+leads to marked declines in LA Top-5 performance. When
+direct anomaly signals are incomplete or ambiguous, agents
+leverage dependency graphs to infer plausible fault propaga-
+tion paths. System information thus provides structural priors
+that guide evidence collection and tool selection.
+In summary, contextual information serves as structural in-
+ductive bias for RCA agents. Incorporating system information
+and fault hierarchy not only improves localization accuracy
+but also enhances the strategic coordination of detection tools.
+This underscores the importance of domain-informed prompt
+engineering in practical RCA agent design.
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:30:53 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 9]]
+Fig. 5: A case of the ReAct agent (Qwen3-8B) detection process. Metrics-related information lacks explicit root cause
+relationship but log and trace information is more direct. The detection information is simplified for illustration.
+VII. CASESTUDY
+In this section, we present representative cases observed
+during the evaluation process and conduct an in-depth analysis
+based on these empirical results.
+For RQ3, we present a case generated by the ReAct agent
+pattern with Qwen3-8B as the backbone model to illustrate
+why the metrics modality may introduce redundant or less
+informative signals for the RCA task. As shown in the Fig. 5,
+the information extracted from the metrics modality is com-
+plex and often lacks explicit relational cues between specific
+metrics and fault instances. This increases the cognitive burden
+on the agent when attempting to infer causal relationships.
+In contrast, trace and log modalities provide more direct and
+localized evidence of anomalous behavior, enabling the agent
+to identify failure instances without exhaustively reasoning
+about low-level metric fluctuations. This case demonstrates
+that, although metrics contain rich system-level information,
+they may not always provide the most discriminative signals
+for fine-grained root cause localization in RCA agent tasks.
+For RQ4, we further provide a case study to demonstrate
+the role of system auxiliary information in the RCA task. As
+illustrated in Fig. 6, frontend and currencyservice are all de-
+tected with anomaly, but the true root cause “checkoutservice”
+isn’t detected by the tool successfully.
+Fig. 6: A case of the ReAct agent (Qwen3-8B) with system-
+level auxiliary information. The root cause has not been di-
+rectly detected but inferred according to call chain information.
+The label information is simplified.
+However, when service call chain information in this case
+(“frontend→checkoutservice→currencyservice”) is incor-
+porated into the prompt, the agent is able to reason over the de-
+pendency structure and infer additional components potentially
+involved in the fault propagation process. By leveraging this
+structured system knowledge, the agent can produce a more
+comprehensive root cause prediction, which contributes to
+improved performance under the LA Top-5 evaluation metric.
+VIII. DISCUSSION
+One limitation ofRCAgentBenchlies in the diversity of
+integrated diagnostic tools. In the current version, we do
+not extensively compare alternative machine learning or deep
+learning diagnostic tools that may offer competitive or com-
+plementary capabilities. The selection of more effective and
+robust tools could influence the quality of extracted fault
+information and, consequently, the overall validity of RCA
+performance evaluation in microservice environments.
+Furthermore, the dataset labels provided byRCAgentBench
+enables the definition of reward functions that can support
+AgenticRL[22] [23] methods. By leveraging reinforcement
+learning techniques, agents can iteratively improve their rea-
+soning and decision making strategies for RCA. In future
+work, we plan to explore reinforcement learning approaches
+to further enhance the adaptability of RCA agents.
+IX. RELATEDWORK
+A. RCA Agent
+Agents are widely used to execute RCA tasks [24] [25] [26].
+Flow-of-Action [27] applies Standard Operation Procedure
+(SOP) enhanced multi-agent system to guide the RCA process
+towards to the correct way. mABC [28] incorporates seven
+expert agents and utilizes blockchain vote mechanism to
+reduce the risk of hallucination in LLMs. However, above-
+mentioned RCA agent didn’t evaluate different agent patterns
+systematically. Hence,RCAgentBenchoffers these comparison
+and gives insights.
+B. RCA Benchmark
+Benchmarks are essential frameworks for evaluating and
+comparing agent models. Widely recognized RCA bench-
+marks, such as RCAEval [29], AIOpsArena [30] provide
+accesss to evaluate relatively traditional algorithm performance
+on the RCA task, without a suitable platform for agent execu-
+tion. OpenRCA [10] builds dataset and benchmark for RCA
+agent evaluation. However, it only relates to ReAct pattern and
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:30:53 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 10]]
+focuses on LLM comparison, but does not involves in com-
+paring agent pattern performance. Therefore,RCAgentBench
+proposes architecture to evaluate agent pattern effectively.
+X. CONCLUSION
+In this paper, we address the critical gaps in evaluating
+agents for microservice RCA by introducingRCAgentBench,
+the first systematic framework that integrates a diverse mul-
+timodal labeled dataset with standardized detection tools. By
+decoupling tool capabilities from LLM-based agent reasoning,
+our comprehensive evaluation reveals that simpler single-agent
+patterns are effective for smaller models, while multi-agent
+architectures offer superior interpretability and scalability for
+larger LLMs. Crucially, we find that RCA performance is cur-
+rently “tool-bounded”, suggesting that information extraction
+from observability data is a more significant bottleneck than
+model scaling. These insights provide a principled foundation
+to guide the future development of reliability RCA agents.
+ACKNOWLEDGMENT
+This work was supported by the National Natural Science
+Foundation of China-Research Grants Council (RGC) Joint
+Research Scheme (62321166652), the Chinese Academy of
+Sciences Youth Talent Program and the industry-sponsored
+joint research project (2025HX12B10005).
+REFERENCES
+[1] N. Alshuqayran, N. Ali, and R. Evans, “A systematic mapping study in
+microservice architecture,” in2016 IEEE 9th international conference
+on service-oriented computing and applications (SOCA). IEEE, 2016,
+pp. 44–51.
+[2] G. Blinowski, A. Ojdowska, and A. Przybyłek, “Monolithic vs. mi-
+croservice architecture: A performance and scalability evaluation,”IEEE
+access, vol. 10, pp. 20 357–20 374, 2022.
+[3] J. Dong, K. Qian, P. Zhang, Z. Zheng, L. Chen, F. Feng, Y . Xu, Y . Zhu,
+G. Lu, X. Liet al., “Evolution of aegis: Fault diagnosis for{AI}
+model training service in production,” in22nd USENIX Symposium on
+Networked Systems Design and Implementation (NSDI 25), 2025, pp.
+865–881.
+[4] A. Ikram, S. Chakraborty, S. Mitra, S. Saini, S. Bagchi, and M. Ko-
+caoglu, “Root cause analysis of failures in microservices through causal
+discovery,”Advances in Neural Information Processing Systems, vol. 35,
+pp. 31 158–31 170, 2022.
+[5] J. Soldani and A. Brogi, “Anomaly detection and failure root cause
+analysis in (micro) service-based cloud applications: A survey,”ACM
+Computing Surveys (CSUR), vol. 55, no. 3, pp. 1–39, 2022.
+[6] M. Sol ´e, V . Munt ´es-Mulero, A. I. Rana, and G. Estrada, “Survey
+on models and techniques for root-cause analysis,”arXiv preprint
+arXiv:1701.08546, 2017.
+[7] C.-C. Yen, W. Sun, H. Purmehdi, W. Park, K. R. Deshmukh, N. Thakrar,
+O. Nassef, and A. Jacobs, “Graph neural network based root cause
+analysis using multivariate time-series kpis for wireless networks.” in
+NOMS, vol. 2022, 2022, pp. 1–7.
+[8] Y . Liu and B. Jafarpour, “Graph attention network with granger causality
+map for fault detection and root cause diagnosis,”Computers & Chem-
+ical Engineering, vol. 180, p. 108453, 2024.
+[9] K. Sarda, Z. Namrud, I. Watts, L. Shwartz, S. Nagar, P. Mohapatra,
+and M. Litoiu, “Augmenting automatic root-cause identification with
+incident alerts using llm,” in2024 34th International Conference on
+Collaborative Advances in Software and COmputiNg (CASCON). IEEE,
+2024, pp. 1–10.
+[10] J. Xu, Q. Zhang, Z. Zhong, S. He, C. Zhang, Q. Lin, D. Pei, P. He,
+D. Zhang, and Q. Zhang, “Openrca: Can large language models locate
+the root cause of software failures?” inThe Thirteenth International
+Conference on Learning Representations, 2025.
+[11] T. Guo, X. Chen, Y . Wang, R. Chang, S. Pei, N. V . Chawla, O. Wiest,
+and X. Zhang, “Large language model based multi-agents: A survey of
+progress and challenges,”arXiv preprint arXiv:2402.01680, 2024.
+[12] S. Zhang, P. Jin, Z. Lin, Y . Sun, B. Zhang, S. Xia, Z. Li, Z. Zhong,
+M. Ma, W. Jinet al., “Robust failure diagnosis of microservice system
+through multimodal data,”IEEE Transactions on Services Computing,
+vol. 16, no. 6, pp. 3851–3864, 2023.
+[13] L. Zheng, Z. Chen, H. Chen, and J. He, “Online multi-modal root cause
+analysis,”arXiv preprint arXiv:2410.10021, 2024.
+[14] Z. Wang, Z. Liu, Y . Zhang, A. Zhong, J. Wang, F. Yin, L. Fan, L. Wu,
+and Q. Wen, “Rcagent: Cloud root cause analysis by autonomous agents
+with tool-augmented large language models,” inProceedings of the
+33rd ACM International Conference on Information and Knowledge
+Management, 2024, pp. 4966–4974.
+[15] D. Roy, X. Zhang, R. Bhave, C. Bansal, P. Las-Casas, R. Fonseca, and
+S. Rajmohan, “Exploring llm-based agents for root cause analysis,” in
+Companion proceedings of the 32nd ACM international conference on
+the foundations of software engineering, 2024, pp. 208–219.
+[16] B. Shi, Y . Luo, J. Wang, Y . Zhao, S. Zhang, B. Hao, C. Zhao, Y . Sun,
+Z. Zhang, R. Sunet al., “Flowxpert: Expertizing troubleshooting work-
+flow orchestration with knowledge base and multi-agent coevolution,”
+inProceedings of the 31st ACM SIGKDD Conference on Knowledge
+Discovery and Data Mining V . 2, 2025, pp. 4839–4850.
+[17] S. Yao, J. Zhao, D. Yu, N. Du, I. Shafran, K. R. Narasimhan, and Y . Cao,
+“React: Synergizing reasoning and acting in language models,” inThe
+eleventh international conference on learning representations, 2022.
+[18] J. Wei, X. Wang, D. Schuurmans, M. Bosma, F. Xia, E. Chi, Q. V . Le,
+D. Zhouet al., “Chain-of-thought prompting elicits reasoning in large
+language models,”Advances in neural information processing systems,
+vol. 35, pp. 24 824–24 837, 2022.
+[19] M. Renze and E. Guven, “Self-reflection in llm agents: Effects on
+problem-solving performance,”arXiv preprint arXiv:2405.06682, 2024.
+[20] Y . Shi, S. Cai, Z. Xu, Y . Qin, G. Li, H. Shao, J. Chen, D. Yang, K. Li, and
+X. Sun, “Flowagent: Achieving compliance and flexibility for workflow
+agents,”arXiv preprint arXiv:2502.14345, 2025.
+[21] A. Liu, B. Feng, B. Xue, B. Wang, B. Wu, C. Lu, C. Zhao, C. Deng,
+C. Zhang, C. Ruanet al., “Deepseek-v3 technical report,”arXiv preprint
+arXiv:2412.19437, 2024.
+[22] P. C. R. Chinta and L. M. Karaka, “Agentic ai and reinforcement
+learning: Towards more autonomous and adaptive ai systems,”Journal
+for Educators, Teachers and Trainers https://jett. labosfor . com/index.
+php/jett/article/view/2699, 2020.
+[23] S. Hu, C. Lu, and J. Clune, “Automated design of agentic systems,”
+arXiv preprint arXiv:2408.08435, 2024.
+[24] Y . Chen, J. Pan, J. Clark, Y . Su, N. Zheutlin, B. Bhavya, R. Arora,
+Y . Deng, S. Jha, and T. Xu, “Stratus: A multi-agent system for
+autonomous reliability engineering of modern clouds,”arXiv preprint
+arXiv:2506.02009, 2025.
+[25] B. Sanwouo, C. Quinton, and P. Temple, “Dynamic agent generation
+for self-adaptive root cause analysis,” inSEAMS’26-21st International
+Conference on Software Engineering for Adaptive and Self-Managing
+Systems, 2026.
+[26] F. Fu, H. Ding, Y . Qin, J. Yu, and D. Xu, “Leveraging multi-agent
+framework for root cause analysis,”Complex & Intelligent Systems,
+vol. 12, no. 1, p. 4, 2026.
+[27] C. Pei, Z. Wang, F. Liu, Z. Li, Y . Liu, X. He, R. Kang, T. Zhang,
+J. Chen, J. Liet al., “Flow-of-action: Sop enhanced llm-based multi-
+agent system for root cause analysis,” inCompanion Proceedings of the
+ACM on Web Conference 2025, 2025, pp. 422–431.
+[28] W. Zhang, H. Guo, J. Yang, Z. Tian, Y . Zhang, Y . Chaoran, Z. Li,
+T. Li, X. Shi, L. Zhenget al., “mabc: multi-agent blockchain-inspired
+collaboration for root cause analysis in micro-services architecture,”
+inFindings of the Association for Computational Linguistics: EMNLP
+2024, 2024, pp. 4017–4033.
+[29] L. Pham, H. Zhang, H. Ha, F. Salim, and X. Zhang, “Rcaeval: A bench-
+mark for root cause analysis of microservice systems with telemetry
+data,” inCompanion Proceedings of the ACM on Web Conference 2025,
+2025, pp. 777–780.
+[30] Y . Sun, J. Wang, Z. Li, X. Nie, M. Ma, S. Zhang, Y . Ji, L. Zhang,
+W. Long, H. Chenet al., “Aiopsarena: Scenario-oriented evaluation and
+leaderboard for aiops algorithms in microservices,” in2025 IEEE Inter-
+national Conference on Software Analysis, Evolution and Reengineering
+(SANER). IEEE, 2025, pp. 809–813.
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:30:53 UTC from IEEE Xplore. Restrictions apply.

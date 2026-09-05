@@ -324,6 +324,24 @@ def main() -> int:
             # leaving the record at its no-abstract score (REVIEW.md medium
             # finding).
             profile_name, weights = ranking_metadata(candidates)
+            # candidates.json was read before a long browser pass; anything a
+            # snowball round added meanwhile is on disk and not in `papers`,
+            # and writing the stale snapshot would silently drop it.
+            current = json.loads(candidate_path.read_text(encoding="utf-8"))
+            known = {paper.key() for paper in papers}
+            added = [
+                Paper.from_dict(item)
+                for item in current.get("papers", [])
+                if Paper.from_dict(item).key() not in known
+            ]
+            if added:
+                logger.warning(
+                    "%d candidates were added to %s while abstracts were being "
+                    "recovered; merging them rather than overwriting.",
+                    len(added),
+                    candidate_path,
+                )
+                papers = papers + added
             before = {paper.key(): index for index, paper in enumerate(papers)}
             scoring_meta: dict[str, Any] = {}
             papers = score_papers(

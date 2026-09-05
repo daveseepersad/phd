@@ -1,0 +1,1522 @@
+[[page 1]]
+RecoAtlas: From Semantic Plausibility to Set-Level
+Utility in LLM Recommendation Agents
+Imad Aouali∗
+Criteo AI Lab
+Flavian Vasile∗
+Criteo AI Lab
+Otmane Sakhi
+Criteo AI Lab
+Alexandre Gilotte
+Criteo AI Lab
+Benjamin Heymann
+Criteo AI Lab
+Abstract
+LLM recommendation agents increasingly produce structured recommendation
+reports: sets of items accompanied by natural-language justifications. Yet existing
+evaluations often reduce this setting to reranking small shortlisted candidate sets
+or judge reports mainly by semantic plausibility. We introduceRecommendation
+Atlas (AgenticTool-LevelAssessment forShopping), orRecoAtlas, a benchmark
+and toolkit for evaluating shopping agents with behavior-grounded metrics.Re-
+coAtlascomplements held-out interaction metrics with learned utility proxies for
+relevance, complementarity, and diversity derived from interaction data, while sep-
+arately measuring semantic coherence and explanation quality. Its controlled tool
+environment exposes agents to either semantic, behavior-aligned, or faulty tools,
+enabling diagnosis of whether performance gains arise from stronger reasoning,
+better signals, or more effective tool-use policies. Across controlled experiments,
+we show thatRecoAtlasexhibits key properties of a meaningful benchmark for
+agentic systems: performance scales with model capacity and test-time compute,
+improves with stronger and better-aligned tools, degrades under noisy or misaligned
+signals, and reveals that semantic plausibility does not necessarily capture behavior-
+grounded utility.RecoAtlasprovides a foundation for developing and evaluating
+shopping assistants that optimize not only for plausible recommendations, but also
+for coherent, behaviorally grounded recommendation sets.
+1 Introduction
+LLMs are increasingly used as recommendation agents: they interpret user needs, call external tools
+when available, and produce recommendation reports. Unlike classical recommender systems, which
+typically return ranked item lists, these agents often generatesetsof recommendations with natural-
+language justifications. This changes the evaluation problem. A high-quality report is not merely a
+list of relevant products, but a coherent set whose items jointly satisfy the user request. For example,
+abundle shoppingquery like “I want to become a guitarist” should lead to a set including a guitar,
+tuner, picks, strap, case, and strings, rather than several relevant guitars. Similarly, acomparative
+shoppingquery should present meaningfully distinct alternatives rather than near-duplicates.
+Existing evaluations do not fully capture these scenarios. Shortlist reranking benchmarks typically
+give the model a small candidate set containing a single held-out ground-truth item. This evaluates
+local re-ranking, but not whether an agent can search a large catalog under context and tool-use
+constraints, nor whether it can construct a set containing multiple items that interact well with each
+other (e.g., not redundant in the case of comparative shopping). LLM-judge evaluations address
+∗Equal contribution. Correspondence toi.aouali@criteo.comandf.vasile@criteo.com.
+Preprint.
+arXiv:2605.18805v1 [cs.IR] 11 May 2026
+
+[[page 2]]
+generated outputs more directly, but they mainly measure semantic plausibility: a report can be
+coherent and well justified while recommending products that users rarely purchase or combine.
+Online A/B testing with real users remains the gold standard, but it requires production infrastructure
+and live traffic, making it unsuitable as the basis for an open benchmark.
+We introduceRecoAtlas(RecommendationAgentTool-LevelAssessment forShopping), a bench-
+mark for evaluating LLM recommendation agents under behavior-grounded, set-level objectives. In
+RecoAtlas, an agent uses tools to search a large catalog and construct a fixed-size shopping report
+consisting of product IDs and short justifications.RecoAtlascovers two task families: comparative
+shopping and bundle shopping. Evaluation combines three complementary and separate views. First,
+SetHit@K measures exact recovery of held-out ground-truth items, and therefore quantifies how
+many ground-truth items are recovered in the final report. Second, learned reward models provide
+component-level behavioral proxies for relevance, complementarity, and non-redundancy, identifying
+whether failures stem from irrelevant items, weak item-item compatibility, or redundant recom-
+mendations. Third, LLM judges assess report quality along the same relevance, complementarity,
+and non-redundancy axes, as well as justification quality, matching common LLM-agent evaluation
+practice and enabling comparison between LLM judgments and learned reward models grounded in
+user behavior.
+A central feature ofRecoAtlasis its recommendation-specific tool suite. Rather than exposing only
+SQL-style lookup tools, as in closely related work [1],RecoAtlasprovides semantic, behavior-aligned,
+and faulty tools that target core recommendation properties, including relevance, complementarity,
+and diversity. This allows us to evaluate agents with varying tool availability and reliability, enabling
+diagnosis of whether performance differences arise from stronger reasoning, better recommendation
+signals, or more robust tool-use policies. Concretely, we make three main contributions.
+1. A benchmark for large-catalog, set-level recommendation-agent evaluation. RecoAtlas
+evaluates LLM agents that search a large catalog, use recommendation tools, and construct
+fixed-size shopping reports for comparative and bundle shopping.
+2. A behavior-grounded evaluator and recommendation-specific tool suite. RecoAtlascombines
+exact held-out recovery, learned reward models, and LLM judging to evaluate agents with access
+to a controlled suite of semantic, behavior-aligned, and faulty recommendation tools.
+3. A diagnostic empirical study of agents.Through ablations across model families, task types,
+tool availability and quality, we show thatRecoAtlasexhibits key properties of a meaningful
+benchmark for agentic recommendation: performance scales with model capacity and test-time
+compute, improves with stronger and better-aligned tools, and reveals that the widely used LLM
+judging reflects semantic plausibility but does not necessarily capture behavior-grounded utility.
+Code and artifacts are publicly available. 2
+2 Related work
+RecoAtlasconnects two lines of work: LLM-agent benchmarks, which evaluate reasoning, tool use,
+search, etc., and recommender-systems research, which studies behavior-grounded evaluation, set
+quality, complementarity, diversity, and downstream utility. Our contribution lies at their intersection:
+evaluating LLM agents that use recommendation tools to construct multi-item shopping reports.
+General agent benchmarks such as AgentBench [2] and GAIA [3] evaluate broad task-solving abilities,
+including planning, tool use, web interaction, and multi-step reasoning. Tool-use benchmarks such
+as ToolLLM [4], ToolBench [5], StableToolBench [6], and Gorilla [7] focus on API selection, tool
+invocation, and robustness. These benchmarks establish tool use as a core capability of LLM agents,
+but they do not evaluate recommendation-specific utility.
+Shopping benchmarks are closer to our setting. WebShop [8] introduced grounded interactive online
+shopping, while Shopping MMLU [9], ShoppingBench [10], WebMall [11], ShoppingComp [12],
+and DeepShop [13] evaluate shopping knowledge, intent following, product comparison, multi-shop
+navigation, or research-style shopping. In recommendation, RecMind [14] frames recommendation
+as an LLM-agent problem, tool-learning work studies LLM interaction with recommender tools [15],
+and recent surveys describe the broader shift toward LLM-powered recommendation agents [16, 17].
+2https://github.com/imadaouali/reco-atlas|https://huggingface.co/iaouali/reco-atlas
+2
+
+[[page 3]]
+Bundle Shopping
+"setup for singing and playing
+at small coffee shop gigs"
+ground-truth: set of 3-to-7 items
+RECOMMENDATION AGENT
+LLM Backbone
+GPT, Gemini, Claude, Qwen, Mistral...
+Tools
+RECOMMENDATION REPORT
+REPORT-LEVEL EVALUATOR
+Comparative Shopping
+"lightweight acoustic guitar
+with electric pickup"
+ground-truth: 1 item
+QUERY GENERATION
+Relevance
+Query Ranked catalog items
+relevant to the query
+Complementarity
+Item set Ranked catalog items
+complementary to the item set
+Substitutability
+Item set Kept items +
+removed near-duplicates
+Scorers
+(Ground-truth item set, item set) SetHit@K
+Relevance
+(Query, item set) per-item relevance scores
+Complementarity
+Item set per-item complementarity scores
+Diversity
+Item set per-item diversity scores
+▶ LLMJudge
+LLM-as-a-Judge
+(Query, Report) Relevance,
+Complementarity, Diversity, Explanation
+▶ Item Set
+▶ Reasoning Trace
+K Recommended items
+Selected items returned by the agent
+after aggregating tool outputs
+Intermediate Evidence
+Structured record of tool calls, retrieved
+evidence, and ranking decisions
+▶ Final Explanation
+User-Facing Rationale
+Natural-language justification of why the
+final item set best satisfies the query
+Sections ▶ SetHit@K
+▶ SetRewardModels
+Figure 1:System overview of RecoAtlas.A query-generation module creates comparative-shopping
+and bundle-shopping tasks with held-out ground-truth items. An agent searches the catalog through
+recommendation-specific tools for relevance, complementarity, and substitutability, then produces
+a fixed-size report. The report-level evaluator scores the final set using exact recovery (SetHit@K),
+learned reward models for relevance, complementarity, and diversity, and LLM-judge assessments of
+the same factors together with explanation quality.
+Among these, the closest benchmark is AgentRecBench [1], which evaluates agents through sampled
+candidate re-ranking with SQL-style tools for accessing user history. In contrast,RecoAtlasevaluates
+agents that must search a large catalog without a provided shortlist, construct a fixed-size multi-item
+shopping report, and recover a set of held-out behavioral ground-truth items rather than a single
+target item.RecoAtlasfurther scores the final report as a set using exact recovery, learned behavior-
+grounded reward models, and LLM judging, and varies recommendation-tool alignment and fidelity
+through semantic, behavior-aligned, and faulty tools. This yields a different and harder evaluation
+setting with richer tool signals and more diagnostic metrics.
+Classical recommender-system research has long recognized that recommendations are often con-
+sumed as sets rather than isolated items. Slate recommendation studies how set value depends on
+interactions among displayed items and other contextual factors [18–20]. Bundle recommendation
+focuses on groups of products consumed or purchased together, making compatibility and comple-
+mentarity central [21–23]. Beyond-accuracy objectives, especially diversity, are also important for
+avoiding repetitive lists and presenting meaningful alternatives [24, 25].
+These ideas motivate the utility components inRecoAtlas. Both comparative and bundle tasks require
+query–item relevance, but they differ in the item–item structure expected in the final set. Bundle shop-
+ping emphasizes complementarity: products should be jointly useful, naturally purchased together, or
+fill compatible roles [26, 27]. Since co-purchase labels can conflate genuine complementarity with
+exposure, popularity, bundling, or catalog artifacts, we treat them as behavioral proxies rather than
+ground truth [28]. Comparative shopping emphasizes non-redundancy: products should be credible
+alternatives without collapsing into near-duplicates, connecting the task to diversity-aware recommen-
+dation and substitutability [24, 25]. Unlike prior set, slate, and bundle work, which typically evaluates
+ranking policies or specialized recommender models,RecoAtlasevaluates an LLM policy that must
+search a large catalog, call tools, assemble a set, and justify the final report in natural language.
+Recommendation reports also include natural-language justifications, connectingRecoAtlasto ex-
+plainable recommendation [29]. LLM-as-judge methods are useful for scoring language quality [30],
+but can exhibit bias, instability, and weak grounding in user behavior [31–33].RecoAtlastherefore
+treats semantic judging as a separate evaluation dimension, distinct from our exact user behavior
+grounded metrics. Finally,RecoAtlasrelates to recommender simulators and offline performance
+models. RecoGym [34], RecSim [35], RecSim NG [36], and KuaiSim [37] model downstream reward
+and policy optimization for recommender systems. These systems move evaluation toward behavioral
+utility, but they generally do not evaluate LLM agents.RecoAtlasbrings behavior-grounded offline
+evaluation to this LLM-agent setting.
+3
+
+[[page 4]]
+3 RecoAtlas benchmark
+RecoAtlasevaluates recommendation agents in a large-catalog report-generation setting, summarized
+in Figure 1. Given a natural-language shopping need, an agent searches a product catalog, invokes
+recommendation-specific tools, and returns a structured report containing product identifiers, inter-
+mediate evidence, and short natural-language justifications. Unlike candidate-ranking benchmarks,
+the agent is not given a small shortlist containing the ground-truth item. It must discover candidate
+products through tool-mediated catalog exploration and assemble a fixed-size recommendation set.
+Full details on artifact construction, catalog filtering, product text construction, and embedding
+preparation are provided in Section A.
+RecoAtlascontains two task families. Incomparative shopping, the user seeks alternatives for
+the same broad need; recommended products should be relevant to the query while avoiding near-
+duplicate suggestions. Inbundle shopping, the user seeks a coherent setup or kit; recommended
+products should play complementary roles and work together. Thus, both tasks require query-item
+relevance, but differ in the item-item structure expected in the final report: comparative shopping
+emphasizes non-redundancy, whereas bundle shopping emphasizes complementarity.
+3.1 Task format
+Each task instance consists of a queryq, catalogI, task typet, and hidden ground-truth target setG.
+The agent observesqand has access to tools, but notG. Its output is a report
+S= ((i 1,e 1),...,(i K,eK)),
+where eachij∈I is a product ID and each ej is a short justification. Agents are asked to return
+exactly K products; in the main trace evaluations, K= 20 . Invalid or out-of-catalog IDs are
+discarded, duplicate IDs do not create additional exact-recovery credit, and reports with fewer than
+K valid products are penalized through the scoring denominator. For comparative shopping, the
+ground-truth setG contains a single target item. For bundle shopping,G contains a set of multiple
+target items. Across tasks, the size of G ranges from one to seven items, so evaluation measures
+recovery of a positive set rather than only identification of a single target. The query-generation
+procedures used to construct comparative and bundle instances are described in Section D.
+3.2 Evaluation metrics
+RecoAtlasdoes not collapse report quality into a single scalar. It reports three complementary views:
+exact ground-truth recovery, learned reward models for relevance, complementarity, and diversity,
+and LLM-judge scores for the same dimensions plus explanation quality.
+First, SetHit@K measures how many ground-truth target items appear among theK recommended
+items. For comparative shopping, this reduces to standard hit rate because each instance has one
+held-out target. For bundle shopping, it measures recovery over a target set, reported either as a
+fraction or as a raw matched count.
+Second,RecoAtlascomputes three reward-model scores trained from user behavior. Each model
+assigns a scoresi∈[0,1] to each returned item and aggregates scores asP|S|
+i=1si/K, withK= 20
+in our experiments. Short reports, invalid items, duplicate positions, and out-of-catalog items are
+therefore penalized because they do not fill the denominator with valid high-scoring recommendations.
+We report the three components separately rather than combining them into a single learned utility
+score, since they are intended to diagnose different properties of the report, while SetHit@K already
+provides an aggregate recovery metric.
+• Relevance Reward.a query–item dual encoder based on Qwen3-Embedding-0.6B. The item
+tower is frozen, while the query tower is trained with LoRA using a multi-negative BPR loss over
+tuples of queries, purchased items, and non-purchased items. At inference, the query embedding is
+compared with catalog item embeddings, and each returned item receives a catalog-normalized
+relevance score:
+(query,item set)7→Relevance∈[0,1].
+• Complementarity Reward.an item–item dual encoder based on Qwen3-Embedding-0.6B and
+trained on co-purchase data. The model learns separate anchor and complement projections using a
+4
+
+[[page 5]]
+contrastive InfoNCE loss over co-purchased item pairs, assigning high anchor–complement affinity
+to items frequently purchased together. At inference, each returned item is treated as an anchor
+and scored against the other returned items using the anchor–complement dot product, normalized
+against the anchor’s catalog-wide score distribution:
+(item set)7→Complementarity∈[0,1].
+• Diversity Reward.a non-redundancy score computed from Qwen3-Embedding-0.6B item embed-
+dings. For each returned item,RecoAtlasestimates substitutability with the other returned items
+using cosine similarity within nearby subcategories, normalizes this similarity against the item’s
+catalog-wide same-scope similarity distribution, and defines diversity as one minus substitutability.
+Near-duplicate items therefore receive low diversity scores, while non-redundant items receive high
+scores:
+(item set)7→Diversity= 1−Substitutability∈[0,1].
+These components capture distinct aspects of set quality: relevance measures whether products
+satisfy the stated need, complementarity measures whether products are useful together, and diversity
+measures whether the set avoids redundant substitutes. Comparative-shopping queries primarily
+stress relevance and diversity, whereas bundle-shopping queries primarily stress complementarity.
+We therefore expose the component scores directly rather than imposing fixed task-specific weights,
+which would introduce an additional design choice into the evaluation.
+Third,RecoAtlasreports LLM-judge metrics that score relevance, complementarity, diversity, and
+explanation quality from the query and generated report. These metrics are reported separately from
+the behavior-grounded scores because fluent explanations and semantically plausible item descriptions
+do not necessarily imply behavioral utility. Implementation details for the behavior-grounded reward
+models and LLM-judge prompts are given in Sections C and E.2.
+3.3 Available tools
+The agent interacts with the catalog through recommendation-specific tools that expose three signal
+families: relevance search, complementarity expansion, and substitute pruning. These tools let agents
+retrieve candidate products, expand partial bundles with behaviorally compatible items, and remove
+redundant recommendations before producing the final report.
+RecoAtlasimplements multiple variants of the same tool interface.Semantic toolsrely on pretrained
+product embeddings only.Utility toolstake these pretrained embeddings and further trained them on
+user-item purchases or item-item co-purchases, depending on the tool.Faulty toolspreserve the same
+interface but inject controlled errors, either by replacing a fraction of retrieved products or by failing
+to remove some detected duplicates. The available tools are:
+•search_products(query, K) takes a query and returns a ranked list of items. The semantic
+version ranks catalog items using pretrained item embeddings, while the utility version uses the
+fine-tuned query-item relevance model. The faulty version replaces a controlled fraction of returned
+items with lower-quality candidates.
+•get_complementary_products(item_ids, K) takes a set of items and returns items ranked by
+complementarity to the input set. The semantic version uses pretrained item embeddings with cross-
+subcategory filtering, while the utility version uses learned anchor-complement projections trained
+from co-purchase data. The faulty version replaces a controlled fraction of returned complements.
+•get_substitute_products(item_ids, similarity_threshold) takes an ordered candi-
+date set and returns two groups: kept products and removed near-duplicates. Items are considered
+substitutes when they are in the same subcategory and exceed the cosine-similarity threshold. The
+semantic and utility versions are the same. The faulty version simulates false negatives by moving
+some detected duplicates back into the kept set.
+Agents may call the available tools in any order, accumulate candidates, prune substitutes, and revise
+the final set. Invalid tool actions are recorded in the trace and consume the attempted decision round.
+Each agent has a budget of 10 tool calls maximum. We provide full tool-building details, including
+semantic, utility-aligned, substitutability, and faulty-tool variants, in Section B.
+5
+
+[[page 6]]
+4 Experiments
+Our experiments are structured as follows. We first contrast LLM judging and utility metrics,
+showing that LLM judging favors semantically plausible recommendations that do not necessarily
+satisfy the downstream utility. We then study how semantic versus utility-aligned tools affect agent
+behavior, analyze model-size and test-time-compute scaling, report the main leaderboard under the
+utility-aligned tool setting, and finally discuss robustness under controlled tool corruption.
+We evaluate on three Amazon dataset [ 38] product categories: Musical Instruments, Electronics,
+and Video Games. Each category defines a large-catalog environment with product metadata,
+subcategory structure, user-item interactions, and learned recommendation tools. Agents solve two
+set-level shopping scenarios:comparative shoppingandbundle shopping(see Section 3.1). For
+each category and scenario, we use a fixed evaluation set of 250 natural-language queries, yielding
+3×2×250 = 1500agent episodes per evaluated method. The process is summarized in Figure 1.
+Given a query, an agent may interact with the available recommendation tools for at most 10 tool-
+decision rounds and must return a final JSON report containing exactlyK= 20 product identifiers
+with short explanations. The target item or bundle is never exposed to the agent and is used only
+for evaluation. We compare proprietary and open-weight LLM backbones under identical prompts,
+output schemas, decoding settings, tool budgets, and catalog access. Unless otherwise stated, the
+main leaderboard uses utility-aligned tools: a trained query-to-item retrieval model, a trained item-to-
+item complementarity model, and an item-to-item substitutability model for pruning near-duplicates.
+The shared agent prompting protocol, output schema, validation rules, and finalization prompt are
+documented in Section E.1.
+While this experimental setup is used to demonstrate the benchmark,RecoAtlasis a general frame-
+work rather than a fixed query collection. The same query-generation and ground-truth construction
+pipeline can be applied to any shopping dataset with comparable catalog metadata and behavioral
+signals, enabling the creation of a virtually unlimited variety of comparative-shopping and bundle-
+shopping tasks.
+4.1 LLM judging and utility metrics measure different properties
+0.1 0.2 0.3 0.4 0.5 0.6
+SetHit@20
+0.36
+0.40
+0.44
+0.48
+0.52
+0.56
+0.60
+0.64
+LLMJudge
+S
+U
+S
+U
+S
+U
+S
+U
+S
+U
+S U
+Semantic tools Utility tools
+Figure 2: Alignment between LLM-judge scoring and
+SetHit@20. The agent usesGPT-4.1-mini.
+In this experiment, we separate eval-
+uation into two metrics. The first
+family consists ofLLM judges, which
+score the final report along axes such
+as relevance, complementarity, diver-
+sity, and explanation quality. The sec-
+ond is the SetHit@20 that measures
+whether the agent’s returned set re-
+covers held-out behaviorally ground-
+truth items. In comparative shopping,
+where each query has one ground-
+truth item, SetHit@20 is a whole-
+catalog Hit@20 over the final 20-item
+recommendation set, rather than a
+shortlist re-ranking metric. In bun-
+dle shopping, it measures recovery
+of the held-out ground-truth set. The
+construction of held-out comparative
+and bundle targets is detailed in Sec-
+tions D.1 and D.2.
+Figure 2 shows that LLM judging and utility metrics are poorly aligned. Agents using semantic
+tools receive higher LLMJudge scores than agents using utility-aligned tools, despite achieving
+substantially lower SetHit@20. Thus, LLM judging can reverse the ranking induced by downstream
+utility. This is a central failure mode exposed by our benchmark: semantic plausibility is not a reliable
+proxy for satisfying the latent shopping objective.
+6
+
+[[page 7]]
+4.2 Utility requires the right set of tools
+A second objective of the benchmark is to evaluate agents that use structured recommendation tools,
+not only agents that perform textual product lookup. Prior tool-based recommendation evaluations
+often reduce tool use to retrieving candidate products from a query. Our environment additionally
+exposes quantitative item-item tools for substitutability and complementarity, allowing us to test
+whether an agent can reason over the structure of the returned set. This is essential for set-level
+recommendation: comparative shopping requires avoiding redundant near-duplicates, while bundle
+shopping requires discovering products that jointly satisfy a broader intent.
+In-context
+LLM
+(0 tools)
+Search
+(1 tool)
+Search
++ Sub
+(2 tools)
+Search
++ Comp
+(2 tools)
+Search
++ Sub + Comp
+(3 tools)
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+SetHit@20
+Comparative shopping Bundle shopping
+Figure 3: Effect of the number of tools onSetHit@20. The
+agent usesGPT-4.1-mini.
+Figure 3 isolates the contribution of
+each tool. Without tools, the in-
+context LLM baseline is nearly un-
+able to recover held-out products, ob-
+taining SetHit@20 of 0.010 on com-
+parative shopping and 0.028 on bun-
+dle shopping. Adding a query-to-item
+search tool raises comparative shop-
+ping to 0.492, showing that direct re-
+trieval is sufficient for many single-
+intent queries. However, the same
+search tool reaches only 0.156 on bun-
+dle shopping, because bundle con-
+struction requires expanding beyond
+the initial query match into comple-
+mentary products.
+The ablation also shows that not all
+tools improve all scenarios. Adding
+substitutability to search preserves
+comparative performance but lowers
+bundle performance to 0.124, suggesting that duplicate-pruning alone does not create a coherent
+basket and can remove useful alternatives without adding missing components. By contrast, adding
+complementarity to search raises bundle SetHit@20 to 0.460. The full toolset achieves the best
+overall utility, reaching 0.508 on comparative shopping and 0.540 on bundle shopping. These results
+support the benchmark design: set-level recommendation cannot be evaluated or solved as pure
+relevance retrieval; bundle utility depends critically on item-item structure.
+4.3 Size and test-time scaling under utility metrics
+0.6B 1.7B 4B 8B 14B 32B
+Qwen3 size (B params, log scale)
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+SetHit@20
+QwenThinking on Thinking off
+Figure 4: Model-size and test-time scaling. The agent uses
+Qwen3.
+A useful benchmark should not only
+separate strong and weak systems,
+but also reveal whether performance
+scales with model capacity and test-
+time computation. We study this prop-
+erty using the Qwen3 family because
+it provides open-weight models across
+a broad size range and supports con-
+trolled comparisons with reasoning
+enabled or disabled. This lets us iso-
+late whether gains come from larger
+backbones, from test-time reasoning,
+or from the interaction between the
+two.
+Figure 4 studies Qwen3 models from
+0.6B to 32B parameters with and with-
+out test-time reasoning (unlike other
+experiments where we used GPT-4.1-
+mini, we use Qwen3 here because it
+is an open-weight model that allows
+7
+
+[[page 8]]
+GPT-4.1
+mini
+Gemini 2.5
+Flash
+Claude Haiku
+4.5
+Grok 4.1
+Fast
+Qwen3
+32B
+xLAM-2
+32B
+Mistral Small
+24B
+Nemotron
+49B
+0.0
+0.2
+0.4
+0.6
+0.8
+SetHit@20
+OpenAI Google Anthropic xAI Qwen Salesforce Mistral NVIDIA
+Comparative shopping: solid company color Bundle shopping: lighter company color + //
+Figure 5: Main leaderboard under the utility-aligned tool setting.
+for a clear size scaling that we have access to.). With reasoning enabled, SetHit@20 increases from
+roughly 0.05 at 0.6B to about 0.61 at 32B. The trend is not perfectly monotone, but the overall scaling
+pattern is strong: larger models make better use of the same tool interface and produce higher-utility
+final sets. This suggests that the benchmark rewards more than access to retrieval; it also rewards
+planning, tool selection, and set construction.
+The no-reasoning curve follows a weaker scaling pattern. Performance improves up to the mid-size
+regime, peaking around the 14B model, but does not continue improving at 32B. By contrast, the
+reasoning-enabled curve continues to improve, and the gap between the two settings is largest for the
+largest model, reaching roughly 0.31 absolute SetHit@20 at 32B. Thus, larger models benefit more
+from test-time reasoning: scale provides the capacity to interpret tool outputs, but reasoning is needed
+to decide which tools to call, when to diversify, when to seek complements, and how to assemble the
+final 20-item set. The main message is that utility in this benchmark scales with both model size and
+deliberation, making it suitable for evaluating agentic recommendation progress rather than static
+retrieval quality alone.
+4.4 Leaderboard
+Figure 5 reports the main model comparison under the same behavior-aligned tool environment.
+Comparative shopping has a compressed frontier: GPT-4.1 mini [ 39] and Grok 4.1 Fast [ 40] are
+the strongest proprietary models, while Gemini 2.5 Flash [41], Claude Haiku 4.5 [42], Qwen3 32B
+[43], xLAM-2 32B [44], and Nemotron 49B [45] are close behind. This indicates that, once a strong
+query-to-item retrieval tool is available, many capable LLMs can construct useful alternative sets for
+single-intent shopping tasks.
+Bundle shopping separates models much more sharply. Nemotron 49B and Mistral Small 24B
+achieve the highest bundle SetHit@20, substantially outperforming their comparative-shopping
+scores and surpassing the strongest proprietary models on this scenario. This reversal shows that
+bundle performance is not determined by general model strength alone. It depends on whether the
+agent uses complementarity tools to expand a seed item into a functionally coherent set, rather than
+repeatedly retrieving relevant but incomplete or redundant products.
+Relevance
+ComplementarityDiversity
+0.25
+0.35
+0.45
+0.55
+0.65
+Bundle shopping
+Relevance
+ComplementarityDiversity
+0.30
+0.45
+0.60
+0.75
+0.90
+Comparative shopping
+GPT-4.1 mini Gemini 2.5 Flash xLAM-2 32B Nemotron 49B
+Figure 6: Reward-model decomposition for representative
+closed and open models.
+The reward-model decomposition in
+Figure 6 helps explain this bundle ad-
+vantage. The strongest bundle models
+do not merely improve item-query rel-
+evance; they also obtain stronger item-
+item complementarity scores. This is
+most visible for the open-weight sys-
+tems, whose bundle performance is
+associated with more aggressive and
+effective use of complementarity sig-
+nals. In contrast, comparative shop-
+ping is dominated by relevance and
+has a more compressed reward-model
+profile. Thus, bundle shopping eval-
+8
+
+[[page 9]]
+uates a distinct agentic capability: constructing a coherent basket, not simply retrieving twenty
+plausible products.
+At the same time, the leaderboard should be interpreted as a comparison of complete prompted
+agents, not only of pretrained model quality. Performance depends on how each LLM interprets the
+same tool descriptions, decides when to call each tool, and balances relevance, complementarity, and
+redundancy in the final set. Open-weight models in our experiments tend to use complementarity
+more aggressively, while some closed models behave more cautiously. This is a limitation if one
+wants a pure backbone ranking, but it is also a strength of the benchmark: it exposes the gap between
+general-purpose prompting and high-utility recommendation behavior.
+GPT-4.1
+mini
+Gemini 2.5
+Flash
+Qwen3
+32B
+xLAM-2
+32B
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+SetHit@20 retention
+OpenAI Google Qwen Salesforce
+Comparative shopping: faulty tool / clean
+Bundle shopping: faulty tool / clean
+Figure 7: SetHit@20 retention at a50%faulty-tool rate.
+Figure 7 provides a complementary
+view of the leaderboard by measuring
+how much clean-tool performance is
+retained when tools are faulty. The
+same complementarity-seeking behav-
+ior that helps open-weight models
+under reliable tools can make them
+more exposed when tool quality drops.
+Closed models, especially GPT-4.1
+mini and Gemini 2.5 Flash, retain a
+slightly larger fraction of their clean-
+tool SetHit@20, particularly in bundle
+shopping. This suggests a trade-off
+between upside and robustness: ag-
+gressive tool use can improve clean
+performance, while conservative tool
+use can reduce sensitivity to faulty rec-
+ommendations.
+Better prompt engineering, query-
+type-specific prompting, supervised
+tool-use tuning, or reinforcement
+learning over SetHit and SetRewardModels may further improve both performance and robust-
+ness. Studying these optimization strategies is beyond the scope of the benchmark, but the benchmark
+provides a direct testbed for them.
+4.5 Robustness to faulty tools
+25% 50% 75%
+Faulty tool rate
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35
+0.40
+0.45
+SetHit@20
+Relevance
+(RewardModel)
+Complementarity
+(RewardModel)
+Diversity
+(RewardModel)
+.25
+.50
+.75
+Faulty tool rate
+(25%)
+Relevance
+(RewardModel)
+Complementarity
+(RewardModel)
+Diversity
+(RewardModel)
+.25
+.50
+.75
+Faulty tool rate
+(50%)
+Relevance
+(RewardModel)
+Complementarity
+(RewardModel)
+Diversity
+(RewardModel)
+.25
+.50
+.75
+Faulty tool rate
+(75%)
+Comparative shopping Bundle shopping
+Figure 8: Effect of increasing faulty-tool rate on SetHit@20
+and reward-model scores. The agent usesGPT-4.1-mini.
+The main leaderboard evaluates
+agents when the utility-aligned
+tools are reliable. We now vary the
+faulty-tool rate while keeping the
+prompt, schemas, tool budget, and
+final-output constraints fixed. The
+corruption procedure for search,
+complementarity, and substitutability
+tools is specified in Section B.5.
+This setting is important because
+deployed recommendation tools
+are imperfect: retrieval may return
+spurious candidates, complementarity
+models may suggest weakly related
+products, and substitutability models
+may over-prune useful alternatives.
+Figure 8 shows that utility degrades
+monotonically as the faulty-tool rate
+increases. Comparative SetHit@20 drops from 0.406 at a 25% faulty-tool rate to 0.205 at 75%,
+while bundle SetHit@20 drops from 0.392 to 0.124. The reward-model decomposition explains this
+degradation. As tool quality decreases, item-query relevance and item-item complementarity both
+9
+
+[[page 10]]
+fall, while diversity increases. This increase in diversity is not necessarily beneficial: it reflects noisier
+and less focused sets, where the agent includes products that are less redundant but also less relevant
+and less complementary.
+Thus, faulty tools do not merely reduce exact recovery; they change the structure of the recommended
+set. High-quality tools help agents construct coherent sets with relevant and complementary items.
+When tool quality drops, agents increasingly produce diffuse sets that appear more diverse but provide
+lower relevance and complementarity.
+5 Conclusion
+LLM recommendation agents shift the unit of recommendation from an item or ranked list to a
+structured report: a set of products selected through tool use and justified in natural language. This
+shift requires evaluation beyond sampled item-ranking metrics and LLM judges.
+We introducedRecoAtlas, a behavior-grounded, set-level evaluation framework for shopping agents.
+Although our experiments instantiate it on three Amazon categories and fixed evaluation splits,
+the framework is not limited to this setting: its query-generation protocol can produce additional
+comparative-shopping and bundle-shopping tasks, and its ground-truth construction procedure derives
+behavioral targets from user-item and item-item interaction data (see Sections A and D for the full
+generation and artifact-building pipeline). This makesRecoAtlasa reusable testbed rather than a
+static collection of queries.
+RecoAtlasevaluates comparative shopping, which requires relevant but non-redundant alternatives,
+and bundle shopping, which requires complementary products that form a coherent setup. It combines
+exact held-out ground-truth recovery, learned reward models for relevance, complementarity, and
+non-redundancy, and separate LLM-judge scores for semantic and explanation quality.
+Our experiments show that these dimensions capture different properties: model rankings change
+across task types, behavior-aligned tools improve recovery without always improving semantic scores,
+complementarity and substitutability matter differently by task, and faulty tools expose failures
+hidden by aggregate metrics.RecoAtlasis therefore not a substitute for online experimentation, but a
+reproducible offline testbed for comparing shopping agents.
+RecoAtlascan be used not only for evaluation, but also as an environment for developing and
+optimizing shopping agents. Because the task generator can produce additional instances and the
+evaluator exposes behavior-grounded metrics, future work can useRecoAtlasfor prompt optimization,
+supervised tool-use tuning, reinforcement learning, or fine-tuning, while preserving held-out splits
+for final evaluation.
+References
+[1] Yu Shang, Peijie Liu, Yuwei Yan, Zijing Wu, Leheng Sheng, Yuanqing Yu, Chumeng Jiang,
+An Zhang, Fengli Xu, Yu Wang, Min Zhang, and Yong Li. Agentrecbench: Benchmarking llm
+agent-based personalized recommender systems.arXiv preprint arXiv:2505.19623, 2025.
+[2] Xiao Liu, Hao Yu, Hanchen Zhang, Yifan Xu, Xuanyu Lei, Hanyu Lai, Yu Gu, Hangliang Ding,
+Kaiwen Men, Kejuan Yang, Shudan Zhang, Xiang Deng, Aohan Zeng, Zhengxiao Du, Chenhui
+Zhang, Sheng Shen, Tianjun Zhang, Yu Su, Huan Sun, Minlie Huang, Yuxiao Dong, and Jie
+Tang. Agentbench: Evaluating LLMs as agents.arXiv preprint arXiv:2308.03688, 2023.
+[3] Grégoire Mialon, Roberto Dessì, Maria Lomeli, David Esiobu, Yizhong Chen, Kai Arulkumaran,
+Antoine Cully, Cyprien de Masson d’Autume, Hadi Eshragh, Nacér Hassen, Zachary Kenton,
+Andrew Li, Aravind Mahendran, Daniel Mankowitz, Piotr Mirowski, Anna Rogers, Hubert
+Soyer, Nino Vieillard, Martha White, Yuting Yang, et al. GAIA: A benchmark for general AI
+assistants.arXiv preprint arXiv:2311.12983, 2023.
+[4] Yujia Qin, Shihao Liang, Yining Ye, Kunlun Zhu, Lan Yan, Yaxi Lu, Yankai Lin, Xin Cong,
+Xiangru Tang, Bill Qian, Sihan Zhao, Lauren Hong, Runchu Tian, Ruobing Xie, Jie Zhou,
+Mark Gerstein, Dahai Li, Zhiyuan Liu, and Maosong Sun. Toolllm: Facilitating large language
+models to master 16000+ real-world apis.arXiv preprint arXiv:2307.16789, 2023.
+10
+
+[[page 11]]
+[5] Qiantong Xu, Fenglu Hong, Bo Li, Changran Hu, Zhengyu Chen, and Jian Zhang. On the tool
+manipulation capability of open-source large language models.arXiv preprint arXiv:2305.16504,
+2023.
+[6] Zhicheng Guo, Sijie Cheng, Hao Wang, Shihao Liang, Yujia Qin, Peng Li, Zhiyuan Liu,
+Maosong Sun, and Yang Liu. Stabletoolbench: Towards stable large-scale benchmarking on tool
+learning of large language models. InFindings of the Association for Computational Linguistics:
+ACL 2024, pages 11143–11156, Bangkok, Thailand, 2024. Association for Computational
+Linguistics.
+[7] Shishir G. Patil, Tianjun Zhang, Xin Wang, and Joseph E. Gonzalez. Gorilla: Large language
+model connected with massive apis.arXiv preprint arXiv:2305.15334, 2023.
+[8] Shunyu Yao, Howard Chen, John Yang, and Karthik Narasimhan. Webshop: Towards scalable
+real-world web interaction with grounded language agents.arXiv preprint arXiv:2207.01206,
+2022.
+[9] Yilun Jin, Zheng Li, Chenwei Zhang, Tianyu Cao, Yifan Gao, Pratik Jayarao, Mao Li, Xin Liu,
+Ritesh Sarkhel, Xianfeng Tang, Haodong Wang, Zhengyang Wang, Wenju Xu, Jingfeng Yang,
+Qingyu Yin, Xian Li, Priyanka Nigam, Yi Xu, Kai Chen, Qiang Yang, Meng Jiang, and Bing
+Yin. Shopping mmlu: A massive multi-task online shopping benchmark for large language
+models.arXiv preprint arXiv:2410.20745, 2024.
+[10] Jiangyuan Wang, Kejun Xiao, Qi Sun, Huaipeng Zhao, Tao Luo, Jian Dong Zhang, and Xiaoyi
+Zeng. Shoppingbench: A real-world intent-grounded shopping benchmark for llm-based agents.
+arXiv preprint arXiv:2508.04266, 2025.
+[11] Ralph Peeters, Aaron Steiner, Luca Schwarz, Julian Yuya Caspary, and Christian Bizer. Webmall
+– a multi-shop benchmark for evaluating web agents.arXiv preprint arXiv:2508.13024, 2025.
+[12] Huaixiao Tou, Ying Zeng, Cong Ma, Muzhi Li, Minghao Li, Weijie Yuan, He Zhang, and Kai Jia.
+Shoppingcomp: Are llms really ready for your shopping cart?arXiv preprint arXiv:2511.22978,
+2025.
+[13] Yougang Lyu, Xiaoyu Zhang, Lingyong Yan, Maarten de Rijke, Zhaochun Ren, and Xi-
+uying Chen. Deepshop: A benchmark for deep research shopping agents.arXiv preprint
+arXiv:2506.02839, 2025.
+[14] Yancheng Wang, Ziyan Jiang, Zheng Chen, Fan Yang, Yingxue Zhou, Eunah Cho, Xing Fan,
+Xiaojiang Huang, Yanbin Lu, and Yingzhen Yang. Recmind: Large language model powered
+agent for recommendation.arXiv preprint arXiv:2308.14296, 2023.
+[15] Yuyue Zhao, Jiancan Wu, Xiang Wang, Wei Tang, Dingxian Wang, and Maarten de Rijke. Let
+me do it for you: Towards llm empowered recommendation via tool learning. InProceedings of
+the 47th International ACM SIGIR Conference on Research and Development in Information
+Retrieval, pages 1796–1806. Association for Computing Machinery, 2024.
+[16] Chengkai Huang, Junda Wu, Yu Xia, et al. Towards agentic recommender systems in the era of
+multimodal large language models.arXiv preprint arXiv:2503.16734, 2025.
+[17] Qiyao Peng, Hongtao Liu, Hua Huang, Qing Yang, and Minglai Shao. A survey on llm-powered
+agents for recommender systems.arXiv preprint arXiv:2502.10050, 2025.
+[18] Eugene Ie, Vihan Jain, Jing Wang, Sanmit Narvekar, Ritesh Agarwal, Rui Wu, Heng-Tze Cheng,
+Morgane Lustman, Vince Gatto, Paul Covington, Jim McFadden, Tushar Chandra, and Craig
+Boutilier. Slateq: A tractable decomposition for reinforcement learning with recommendation
+sets. InProceedings of the Twenty-Eighth International Joint Conference on Artificial Intelli-
+gence, pages 2592–2599. International Joint Conferences on Artificial Intelligence Organization,
+2019.
+[19] Yi Ren, Xiao Han, Xu Zhao, Shenzheng Zhang, and Yan Zhang. Slate-aware ranking for
+recommendation. InProceedings of the Sixteenth ACM International Conference on Web Search
+and Data Mining, pages 499–507. Association for Computing Machinery, 2023.
+11
+
+[[page 12]]
+[20] Romain Deffayet, Thibault Thonet, Walid Bendada, Guillaume Bisson, Fabrice Popineau, Lynda
+Tamine, and Jefrey Lijffijt. Generative slate recommendation with reinforcement learning. In
+Proceedings of the Sixteenth ACM International Conference on Web Search and Data Mining,
+pages 580–588. Association for Computing Machinery, 2023.
+[21] Apurva Pathak, Kshitiz Gupta, and Julian McAuley. Generating and personalizing bundle
+recommendations on steam. InProceedings of the 40th International ACM SIGIR Conference
+on Research and Development in Information Retrieval, pages 1073–1076. Association for
+Computing Machinery, 2017.
+[22] Liang Chen, Yang Liu, Xiangnan He, Lianli Gao, and Zibin Zheng. Matching user with item
+set: Collaborative bundle recommendation with deep attention network. InProceedings of
+the Twenty-Eighth International Joint Conference on Artificial Intelligence, pages 2095–2101.
+International Joint Conferences on Artificial Intelligence Organization, 2019.
+[23] Jianxin Chang, Chen Gao, Xiangnan He, Depeng Jin, and Yong Li. Bundle recommendation with
+graph convolutional networks. InProceedings of the 43rd International ACM SIGIR Conference
+on Research and Development in Information Retrieval, pages 1673–1676. Association for
+Computing Machinery, 2020.
+[24] Matevž Kunaver and Tomaž Požrl. Diversity in recommender systems–a survey.Knowledge-
+Based Systems, 123:154–162, 2017.
+[25] Marius Kaminskas and Derek Bridge. Diversity, serendipity, novelty, and coverage: A sur-
+vey and empirical analysis of beyond-accuracy objectives in recommender systems.ACM
+Transactions on Interactive Intelligent Systems, 7(1), 2016.
+[26] Julian McAuley et al. Inferring networks of substitutable and complementary products. In
+Proceedings of the 21st ACM SIGKDD International Conference on Knowledge Discovery and
+Data Mining, 2015.
+[27] Junheng Hao, Tong Zhao, Jin Li, Xin Luna Dong, Christos Faloutsos, Yizhou Sun, and Wei
+Wang. P-companion: A principled framework for diversified complementary product recom-
+mendation. InProceedings of the 29th ACM International Conference on Information and
+Knowledge Management, pages 2517–2524, 2020.
+[28] Kai Sugahara, Chihiro Yamasaki, and Kazushi Okamoto. Is it really complementary? revisiting
+behavior-based labels for complementary recommendation. InProceedings of the 18th ACM
+Conference on Recommender Systems (RecSys), 2024.
+[29] Yongfeng Zhang and Xu Chen. Explainable recommendation: A survey and new perspectives.
+Foundations and Trends® in Information Retrieval, 14(1):1–101, 2020.
+[30] Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, et al. Judging llm-as-a-judge with mt-bench and
+chatbot arena. InAdvances in Neural Information Processing Systems, volume 36, 2024.
+[31] Haoning Wu et al. Humans or llms as the judge? a study on judgement biases.arXiv preprint
+arXiv:2402.10669, 2024.
+[32] Yijiang River Dong, Tiancheng Hu, and Nigel Collier. Can LLM be a personalized judge? In
+Findings of the Association for Computational Linguistics: EMNLP 2024, 2024.
+[33] Michael Krumdick, Charles Lovering, Varshini Reddy, Seth Ebner, and Chris Tanner. No
+free labels: Limitations of LLM-as-a-judge without human grounding.arXiv preprint
+arXiv:2503.05061, 2025.
+[34] David Rohde, Stephen Bonner, Travis Dunlop, Flavian Vasile, and Alexandros Karatzoglou.
+Recogym: A reinforcement learning environment for the problem of product recommendation
+in online advertising.arXiv preprint arXiv:1808.00720, 2018.
+[35] Eugene Ie, Chih-Wei Hsu, Martin Mladenov, Vihan Jain, Sanmit Narvekar, Jing Wang, Rui Wu,
+and Craig Boutilier. Recsim: A configurable simulation platform for recommender systems.
+arXiv preprint arXiv:1909.04847, 2019.
+12
+
+[[page 13]]
+[36] Martin Mladenov, Chih-Wei Hsu, Vihan Jain, Eugene Ie, Christopher Colby, Nicolas Mayoraz,
+Hubert Pham, Dustin Tran, Ivan Vendrov, and Craig Boutilier. Recsim NG: Toward principled
+uncertainty modeling for recommender ecosystems.arXiv preprint arXiv:2103.08057, 2021.
+[37] Kesen Zhao, Shuchang Liu, Qingpeng Cai, Xiangyu Zhao, Ziru Liu, Dong Zheng, Peng Jiang,
+and Kun Gai. Kuaisim: A comprehensive simulator for recommender systems.Advances in
+Neural Information Processing Systems, 36:44880–44897, 2023.
+[38] Yupeng Hou, Jiacheng Li, Zhankui He, An Yan, Xiusi Chen, and Julian McAuley. Bridging
+language and items for retrieval and recommendation.arXiv preprint arXiv:2403.03952, 2024.
+[39] OpenAI. Introducing GPT-4.1 in the API, April 2025. Includes GPT-4.1 mini.
+[40] xAI. Grok 4.1 fast and agent tools API, November 2025.
+[41] Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, et al.
+Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and
+next generation agentic capabilities, 2025.
+[42] Anthropic. Claude Haiku 4.5 system card, October 2025.
+[43] An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, et al. Qwen3
+technical report, 2025.
+[44] Akshara Prabhakar, Zuxin Liu, Ming Zhu, Jianguo Zhang, Tulika Awalgaonkar, Shiyu Wang,
+Zhiwei Liu, Haolin Chen, Thai Hoang, et al. APIGen-MT: Agentic pipeline for multi-turn data
+generation via simulated agent-human interplay.arXiv preprint arXiv:2504.03601, 2025.
+[45] Akhiad Bercovich, Itay Levy, Izik Golan, Mohammad Dabbah, Ran El-Yaniv, Omri Puny, et al.
+Llama-Nemotron: Efficient reasoning models, 2025.
+13
+
+[[page 14]]
+A Benchmark artifact build
+RecoAtlasbuilds one category-specific environment per Amazon product category. Each environment
+consists of a filtered catalogI, product texts xi for every item i∈I , subcategory metadata c(i),
+pretrained item embeddingsei, query supervision for retrieval training, and behavior-derived item–
+item co-purchase edges for complementarity training. The build has four conceptual stages. First, raw
+reviews and product metadata are filtered and converted into a searchable catalog. Second, positive
+user–item interactions are converted into natural-language query supervision. Third, a query-to-item
+retrieval model is trained from those query–item pairs. Fourth, a complementarity model is trained
+from co-purchase edges and used to project all items into anchor and complement spaces.
+The anonymized artifact release is available at https://huggingface.co/peerreview/
+reco-atlas-artifacts. The benchmark artifacts are stored under a category namespace and
+include product texts, filtered interactions, subcategory maps, base item embeddings, generated query
+splits, the trained retrieval checkpoint, the PPMI co-purchase graph, and trained complementarity
+embeddings. We useQwen/Qwen3-Embedding-0.6Bas the default embedding backbone.
+A.1 Catalog filtering
+LetR be the raw review table andM the raw product metadata table for a category. Reviews are
+joined to metadata by parent ASIN. The catalog keeps products whose metadata and reviews satisfy
+the following filters: the product has a numeric price in the configured range, the cleaned product
+description is non-empty, the review text used for filtering is at least 20 characters, and the review
+text is detected as English. By default, the allowed price range is [0.99,10000] , the minimum number
+of reviews per retained user and item is one, and no product-year filter is applied. If a maximum user
+count is configured, the most active surviving users are kept.
+The resulting filtered interaction table provides the behavior used throughout the benchmark. Query-
+generation positives and co-purchase positives both use interactions with rating at least 4.0, but
+they are used differently: query generation treats a positive (u,i) as supervision for query-to-item
+relevance, whereas complementarity uses pairs of positive items associated with the same user within
+a time window.
+A.2 Product text and metadata
+Each itemiis represented to the embedding models and tools by a lean text field:
+Title: {title} | Description: {description}.
+Titles are truncated to 200 characters. Descriptions are normalized by joining description fragments,
+removing repeated whitespace, requiring at least 15 characters, and truncating to 500 characters
+during catalog preparation. Runtime tool outputs expose only product identifiers, tool scores where
+applicable, extracted titles, and truncated product text. They do not expose the hidden ground-truth
+target set.
+Each item also receives a finest-grained subcategory label c(i), taken from the last element of
+the Amazon category path. This metadata is used structurally rather than as a learned feature:
+complementarity suppresses candidates withc(j) =c(i) for an anchori, and substitutability only
+compares items with the same subcategory.
+A.3 Base embeddings and query supervision
+For every item textxi, the build computes a normalized base embedding
+ei = fθ0(xi)
+∥fθ0(xi)∥2
+,
+wherefθ0 is the pretrained Qwen embedding model. Product texts are encoded with maximum length
+512 using final-token pooling. Because item vectors are L2-normalized, inner products in this space
+are cosine similarities. A FAISS HNSW index is also built for approximate inner-product lookup, but
+the dense scoring path used by the tools computes similarities directly against the item matrix.
+14
+
+[[page 15]]
+Stage 2 constructs retrieval supervision from positive pairs
+Pq ={(u,i) :r ui≥4.0}.
+Distinct positive pairs are shuffled with seed 42 and partitioned into four disjoint query-generation
+families: 40% standard need-based queries, 40% detailed product-need queries, 10% exact product
+lookup queries, and 10% vague hard queries. Each generator produces multiple candidate query
+variants for an item, and one variant is assigned to each positive user–item pair. The resulting
+supervised examples have the form (qui,i) , where qui is a generated shopping query and i is the
+positive item.
+The query-supervision split is by user rather than by query. Users are shuffled with seed 42, 10% are
+assigned to validation/test, and all query–item pairs for a user remain on the same side of the split.
+This prevents train/test leakage through repeated user histories.
+B Tool building
+RecoAtlasexposes three recommendation tools to agents: a query-to-item search tool, an item-to-
+item complementarity tool, and a same-subcategory substitutability tool. All three tools share the
+catalog, product texts, subcategory labels, and base item embeddings from Section A. The semantic
+and utility-aligned settings differ only in whether behavior-aligned training is used for query search
+and complementarity. Substitutability is deterministic and is identical in the clean semantic and clean
+utility-aligned settings.
+B.1 Semantic and utility-aligned tool variants
+The semantic search tool encodes a query with the pretrained query encoder and ranks items by
+⟨eq,ei⟩. The utility-aligned search tool replaces the query encoder with a behavior-trained query
+tower while keeping item embeddings tied to the shared base item space. The semantic complementar-
+ity tool scores anchor–candidate pairs with base item embeddings, after excluding same-subcategory
+candidates. The utility-aligned complementarity tool scores pairs using learned anchor and comple-
+ment projections trained from PPMI co-purchase edges. The substitute-pruning tool uses base item
+embeddings and subcategory metadata in both settings.
+B.2 Query-to-item search tool
+The search tool, exposed to agents as search_products(query, top_k) , ranks catalog items by
+query–item similarity. Given a query q, the tool computes a normalized query embedding zq and
+scores every itemiby
+srel(q,i) =⟨z q,ei⟩.
+The semantic version uses the pretrained Qwen query encoder. The utility-aligned version fine-tunes
+only the query tower while keeping item representations anchored in the same base item-embedding
+space.
+Training data for the utility search tool comes from the Stage-2 query mixture described in Section A.3.
+Positive supervision consists of generated shopping queries paired with the item in the positive user–
+item interaction from which the query was generated.
+The trained search model is a dual encoder. The item tower remains frozen, while the query tower is
+adapted with LoRA. The query input is formatted with the instruction
+Instruct: Given a shopping query, retrieve relevant products.
+nQuery:
+and the item input has no prefix. The query encoder receives LoRA adapters with rank 8 and alpha
+8, targeting down_proj by default. For each positive (q,i +), the training dataset samples three
+negatives by default: a hard negative from the same subcategory that the user has not interacted with,
+a cross-subcategory negative, and a random catalog item. The loss is multi-negative BPR:
+− 1
+m
+mX
+r=1
+logσ(s(q,i +)−s(q,i −
+r )),
+15
+
+[[page 16]]
+wheresis the cosine similarity between L2-normalized query and item embeddings.
+The default training configuration uses 5 epochs, batch size 24, gradient accumulation 2, AdamW
+with learning rate 5×10 −5, weight decay 0.01, linear warmup over 10% of training steps, and
+checkpoint selection by validation subcategory match@5. At runtime, search_products returns
+the topKproducts and displays a normalized score
+max
+
+0, s−mean(s)
+max(s)−mean(s) + 10−8
+
+.
+Each result contains the product ID, normalized score, title, and a truncated product description.
+B.3 Complementarity tool
+The complementarity tool, exposed as get_complementary_products(item_ids, top_k) , is
+trained from item–item co-purchase behavior. Let
+Pc ={(u,i,t) :r ui≥4.0}
+be positively rated user–item events with timestamps. Two itemsi,j receive a raw co-purchase count
+when the same user positively interacted with both items within the configured time window. In the
+default build, the window is 0 days in the implementation’s timestamp-difference convention, i.e.,
+events whose absolute timestamp difference has .days≤0 , less than one full day. The raw graph is
+symmetric and is filtered to items that survive catalog preprocessing.
+Raw co-purchase counts are converted to positive PMI. For itemsa,b, the build computes
+PMI(a,b) = log 2
+C(a,b)N
+M(a)M(b) ,
+whereC(a,b) is the co-purchase count, M(a) = P
+jC(a,j) is marginal count mass, and N=P
+a,jC(a,j) . Edges with PMI below the configured threshold are dropped; the default threshold is
+0, yielding a positive-PMI graph.
+The utility-aligned complementarity model learns two projection functions over frozen item embed-
+dings:hA(ei) for an anchor item andhC(ej) for a candidate complement. Each projection is an MLP
+Rd→R 256→R 128 with GELU and L2-normalized output. Anchors are split by seed 42 into 90%
+train and 10% validation anchors. For a positive PPMI edge (a,c +), training samples three negatives
+c−
+1,...,c −
+m that are neitheranor known PPMI complements ofa. The model minimizes InfoNCE:
+−log exp(⟨hA(ea),hC(ec+)⟩/τ)
+exp(⟨hA(ea),hC(ec+)⟩/τ) +Pm
+r=1 exp(⟨hA(ea),hC(ec−
+r
+)⟩/τ),
+withτ= 0.05 . The default build uses batch size 512, 3 complementarity epochs, AdamW with
+learning rate 10−3, weight decay 0.01, cosine learning-rate decay, and checkpoint selection by
+validation complement recall@5.
+After training, every catalog item is projected through both heads. At runtime, for each input anchor
+a, the tool scores a candidatejby
+scomp(a,j) =⟨h A(ea),hC(ej)⟩.
+The tool removesa itself and candidates withc(j) =c(a) , keeps high-scoring candidates, dedupli-
+cates across multiple input anchors, sorts by normalized complementarity score, and returns the top
+K. The semantic version uses the same interface but setshA =h C = identity, i.e., it uses base item
+embeddings on both sides instead of learned anchor/complement projections.
+B.4 Substitutability tool
+The substitutability tool, exposed as get_substitute_products(item_ids,
+similarity_threshold), is a deterministic duplicate-pruning tool rather than a trained
+model. For two itemsi,j, it defines
+ssub(i,j) =
+⟨ei,ej⟩, c(i) =c(j),
+0, c(i)̸=c(j).
+16
+
+[[page 17]]
+Thus, only items of the same product type can be treated as substitutes.
+At runtime, the tool walks the input list in order, treating earlier items as higher priority. LetS be the
+kept set so far and letδbe the similarity threshold, 0.95 by default. A new itemiis kept iff
+max
+j∈S
+ssub(i,j)≤δ.
+Otherwise,i is moved to the removed set and annotated with the kept item that triggered removal.
+Because this tool is based only on base item embeddings and subcategory metadata, the semantic and
+utility-aligned settings use the same clean substitutability implementation.
+B.5 Faulty tool variants
+Faulty tools are created at runtime after the clean tool output has been computed; the underlying
+retrieval, complementarity, and substitutability code paths are unchanged when the noise rate is
+0. In the experiments, we use subcategory-adversarial corruption. For search_products and
+get_complementary_products, let K be the number of clean returned slots and ρ∈[0,1] the
+faulty-tool rate. The corruption selects round(Kρ) slots uniformly without replacement. Each
+corrupted slot keeps its displayed score, but its item ID, title, and description are replaced.
+For search, if a clean slot contains item i, the replacement pool is the bottom 25% of items in
+subcategoryc(i), ranked bysrel(q,·) . For complementarity, the replacement pool is the bottom 25%
+of items inc(i), ranked by mean-anchor complementarity to the current input anchors. The bottom
+pool size is clamped between 3 and 50 items. This creates plausible same-subcategory distractors
+that retain the score profile of a clean result while being behaviorally poor for the current query or
+anchor set.
+For get_substitute_products, noise simulates false negatives. A fraction round(|removed|ρ)
+of cleanly removed duplicates is moved back into the kept list, with duplicate annotations stripped.
+Corruption is deterministic as a function of the tool name and call inputs, so repeated identical calls
+receive identical corruptions.
+C Behavior-grounded reward-model scorers
+The reward-model scores reported inRecoAtlasare implemented as item-level scorers over the final
+validated recommendation set. We use exactly three behavior-grounded components: relevance,
+complementarity, and diversity. LetS= (i 1,...,i n) be the valid product identifiers retained from
+the agent’s final report after output validation, and letK be the requested report length,K= 20 in
+our experiments. For a componentm, the set-level score is
+Rm(q,S) = 1
+K
+X
+i∈S
+rm(q,S,i).
+Thus missing positions, invalid product identifiers, duplicate positions removed by validation, and
+out-of-catalog products contribute zero through the denominator. The three components are reported
+separately; they are diagnostics of different set properties rather than labels for a single ground-truth
+scalar utility.
+C.1 Relevance scorer
+The relevance scorer uses the same trained query-to-item model as the utility-aligned search tool.
+Given queryq, letzq be the normalized query embedding and letei be the normalized catalog item
+embedding. The raw relevance score is
+aq(i) =⟨z q,ei⟩.
+The scorer normalizes each returned item against the full catalog score distribution for the same
+query:
+µq = 1
+|I|
+X
+j∈I
+aq(j), M q = max
+j∈I
+aq(j),
+17
+
+[[page 18]]
+rrel(q,S,i) = max
+
+0, aq(i)−µ q
+Mq−µq + 10−8
+
+.
+Items absent from the retrieval index receive score 0. This normalization makes the score query-
+relative: an item receives high relevance only if it is close to the query compared with the catalog
+background for that query.
+C.2 Complementarity scorer
+The complementarity scorer uses the trained anchor and complement embeddings from the utility-
+aligned complementarity model. For an anchor itemi, define the raw anchor-to-candidate score
+bi(j) =⟨h A(ei),hC(ej)⟩.
+The catalog-wide anchor baseline is
+µcomp
+i = 1
+|I|
+X
+j∈I
+bi(j), M comp
+i = max
+j∈I
+bi(j).
+For a returned itemi, the scorer compares it with the other returned items that are valid, distinct from
+i, and not in the same subcategory:
+Oi(S) ={j∈S:j̸=i, j∈I, c(j)̸=c(i)}.
+The item-level complementarity score is
+rcomp(q,S,i) =
+
+
+
+1
+|Oi(S)|
+X
+j∈Oi(S)
+max
+
+0, bi(j)−µ comp
+i
+M comp
+i −µ comp
+i + 10−8
+
+,|O i(S)|>0,
+0,|O i(S)|= 0.
+Reports with fewer than two valid items receive complementarity score 0. Same-subcategory pairs
+are excluded because they are treated as candidate substitutes rather than complements.
+C.3 Diversity scorer
+The reported diversity reward is the centroid-based diversity scorer. It is labeled simply as diversity
+throughout the paper and figures. It uses the same normalized item embeddings and subcategory
+metadata as the substitutability tool, but it expands the notion of comparable products beyond exact
+subcategory equality.
+For each subcategoryc, define its normalized centroid
+gc =
+P
+j:c(j)=cej
+P
+j:c(j)=cej
+
+2
+.
+For itemi, the scorer constructs a soft comparison scope from nearby subcategory centroids:
+C0.90(i) ={c:⟨e i,gc⟩>0.90}.
+If this set is empty, the implementation falls back to the item’s own subcategory{c(i)}. The in-report
+comparison set is
+Di(S) ={j∈S:j̸=i, j∈I, c(j)∈C 0.90(i)}.
+IfDi(S) is empty, the item receives diversity score 0. This convention avoids giving automatic
+diversity credit to products that are isolated from the rest of the returned set in the embedding-defined
+product space.
+Otherwise, the scorer computes the mean in-report similarity
+¯di(S) = 1
+|Di(S)|
+X
+j∈Di(S)
+⟨ei,ej⟩.
+It normalizes this value against the catalog baseline over the same centroid-defined scope,
+Bi ={j∈I:j̸=i, c(j)∈C 0.90(i)},
+18
+
+[[page 19]]
+µdiv
+i = 1
+|Bi|
+X
+j∈Bi
+⟨ei,ej⟩, M div
+i = max
+j∈Bi
+⟨ei,ej⟩.
+The normalized substitutability ofiwithin the report is
+ui(S) = min
+
+1,max
+
+0,
+¯di(S)−µ div
+i
+M div
+i −µ div
+i + 10−8
+
+,
+and the diversity reward is its complement:
+rdiv(q,S,i) = 1−u i(S).
+Near-duplicate products in the same centroid-defined comparison scope have high normalized
+substitutability and therefore low diversity. Products that are related enough to be in the same
+comparison scope, but not unusually similar relative to the catalog baseline, receive high diversity.
+D Query generation
+RecoAtlasuses fixed, category-specific query files under queries/{category}/. Each final
+evaluation file contains 250 instances per category and task type. A query instance stores a stable key,
+the natural-language query, the held-out target item identifier, and the query type. Bundle instances
+additionally store the full held-out bundle as bundle_items. The evaluated agent sees only the
+natural-language query and tool outputs; the held-out item identifiers and bundle metadata are used
+only by the evaluator.
+D.1 Comparative-shopping query generation
+Comparative-shopping queries are detailed product-need queries in which the ground-truth set
+contains one held-out item. For each product assigned to this generator, an LLM produces query
+variants from the product title, price, and description. The generator lowercases returned queries,
+keeps variants with at least four words, removes informational queries that begin like questions or
+contain a question mark, and assigns one remaining variant to each positive user–item pair for that
+product. The held-out item is parsed from the artifact key, whose format is{user_id}||{item_id}.
+The generator uses gpt-4.1-mini, requests 20 variants per item, allows 20 concur-
+rent LLM calls, retries rate-limited calls with exponential backoff, and caps each com-
+pletion at 700 tokens. In the final evaluation data, each category has a fixed file
+queries/{category}/comparative_shopping.json containing 250 instances selected for eval-
+uation.
+The final fixed evaluation files are additionally passed through the same query-quality filter used
+by the bundle pipeline. It uses model gpt-5.1 by default, batches 20 candidate queries per call,
+and asks for a binary keep/reject verdict for each query. A query is kept only if it is both a coherent
+human shopping query and expresses a genuine shopping intent: a need, goal, problem, use-case, or
+situation for which a shopper would look for products. The prompt explicitly rejects malformed text,
+non-shopping queries, purely factual questions, troubleshooting without purchase intent, greetings,
+store-meta questions, and off-topic prompts; borderline cases are rejected. The candidate pool is
+shuffled before filtering, and the script takes the first 250 survivors in shuffled order.
+The prompt used for this query generator is:
+Generate {n} DIVERSE detailed search queries for this product. Each query must
+read like a real user typed it into a search box.
+Product Title:{title}
+Price:{price}
+Description:{description}
+For each query, pick a DIFFERENT angle from this list:
+• Price-focused: mention a budget or price range
+• Feature-focused: highlight a specific capability or spec
+• Use-case-focused: describe a situation, e.g., “for live performance”
+19
+
+[[page 20]]
+• Material/quality-focused: mention materials, durability, build
+• Brand-focused: lead with brand preference
+• Comparison-style: “alternative to X” or “like X but cheaper”
+• Beginner/expert-focused: skill level + need
+Rules:
+• 6–15 words per query
+• Each query must start with DIFFERENT words
+• Use different sentence structures, not just “X for Y” every time
+• Be specific enough to narrow down to fewer than 20 products
+• Include product-specific details from the title/description
+Return ONLY valid JSON:
+{"queries": ["...", "...", ...]}
+D.2 Bundle-shopping query generation
+Bundle-shopping queries are generated from the trained complementarity environment. For a cat-
+egory, the generator loads the product texts, subcategory labels, filtered interactions, and trained
+complementarity embeddings. It then constructs the anchor pool
+Abundle ={i∈I:∃us.t.r ui≥4, ihas a complementarity embedding}.
+The benchmark run shufflesAbundle with seed 42 and keeps the first 1000 anchors. Thus the anchor
+distribution is uniform over retained positive items after filtering and shuffling; it is not proportional
+to item popularity.
+For each anchor itema, the generator retrieves the top 50 candidate complements under the trained
+complementarity score scomp(a,j) described in Appendix B. The anchor product text and this
+candidate pool are shown to an LLM curator, which is constrained to return JSON. The benchmark
+run uses gpt-5.4, 20 concurrent LLM calls, up to five retries per anchor with exponential backoff for
+rate limits, bundle size 3–7, at most one generated bundle per anchor, and seed 42. Before the final
+quality-filtered sample is selected, the full generated pools contain 1157, 1085, and 1054 bundles for
+Electronics, Musical Instruments, and Video Games, respectively.
+The bundle curation prompt requires each selected bundle to include the anchor, contain 3–7 total
+products, cover different roles, avoid duplicate functions or duplicate subcategories, and correspond
+to one clear project or use-case. The LLM may return fewer bundles if the pool does not support
+coherent bundles, and it may reuse items across bundles when they fit multiple projects. For each
+bundle, the LLM must generate three query variants that a shopper might type before knowing which
+products they need. The variants must differ by persona, framing, or context. The prompt explicitly
+forbids mentioning product types, categories, accessories, parts, or the bundle items themselves; the
+query should describe the user’s situation, goal, problem, or aspiration.
+The generator requests structured JSON with the following schema:
+{
+"bundles": [
+{
+"items": ["<item_id>", "<item_id>", "..."],
+"queries": ["<query_variant_1>", "<query_variant_2>", "<query_variant_3>"]
+}
+]
+}
+The parser then validates each LLM-proposed bundle against the anchor-plus-complement pool. It
+removes unknown item IDs, deduplicates while preserving order, inserts the anchor if the LLM
+omitted it, drops bundles smaller than the minimum size, truncates bundles above the maximum size,
+lowercases and strips query variants, and chooses one query variant for the saved evaluation instance.
+The hidden target set for the instance is the validated bundle item set.
+20
+
+[[page 21]]
+The final fixed bundle benchmark applies the same strict LLM query-quality filter used for
+comparative-shopping subsampling, shuffles surviving queries with seed 42, and keeps 250 in-
+stances per category. Each final bundle instance stores the natural-language query, the anchor item,
+query typebundle, and the complete held-out target set.
+E Prompting and agent protocols
+This appendix documents the prompts used to generate benchmark queries and to run recommendation
+agents. All prompts are fixed across models and experimental conditions unless otherwise stated.
+Prompt templates contain runtime variables, such as the requested report length K, the tool-call
+budget, and the current agent state. The implementation wires the evaluated agent through the shared
+agent factory in evaluation/agents_factory.py; the concrete tool-using policy is implemented
+by SpecificAgent. This ensures that differences across runs are attributable to the model, tool
+condition, task type, and category, rather than to prompt changes.
+E.1 Recommendation-agent prompts
+The evaluated recommendation agent is a tool-using LLM policy. For each task, it receives a user
+need, a fixed tool budget, access to the tool environment, and a target report size K. The agent
+must construct a final recommendation report containing exactlyK unique product identifiers. Final
+products must come from observed tool results or from the accumulated candidate set; the agent is
+not allowed to invent product identifiers.
+Reasoning system prompt.The following system prompt is used by
+SpecificAgent._system_prompt()before each tool-decision step:
+You are an expert product recommendation agent integrated with local catalog
+tools.
+Mission: Build a final recommendation set of exactly {top_k} unique products
+for the user’s need.
+First infer the task mode:
+•retrieval_clear : the user is looking for relevant products matching a clear
+need.
+•comparative_shopping : the user needs credible alternatives that satisfy
+the same broad intent while exposing meaningful tradeoffs and avoiding
+redundant near-duplicates.
+•bundle : the user needs a coherent set of complementary products that work
+together or fill different roles in a setup.
+Available tools:
+•search_products(...)
+•get_complementary_products(...)
+•get_substitute_products(...)
+Tool budget:
+• You may call at most{max_tool_rounds}tools.
+• Use tools deliberately; prefer fewer calls if enough evidence exists.
+• Do not invent product IDs. Final results must come from observed tool results.
+Output protocol:
+At each reasoning step, return strictly valid JSON only.
+If calling a tool:
+{
+"thought": "...",
+"step_goal": "...",
+"action": "<tool name>",
+"action_input": {...}
+}
+21
+
+[[page 22]]
+If ready to finalize:
+{
+"thought": "...",
+"final": {
+"report_explanation": "...",
+"results": [
+{"product_id": "<id>", "reasoning": "..."}
+]
+}
+}
+Per-step state block.At each reasoning step, the agent additionally receives a serialized state block
+containing the current need, inferred planning state, candidate pool, most recent tool output, and
+recent trace. The state is updated after each valid or invalid tool decision. The template is:
+{
+"user_need": "...",
+"planning": {
+"infer_task_mode": "...",
+"current_result_count": 0,
+"remaining_tool_calls": 10
+},
+"target_count": 20,
+"current_candidates": [...],
+"last_tool_result": {...},
+"recent_trace": [...]
+}
+The state block makes the protocol explicit: the model sees only the user need, the accumulated
+candidate evidence, the previous tool outputs, and its recent action history. Hidden behavioral targets
+and evaluator scores are never included in the prompt.
+Finalization system prompt.If the agent reaches the finalization stage,
+SpecificAgent._finalize_report()uses the following system message:
+You are finalizing a product recommendation report. Use the user need, candidate
+set, and selected task-mode objective to produce the final answer. Return valid
+JSON only.
+Finalization user message.The user message for finalization has the following template:
+User need:
+{need}
+Task modes:
+{task_mode_definitions}
+Candidate set:
+[item_id] product text
+...
+Return only valid JSON:
+{
+"report_explanation": "<brief strategy summary>",
+"results": [
+{"product_id": "<id>", "reasoning": "<why this item fits>"}
+]
+}
+22
+
+[[page 23]]
+Rules:
+- exactly {top_k} results
+- no duplicate product_id
+- only use product IDs from the candidate set
+- match the selected task-mode objective
+Output validation.The benchmark validates the agent output before scoring. Reports with fewer
+thanK valid products are scored with missing positions contributing zero. Duplicate identifiers
+do not receive additional credit, and out-of-catalog or unobserved identifiers are removed before
+evaluation. Invalid JSON or invalid tool calls are recorded in the trace and consume the attempted
+decision round. This protocol ensures that all evaluated models operate under the same tool budget,
+schema constraints, and candidate-source constraints.
+E.2 Semantic evaluation judge prompts
+In addition to behavior-grounded metrics,RecoAtlasuses LLM-as-a-judge prompts to evaluate the
+semantic quality of recommendation reports. These judges are used only during evaluation and are
+never exposed to the recommendation agent. They assess whether the recommended products are
+semantically appropriate for the user need and whether the natural-language explanations are specific,
+faithful, and useful. Both judges return structured JSON outputs with binary criteria, making the
+semantic evaluation reproducible and easy to aggregate.
+SemScore quality judge.The following prompt is used to evaluate the semantic quality of each
+recommended product with respect to the user need and the other products in the report.
+System:
+You are a helpful assistant that evaluates product recommendation quality. You
+return structured JSON assessments.
+User:
+Below is a set of product recommendations made for a user. Please assess the
+quality of each recommended product.
+## User Need
+{query}
+## Recommended Products
+{products_block}
+## Assessment Criteria
+For each product, assign binary scores:1 = yes,0 = no.
+1.relevance : Does this product genuinely address the user’s stated need? Would
+a reasonable shopper consider it a relevant result?
+2.complementarity : Does this product add complementary value to the set?
+Would a buyer naturally purchase it alongside at least one other recommended
+item, e.g., a guitar case with a guitar? Score 0 if it serves the same function as
+another item, or has no logical pairing with any other item in the set.
+3.diversity : Is this product sufficiently different from the other recommended
+items? Does it cover a distinct subcategory, use-case, or product type? Score 0
+if another recommended item could fully substitute for it.
+Respond with a JSON object:
+{
+"items": {
+"<product_id>": {
+"relevance": <0|1>,
+"complementarity": <0|1>,
+"diversity": <0|1>
+23
+
+[[page 24]]
+},
+...
+}
+}
+Explanation quality judge.The following prompt is used to evaluate the quality of the agent’s
+report-level strategy explanation and item-level reasoning.
+System:
+You are a helpful assistant that evaluates the quality of reasoning provided by a
+product recommendation system. You return structured JSON assessments.
+User:
+Below is a product recommendation produced by an automated system. Please
+assess the quality of the reasoning and explanations.
+## User Need
+{query}
+## Strategy Explanation
+{report_explanation}
+## Recommended Products with Reasoning
+{products_block}
+## Assessment Criteria
+For each product, assess the reasoning quality using binary scores: 1 = yes , 0 =
+no.
+1.specificity : Does the reasoning mention concrete product attributes, fea-
+tures, constraints, or use-cases instead of generic praise such as “good quality”
+or “useful”?
+2.faithfulness : Are the claims in the reasoning supported by the product
+description shown above, without inventing capabilities, materials, or benefits
+that are not evidenced in the text?
+3.justification : Does the reasoning clearly connect this particular product
+to the user’s stated need, explaining why it belongs in the recommendation set
+instead of only describing the product in isolation?
+If no meaningful reasoning was provided for a product, score all three as 0.
+Additionally:
+•strategy_coherence : Is the strategy explanation internally coherent, and is
+that strategy actually reflected in the final selected products?
+•overall_report_quality : Considering the strategy explanation and all item-
+level reasons together, does the report read like a coherent, useful overall recom-
+mendation report for this user need?
+Respond with a JSON object:
+{
+"items": {
+"<product_id>": {
+"specificity": <0|1>,
+"faithfulness": <0|1>,
+"justification": <0|1>
+},
+...
+},
+"strategy_coherence": <0|1>,
+"overall_report_quality": <0|1>
+}
+24
+
+[[page 25]]
+Use in evaluation.The semantic judges operate on the final recommendation report after output val-
+idation has removed invalid, duplicate, out-of-catalog, or unobserved identifiers. The product-quality
+judge produces item-level binary assessments of relevance, complementarity, and diversity. The
+explanation judge produces item-level binary assessments of specificity, faithfulness, and justification,
+plus report-level assessments of strategy coherence and overall report quality. These scores are
+reported separately from behavior-grounded metrics so thatRecoAtlascan distinguish reports that
+are semantically plausible from reports that are behaviorally useful.
+E.3 Prompting rationale
+The prompting protocol is intentionally simple. The goal is not to optimize prompts for each model,
+but to provide a common zero-shot policy interface for comparing general-purpose LLM reasoners
+under fixed tools and evaluation rules. The prompt therefore specifies the task objective, available
+tools, tool budget, JSON schema, and final report constraints, while leaving the model to decide
+when to search, when to expand candidates through complementarity, when to remove substitutes,
+and when to finalize. This design makesRecoAtlassuitable both for the zero-shot agents evaluated
+in this paper and for future agents trained or optimized on the same tool-mediated recommendation
+protocol.
+25

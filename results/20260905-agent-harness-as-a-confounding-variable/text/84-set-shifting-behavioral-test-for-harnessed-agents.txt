@@ -1,0 +1,1170 @@
+[[page 1]]
+Published at COLM 2026 Workshop on Agent Behavior
+Set-shifting Behavioral Test for Harnessed Agents
+Ye Ziwei
+yeziwei.ml@gmail.com
+Abstract
+What happens to an LLM agent’s tool choice when the reliable tool silently
+changes within an ongoing session? We borrow the notion of set-shifting
+from cognitive psychology to study how well agents adapt to hidden
+reliability shifts. Our cognitive test for LLM agents mounts libraries of
+redundant tools and skills, in which many tools solve the same task but
+differ in hidden reliability. Using a branching schedule, we shift the reliable
+tool group in the environment and compare it with a stable control, allowing
+us to isolate the effect of each shift on the agent’s behavior. We conduct our
+study on a panel of LLMs equipped with harnesses and show that the same
+set of shifts results in distinct behaviors across models: some latch onto
+a fixed routine within a few turns, whereas others continue to vary. Less
+capable models often omit the reliable tool group, while frontier models
+keep calling it alongside the other groups. We introduce a suite of measures
+to quantify agent behavior after reliability shifts. While policy prompting
+substantially alters behavior in some tested models, our findings highlight
+agents’ brittleness when changes occur in indirectly observable context.
+1 Introduction
+Humans who repeatedly solve similar problems form habits that simplify future decisions
+but can persist past their usefulness. The Einstellung effect captures how people persist
+with a learned solution when a better one is available (Luchins, 1942). The Wisconsin Card
+Sorting Test (WCST) makes the challenge more difficult by changing the sorting rule without
+warning mid-task (Grant & Berg, 1948; Heaton et al., 1993). Meanwhile, reversal learning
+paradigms apply hidden changes to value-based choice (Izquierdo et al., 2017). Recent work
+ports these cognitive tests to LLMs in textual or visual sorting tasks (Li et al., 2025b; Hao
+et al., 2025; Li et al., 2025a).
+Modern LLM agents reside in agentic harnesses in which each call to the model arrives
+with prior context. These segmented context blocks include tool calls and results, skills and
+tool schemas, and system prompts, so the agent never starts from a blank slate. In such
+a rich environment, a mounted library of skills and tools may contain several nominally
+equivalent capabilities, each calling different APIs and backend services. As with humans,
+repeated tool use recorded within the harness context lets the agent converge on a preferred
+subset of skills and tools. An agent’s tool preference may outlive an unannounced backend
+change, leaving the agent using failing toolsets. To test agent set-shifting, we ask: Can an
+agent revise its action route when the reliable tool group changes silently?
+We make the following contributions: (i) A behavioral test for harnessed agents based on
+redundant tool-skill sets1, libraries of many functionally equivalent tools where the working
+subset silently shifts mid-trajectory. (ii) A descriptive framework that characterizes post-shift
+behavior as two routing profiles, concentration and retention. (iii) A case study applying
+our experimental protocol to a panel of both open-weight and closed-weight LLMs, with
+a structuralset framingintervention and an instructionalpolicyapplied across the panel.
+Together, these contributions point to a capability-linked pattern in behavior (Figure 6).
+1Code:https://github.com/zwycl/agent-wcst-mini-bench
+1
+arXiv:2607.13396v2 [cs.AI] 28 Aug 2026
+
+[[page 2]]
+Published at COLM 2026 Workshop on Agent Behavior
+group A group B group C
+📅
+/calendar-check
+/calendar-plus
+/calendar-minus
+/calendar-day
+/clock
+/h⌢urglass-half
+/stopwatch
+/clipboard-lis◎
+/hist⌢ry
+♂search
+♂search-plus
+/filter
+♂list
+♂rando¶
+skills
+1 /file
+2 /file
+3 /file
+aux ✉ ♂paper-plane/user-friends♂¶ap-¶arker
+Figure 1:Tool-skill structure.Each SKILL.md (left) describes one tool group, and each
+group contains functionally redundant variants. Boundaries silently change which group is
+reliable.
+Set Type Manipulation Example
+Description vari-
+ant
+Same schema and execution, different
+name and phrasing
+calendar lookup vs.
+slot window lookup
+Quality gradient Same visible intent, different hidden
+reliability across phases
+tool group reliable in phase 1
+vs. unreliable in phase 2
+Side effect conflict Mutating action vs. reversible preview send emailvs.draft email
+Table 1: Tool-skill set relation types.
+2 Behavioral Test
+2.1 Tool-Skill Sets and Taxonomy
+Definitions.In the agentic harness environment, atoolconsists of a callable function
+along with associated metadata and a schema specifying its input and output types. When
+invoked, the function either returns a value of the schema-specified output type or returns a
+failure message. We definetool groupsas sets of functionally equivalent tools with the same
+schema and backend operation but different names and descriptions. Askillis a procedure
+paired with one tool group, and the agent learns when and how to invoke tools through a
+skill’s instructions. We mount these asredundant tool-skill sets(Figure 1), so that entries for
+the same task family differ only in description and hidden reliability.
+Cue neutrality.For our pure WCST-like experiments, we use neutral textual descriptions
+for all skills, tools, and tasks. User simulations and templates use task-relevant and neutral
+vocabulary while varying subject and setting details. Following WCST, there is no lexical cue
+toward any specific tool group, and agents discover the active tool group by learning from
+binary tool feedback. We vary the surface wording of descriptions to keep agents’ choice of
+active tool group from simply tracking the wording of the template. Appendix A.3 reports
+an audit for signs of evaluation awareness that may result from modern LLM post-training.
+Interventions against neutrality.Furthermore, we perform multiple interventions that
+depart from the pure set-shifting paradigm. In the first setup, we vary the cueing with
+set framing, altering skill descriptions to cast the groups relative to one another as either
+competing providers or a complementary stack. In an alternate setup, we apply a more
+instructionalpolicy promptto see if the agent adapts accordingly. We detail both setups in
+§4.3 and §4.4.
+2
+
+[[page 3]]
+Published at COLM 2026 Workshop on Agent Behavior
+AB prefix
+ABC
+ABA
+ABB
+no-shift control
+ABCA
+ABCB
+ABCC
+ABAC
+ABAB
+ABAA
+B→C
+B→A
+B→B
+C→A
+C→B
+C→C
+A→C
+A→B
+A→A
+tier 0 tier 1 tier 2
+Figure 2:Branched schedule tree.The
+shared prefix branches into three tier 1 seg-
+ments (two shifts plus a no-shift control),
+and each shift segment branches again into
+three tier 2 endpoints.
+context + request
+R∗ 📅 /calendar-check/calendar-plus/calendar-minus/calendar-day/clock/h⌢urglass-half/stopwatch/clipboard-lis◎/hist⌢ry♂search♂search-plus/filter♂list♂rando¶
+context + request
+R2 📅 /calendar-check/calendar-plus/calendar-minus/calendar-day/clock/h⌢urglass-half/stopwatch/clipboard-lis◎/hist⌢ry♂search♂search-plus/filter♂list♂rando¶
+context + request
+R1 📅 /calendar-check/calendar-plus/calendar-minus/calendar-day/clock/h⌢urglass-half/stopwatch/clipboard-lis◎/hist⌢ry♂search♂search-plus/filter♂list♂rando¶
+support
+/user-friends♂¶ap-¶arker
+/user-friends♂¶ap-¶arker
+/user-friends♂¶ap-¶arker
+Figure 3:Three consecutive turns after an
+A→B shift.Each turn calls a route over the
+primary groups on the left and the support
+tools it needs on the right. Classes shown
+are R∗ (no target), R2 (target plus one other),
+andR 1 (target only), withR 3 omitted.
+2.2 Domains and Dataset Construction
+We instantiate our test in three domains: scheduling and coordination (3 groups× 5 tools),
+DevOps incident triage (4 groups× 5 tools), and multi-cloud storage (5 groups× 2 tools).
+Tools in our tests are simulated, with side-effect actions implemented as mocks, and each
+mounted set instantiates every relation from Table 1. Scheduling maintains neutral cueing
+throughout. We build both framings over the same toolset to form the matched pairs used
+in §4.3 for the DevOps and multi-cloud domains.
+Each domain mounts one skill per tool group, with the skills loaded simultaneously. Names
+within a group draw from a single theme and the naming is parallel across groups. Each
+domain also includes a support tool group and side-effect tools, which the verifier blocks
+unless the user explicitly asks for that action. Appendix A.2 documents the framework
+construction in more detail and Appendix A.4 provides an example of a generated tool-skill
+set.
+3 Study Design and Evaluation
+3.1 Harness and Environment
+Setup.We use Hermes Agent (v0.16.0) (Nous Research, 2026), an open-source agentic
+harness with an extensive skill and tool mechanism. The study focuses on four models of
+varying sizes and capacity. We use two open-weight models, mimo-v2.5 (LLM-Core Xiaomi,
+2026) and deepseek-v4-pro (DeepSeek-AI, 2026) in combination with three proprietary
+models: gemini-3.5-flash-lite (Google DeepMind, 2026), a fast model for agentic use,
+and the frontier model gpt-5.5 (OpenAI, 2026). We serve the open-weight models and
+gemini-3.5-flash-lite through OpenRouter and gpt-5.5 through the OpenAI API. Every
+agent uses the default Hermes system prompt (as of v0.16.0). Appendix A.1 gives the
+sampling settings and remaining configuration.
+3.2 Study Design
+Schedule and tree.In our proposed benchmark, the previously reliable tool group becomes
+unreliable at each shift. The harness context does not provide any warning of the change,
+and tool descriptions and schemas remain unchanged. Figure 4 shows the behavior per
+3
+
+[[page 4]]
+Published at COLM 2026 Workshop on Agent Behavior
+B C
+phase 1: tool group B reliable phase 2: tool group C reliable
+shift at boundaryk
+1 10 20 30 40 50 turn
+pre-shift plateau post-shift window
+Cell: clean commit mixed off-target
+Figure 4:Behavior per turn across a single boundary.The top bar shows the reliable tool
+group across phases, and the strip below shows the route-class chosen each turn.
+turn at one such shift boundary. With M tool groups and K branching layers, we represent
+the schedule as a tree of trajectories (Figure 2). Eachtrajectorybegins with a sharedprefix, a
+common starting point with fixed tool display order and permutation within each group.
+After a trajectory is complete, the run branches into three trajectories with different settings:
+a reversal to a previously used tool group, a novel shift to a previously unused tool group,
+and a no-shift control that keeps the previous group reliable.
+In this study, we use M= 3 tool groups and K= 2 branching layers over 90 turns with 9
+endpoints. They contain three boundaries: b1 at turn 15 inside the prefix (A→B ), b2 at turn
+40 before a tier 1 window, and b3 at turn 65 before a tier 2 window. Each tool group first
+becomes reliable at a different shift point. Group A is reliable from turn 1 and B from turn
+16. Group C first becomes reliable at the tier 1 boundary (turn 41) on novel shift endpoints
+and is never reliable on no-shift control branches.
+We also annotate each target with aprior use role, based on the order in which they first
+appear in the run. CA is a reversal target that is reliable early in the prefix and then becomes
+unreliable. CB is a reinforced target that remains reliable through the end of the prefix. CC
+is a novel target that is never reliable in the prefix. Differences in metrics among groups
+should reflect their first appearances in the run. A role-theme permutation ablation confirms
+that the differences track prior use rather than the fixed tool group (Appendix C.3).
+The tree-based experimental protocol in §4.1, §4.2, and §4.4 uses the scheduling domain
+with n= 16 runs. Every domain also supports alinear schedule, a single trajectory with shifts
+at fixed turns for cost efficiency. We use this schedule for the set framing intervention on
+DevOps and multi-cloud (§4.3) and for the replication on a second harness (§C.1).
+Research questions.In this study, we ask the following:
+1. When the reliable tool group shifts, does the agent commit to the new tool group,
+and how does each prior-use role affect the resulting pattern?
+2. Does the depth of an endpoint, or the path taken to reach it, matter beyond the most
+recent shift?
+3. Does set framing shift which routine the agent settles into?
+4. Can an instructional policy prompt affect the lock-in?
+3.3 Evaluation metrics
+Here we define some metrics over trajectory observations.Set-shifting accuracy Φ measures
+whether the agent stays on the reliable group across a trajectory. Per-turnroute-class rates
+describe the routing profile at each shift. Thetask-completion rate F records whether the
+reliable work is completed, and thesingle-routine ratemeasures rigidity. We use these metrics
+to answer the four research questions we pose.
+Set-shifting accuracy.For each post-shift window Pk, we define the target share sk as the
+fraction of route calls made to the reliable group Ck. For a trajectory crossing boundaries
+4
+
+[[page 5]]
+Published at COLM 2026 Workshop on Agent Behavior
+b1, . . . ,bK,
+Φ=
+K
+∏
+k=1
+sk. (1)
+The product is high only when the agent routes reliably after every shift. Equivalently,
+suppose we sample route calls from each post-shift window, then Φ is the probability
+that every sampled call belongs to its target group. Because Φ is cumulative, we compare
+models at the same endpoint and use the single-window share sk to measure an individual
+boundary.
+Route classes.We classify each turn by the set of tool groups its calls touch (Figure 3). R1
+denotestarget only, R2 target plus one other group, R3 target plus both other groups, and R∗ no
+target. With one tool call per included group, these classes correspond to s∈{ 1, 0.5, 0.33, 0}.
+We call R2 and R3 breadth routesbecause they retain the target while adding one or both
+other groups. R∗ denotesoff-target routing, which omits the currently reliable group. The
+R-classes are turn-level labels, whereassk is their window-level average under this mapping.
+Because sk weights every route call equally, turns with many calls receive more weight. The
+model ordering is unchanged under a turn-normalized share (Appendix B.3).
+Task completion.We calculate the proportion of turns that the verifier marks as task-
+completing, F. A turn counts when the agent calls at least one tool from the reliable group,
+uses every required support tool group, and invokes no side-effect tools. A turn that mixes
+the reliable group with unreliable groups still counts as complete.
+Single-routine rate.A trajectory holds asingle routinewhen it calls the same set of tool
+groups on every route-bearing turn of a post-shift window, and the single-routine rate is the
+fraction of windows for which this holds. We use this metric to measure rigidity.
+Uncertainty.All reported Φ values carry bootstrap 95% intervals, with paired permutation
+tests for sibling contrasts (Appendix A.1).
+4 Experimental Results and Analysis
+4.1 Target history interacts with model-specific commitment (RQ1)
+Results.An agent’s response to a shift depends on the target’s prior use, but this depen-
+dence differs by model. By mean set-shifting accuracy, mimo orders the targets CA > CB >
+CC and has low variance. Its accuracy is lowest at the never-seen target. deepseek-v4-pro
+instead orders them CB > CA≈ CC and has high variance at every target (Table 2).
+Post-shift target shares concentrate on a few discrete values.After a shift, target share
+tends to approach s∈{ 0, 1
+3, 1
+2, 1}. The resulting value depends on both the model and the
+target’s prior-use role (Figure 5). Appendix B.1 gives the complete endpoint-level results,
+and Appendix D gives example trajectories.
+Models differ in how rigidly they maintain these routines. mimo, deepseek-v4-pro, and
+gemini-3.5-flash-lite follow a single routine much more often than gpt-5.5 (Table 2).
+For example, gemini often uses the target-only routine after reversal shifts but an off-target
+routine after novel shifts. Each recurring value corresponds to a stable routine (Botvinick &
+Plaut, 2004).
+Models maintain different routines.The two open-weight models maintain routines
+at different levels, explaining their contrasting variance. mimo’s low variance reflects a
+routine determined by the target’s prior use. This pattern represents partial commitment.
+By contrast, deepseek-v4-pro’s high variance reflects prefix-level commitment to whichever
+group it selects early. A prefix that selects the reliable group retains it to the end ( s≈ 1),
+5
+
+[[page 6]]
+Published at COLM 2026 Workshop on Agent Behavior
+mimo-v2.5 deepseek-v4-pro gemini-3.5-flash-lite gpt-5.5
+Endpoint Φ|sk R∗ R3 F Φ|sk R∗ R3 F Φ|sk R∗ R3 F Φ|sk R∗ R3 F
+Tier 1(s k atb 2)
+A B A .31±.06|.82 .00 .03 .99 .41±.16|.53 .25 .03 .75 .45±.14|.74 .17 .00 .74 .27±.05|.52 .00 .13 1.00
+A B B † .22±.14|.40 .00 .18 1.00 .82±.16|.86 .06 .00 .94 .64±.21|.70 .19 .00 .80 .28±.06|.52 .02 .16 .98
+A B C .06±.04|.17 .39 .46 .60 .38±.18|.40 .34 .20 .66 .15±.12|.23 .57 .15 .39 .14±.03|.25 .13 .51 .87
+Tier 2(s k atb 3)
+A B A A † .25±.05|.83 .00 .03 1.00 .40±.16|.68 .19 .02 .75 .44±.15|.99 .01 .00 .81 .16±.05|.55 .00 .11 1.00
+A B A B .15±.07|.40 .00 .20 .99 .34±.14|.72 .06 .02 .88 .19±.10|.35 .42 .00 .58 .13±.03|.45 .08 .14 .92
+A B A C .05±.02|.20 .31 .52 .68 .17±.12|.27 .50 .07 .44 .11±.11|.15 .77 .02 .23 .06±.02|.21 .31 .38 .69
+A B C A .04±.02|.80 .00 .10 .99 .24±.13|.52 .28 .06 .66 .07±.07|.64 .29 .01 .70 .06±.01|.46 .01 .32 .99
+A B C B .03±.02|.39 .00 .28 .99 .30±.16|.66 .13 .08 .80 .07±.07|.41 .39 .00 .61 .07±.02|.51 .04 .20 .96
+A B C C † .02±.01|.20 .31 .50 .68 .37±.18|.60 .25 .09 .68 .13±.12|.37 .50 .12 .49 .06±.02|.39 .10 .29 .90
+single-routine rate 66% 50% 66% 9%
+Table 2:Per-model behavior on the scheduling tree.Route-class rates ( R∗, R3), completion
+F, final-window target share sk, and set-shifting accuracy Φ across the four primary models
+(n= 16 each). The Φ|sk column pairs Φ (mean± bootstrap 95% CI half-width) with the
+final-window share sk, and the endpoint’s final letter gives the target group. † marks a
+no-shift control. Definitions are in §3.3.
+reversal
+deepseek mimo gpt-5.5 gemini
+reinforced
+0 .33 .5 1
+novel
+0 .33 .5 1 0 .33 .5 1 0 .33 .5 1
+post-shift target share s
+Figure 5:Post-shift target share splits by prior-use role.Histograms pooled over
+the three endpoints in each role. Columns are the models and rows are the reversal,
+reinforced, and novel roles, with vertical guides at{0, 1
+3, 1
+2, 1}. deepseek-v4-pro splits to
+the extremes, mimo-v2.5 concentrates on the middle, gpt-5.5 holds a single mode, and
+gemini-3.5-flash-liteis bimodal with values near 0 on novel targets.
+whereas a prefix that does not remains off-target (s≈ 0). This split persists across the tier
+boundary and prior use barely changes the outcome (Figure 8).
+On the other hand, gpt-5.5 follows a single routine in only 9% of windows yet maintains
+high task completion, including F= 0.87 at the novel target. Its target share remains low
+because it calls other groups alongside the target. Completion falls to 0.69 after a reversal
+(ABAC).
+These set of behaviors define two routing profiles that repeats across our results. In the
+concentrationprofile, seen on deepseek’s low-share prefixes, a model commits to one group
+and routes off-target (R∗) when that group becomes unreliable. In theretentionprofile, seen
+with gpt-5.5, a model keeps the reliable group while adding breadth (R2 and R3). We find
+that the distinction persists under an independent harness (Appendix C.1).
+6
+
+[[page 7]]
+Published at COLM 2026 Workshop on Agent Behavior
+width ¯wΦ
+Model Domain(M) cpl. cpt. cpl. cpt.
+deepseekDevOps (4) 3.491.980.02 0.26
+Multi-cloud (5) 4.322.900.01 0.18
+mimoDevOps (4) 3.812.800.03 0.11
+Multi-cloud (5) 4.332.710.01 0.03
+gpt-5.5DevOps (4) 4.002.060.00 0.10
+Multi-cloud (5) 5.001.150.00 0.28
+geminiDevOps (4) 2.822.570.01 0.01
+Multi-cloud (5) 3.471.230.00 0.04
+Table 3:Competing framing narrows the routine.
+Matched framing pairs on the DevOps and multi-
+cloud domains, n= 8 per cell. Width ¯w is the mean
+number of distinct tool groups per turn, at most
+M. cpl./cpt. mark the complementary/competing
+framings.
+Model II reg.Φadapt.ΦR ∗ nov.
+gpt-5.556 .14.86.18→.00
+deepseek44 .38.74.36→.00
+mimo37 .13 .15 .34→.44
+gemini36 .25 .32 .61→.52
+Table 4:Prompt response differs
+across the tested capability range. Φ
+is the mean set-shifting accuracy un-
+der the regular assistant ( n=16) and
+adaptive prompt (n=8), R∗ the novel-
+window off-target rate, andIIthe Arti-
+ficial Analysis Intelligence Index.
+4.2 Matched scheduled paths add little beyond the current shift (RQ2)
+Endpoint depth adds little beyond the current shift. Because Φ multiplies one share per
+window, it decreases with depth by construction. The final window share sk remains stable.
+For example,mimoreachess k =0.82 at A B Aands k =0.83 one level deeper at A B A A.
+The preceding path also has little effect. The paths A→ B→ A→ Band A→ B→ C→ Breach
+the same reinforced target through different intermediate groups. Across the tested models,
+their final shares differ by at most 0.06.
+We find that the current shift has a larger effect: for deepseek, shifting away from the
+reinforced target reduces Φ by approximately 0.40 relative to the matched no-shift control.2
+Behavior therefore depends more on the current shift than on endpoint depth or the path.
+4.3 Set framing shifts routine occupancy (RQ3)
+Setup.We vary set framing in the DevOps ( M= 4) and multi-cloud (M= 5) domains,
+using 15 turns per phase under the linear schedule. Each domain uses a matched pair over
+the same toolset that differs only in framing (Appendix A.3). The complementary condition
+presents the groups as parts of one service, each returning its own fields. The competing
+condition presents them as rival providers whose reports share one identifier. We measure
+routine width ¯w, the mean number of distinct tool groups called per turn.
+Results.Competing framing narrows the routine for every model in both domains (Ta-
+ble 3). Complementary framing invites a mixed routine spanning all M groups, whereas
+competing framing invites commitment to one. In 53 of the 64 matched pairs, the com-
+peting side is narrower (sign test p= 1.0× 10−7). The effect is sharpest for gpt-5.5,
+whose multi-cloud routine contracts from all five groups to about one. It also appears for
+gemini-3.5-flash-liteon multi-cloud (3.5→1.2).
+Narrowing the routine does not always improve set-shifting.deepseek-v4-pro,mimo-v2.5,
+and gpt-5.5 commit toward the reliable group. Competing framing therefore raises both
+their target share and set-shifting accuracy. For example, deepseek’s DevOps Φ rises from
+0.02 to 0.26. gemini also narrows sharply on multi-cloud, but it selects a non-target group
+and its Φ remains near zero. Framing therefore changescommitment, which improves
+accuracy only when the model commits to the target.
+2Paired-permutation ∆Φ tests give p= 6× 10−4 for the reversal (A B B vs A B A) and 6× 10−5
+for the novel shift (A B B vs A B C).
+7
+
+[[page 8]]
+Published at COLM 2026 Workshop on Agent Behavior
+4.4 An adaptive prompt mitigates the lock-in (RQ4)
+Setup.We append a trajectory-local policy prompt that instructs the agent to reuse the
+most recently successful tool and to switch groups after a failure (Appendix A.4). We
+evaluate the prompt across the panel. We then compare prompt response with the Artificial
+Analysis Intelligence Index, which we use as a coarse capability proxy (Artificial Analysis,
+2026).
+Results.The adaptive prompt substantially improves set-shifting for gpt-5.5 and
+deepseek-v4-pro, but has little effect on mimo-v2.5 and gemini-3.5-flash-lite (Table 4).
+Mean accuracy rises from 0.14 to 0.86 for gpt-5.5 and from 0.38 to 0.74 for deepseek-v4-pro.
+Novel-window off-target routing falls to zero for both. On deepseek, the prompt also over-
+rides the bimodality of §4.1. The regular assistant leaves 9 of 16 ABAC trajectories at s≤ 0.2,
+whereas no adaptive trajectory remains in that low mode.
+The same prompt barely changes set-shifting accuracy for the other two models and off-
+target routing persists. On mimo, the prompt increases novel-window R∗. Within our
+panel, model capability coincides both with the observed routing profile and with prompt
+response (Figure 6). These models may require stronger prompting, external control, or a
+training-based intervention. We leave those alternatives to future work.
+5 Related Work
+Tool-use benchmarks and redundant tools.Single-session tool-use benchmarks evaluate
+tool selection and execution (Yao et al., 2025; Barres et al., 2025; Huang et al., 2024; Patil
+et al., 2024; 2025; Qin et al., 2024; Liu et al., 2024). Separate bias studies report fixation
+(Blankenstein et al., 2026; Wei et al., 2024), and Faghih et al. (2025) show that for two
+tools with identical arguments, description edits alone shift selection. Concurrent work
+explore adjacent axes: Liu et al. (2026b) merge and filter redundant tool inventories, Liu
+et al. (2026a) evaluate replanning under dynamic tool failures and costs, and Chen et al.
+(2026) study failure to update multi-turn reasoning and correct it with single-turn-anchored
+reinforcement learning. We differ by combiningwithin-sessionshifts of group reliability
+with resumed, branched session state on top of an agentic harness (Yao et al., 2023; Schick
+et al., 2023; Shinn et al., 2023; Park et al., 2023; Wang et al., 2024; Packer et al., 2023). The
+reinforcement-learning remedy of Chen et al. (2026) is a candidate training-based fix for the
+models that resist our prompt, such asmimo.
+Path dependence and policy effects.Lee (2026) documents path dependence within a
+trajectory, where one off-route call raises the next call’s off-route probability. We extend
+this to runs with multiple shifts that separate perseveration from adaptation to the new
+reliable tool group. The exploration deficits documented by Krishnamurthy et al. (2024)
+predict the failure we observe on mimo. Cao et al. (2026) document agentic degradation
+under persona/policy cues, but do not measure perseveration over time.
+Choice perseveration and continual learning.The WCST decomposes set-shifting failure
+into perseverative errors and failure-to-maintain set (Heaton et al., 1993), formalized as a
+framework called Value-Plus-Perseveration (Worthy et al., 2013). Functional fixedness is
+the spatial analog of Einstellung’s procedural rigidity (Duncker, 1945). The same construct
+surfaces in continual learning as primacy bias (Nikishin et al., 2022) and loss of plasticity
+(Dohare et al., 2024). In this work, we import the change protocol into an LLM agent harness.
+Cognitive tests on LLMs.The closest cognitive tests for LLMs (Li et al., 2025b; Hao et al.,
+2025; Li et al., 2025a) port WCST and set-shifting probes into multimodal settings, but these
+works evaluate raw model behavior without context. We close this gap by testing the agentic
+version, where the “cards” are functionally callable tools and the branched tree of resumed
+sessions carries the harness state these works omit.
+8
+
+[[page 9]]
+Published at COLM 2026 Workshop on Agent Behavior
+6 Discussion
+36
+40 44 48 52 56 Artificial Analysis Intelligence Index
+0.0
+0.2
+0.4
+0.6
+0.8
+route-class rate at novel targetgemini-3.5-
+flash-lite
+mimo-v2.5
+deepseek-v4-pro
+gpt-5.5
+claude-opus-4.8
+off-target R *
+breadth R3
+Figure 6:Higher capability shifts the routing
+profile from concentration toward retention.
+At novel targets, a higher Artificial Analysis
+Intelligence Index coincides with less off-target
+routing (R∗) and more breadth (R3).
+What does a low set-shifting accuracy
+actually mean?A low set-shifting ac-
+curacy does not always mean the same
+failure. In the retention profile, the reli-
+able group is still called along with al-
+ternatives ( R2 and R3), so the task can
+still complete despite a lower target share.
+For gpt-5.5, for example, Φ is among
+the lowest overall, yet its departures
+are primarily target-retaining rather than
+target-omitting, so its completion rate F is
+among the best. Φ measures how much of
+an agent’s attention lands on the reliable
+group, while the route-class rates and F
+show how it departs and whether it still
+completes the task.
+Which routing profile is right for a de-
+ployed agent?In actual agent use, tar-
+get omission may introduce completion
+risk from backend drift, with agents re-
+taining their previous routes when they
+are no longer appropriate (Wang et al.,
+2025). While target-retaining breadth pre-
+serves coverage, it increases the call footprint, potentially causing higher latency and rate
+limit pressure (Liu et al., 2026a). When the reliability of the results is not guaranteed, redun-
+dant calls provide fault tolerance (Avizienis, 1985; Dean & Barroso, 2013). The preferred
+profile then depends on an agent application’s reliability and latency. Evaluations should
+report completion, target retention, and route breadth separately, and maximal focus on the
+reliable group is not always desirable.
+Can a prompt intervention alter both profiles?Set framing and the policy prompt help
+the two capable models but barely move the weaker two. A durable fix likely has to act at
+training time rather than through prompting. Multi-turn tool-use RL (Singh et al., 2025) is a
+natural candidate for the models that resist our prompt, and continual learning remedies
+for primacy bias and loss of plasticity (Nikishin et al., 2022; Dohare et al., 2024) target the
+same lock-in. We leave these training-based methods to future work.
+What does robust adaptation require?An off-target return to the group that was reliable
+just before the shift counts as perseveration only when the agent had actually settled on
+that group first. Other off-target trajectories may instead mean the agent never settled on
+a single group, or is still exploring older ones (Cohen et al., 2007). In retentive routes, the
+agent found the working route but keeps calling alternatives alongside it from lingering
+uncertainty and hedging. Robust adaptation entails shifting to the newly reliable route
+and inhibiting the alternatives once the evidence turns against them (Miyake et al., 2000;
+Diamond, 2013).
+7 Conclusion
+We introduce a longitudinal behavioral test of set-shifting in which the reliable tool group
+changes silently with a matched no-shift control at every shift. Across the panel, agents
+adopt a small number of recurring routines and separate into multiple routing profiles.
+Future work could explore the potential of making tool reliability stochastic so that no single
+outcome marks a shift, and study how memory affects routing over longer trajectories for
+more realistic agent use.
+9
+
+[[page 10]]
+Published at COLM 2026 Workshop on Agent Behavior
+References
+Artificial Analysis. Artificial analysis intelligence index. https://artificialanalysis.ai,
+2026. Aggregate capability index over public benchmarks. Accessed August 2026.
+Algirdas Avizienis. The N-version approach to fault-tolerant software.IEEE Transactions on
+Software Engineering, SE-11(12):1491–1501, 1985.
+Victor Barres, Honghua Dong, Soham Ray, Xujie Si, and Karthik Narasimhan. τ2-bench:
+Evaluating conversational agents in a dual-control environment, 2025.
+Thierry Blankenstein, Jialin Yu, Zixuan Li, Vassilis Plachouras, Sunando Sengupta, Philip
+Torr, Yarin Gal, Alasdair Paren, and Adel Bibi. BiasBusters: Uncovering and mitigating
+tool selection bias in large language models. InInternational Conference on Learning
+Representations, 2026.
+Matthew Botvinick and David C. Plaut. Doing without schema hierarchies: A recurrent
+connectionist approach to normal and impaired routine sequential action.Psychological
+Review, 111(2):395–429, 2004.
+Linbo Cao, Lihao Sun, and Yang Yue. From biased chatbots to biased agents: Examining
+role assignment effects on LLM agent robustness, 2026.
+Xingwu Chen, Zhanqiu Zhang, Steven Y. Guo, and Difan Zou. Breaking contextual inertia:
+Reinforcement learning with single-turn anchors for stable multi-turn interaction. In
+Findings of the Association for Computational Linguistics: ACL 2026, pp. 6302–6318, San Diego,
+California, United States, July 2026. Association for Computational Linguistics. doi: 10.
+18653/v1/2026.findings-acl.313. URL https://aclanthology.org/2026.findings-acl.
+313/.
+Jonathan D. Cohen, Samuel M. McClure, and Angela J. Yu. Should I stay or should I
+go? how the human brain manages the trade-off between exploitation and exploration.
+Philosophical Transactions of the Royal Society B, 362(1481):933–942, 2007.
+Jeffrey Dean and Luiz Andr´e Barroso. The tail at scale.Communications of the ACM, 56(2):
+74–80, 2013.
+DeepSeek-AI. DeepSeek-V4: Towards highly efficient million-token context intelligence,
+2026. Model card athttps://huggingface.co/deepseek-ai/DeepSeek-V4-Pro.
+Adele Diamond. Executive functions.Annual Review of Psychology, 64:135–168, 2013.
+Shibhansh Dohare, J. Fernando Hernandez-Garcia, Qingfeng Lan, Parash Rahman, A. Ru-
+pam Mahmood, and Richard S. Sutton. Loss of plasticity in deep continual learning.
+Nature, 632:768–774, 2024.
+Karl Duncker. On problem-solving.Psychological Monographs, 58(5):i–113, 1945.
+Earendil Works. pi: An open-source AI agent toolkit.https://github.com/earendil-works/
+pi, 2026. Coding agent with its own tool-calling loop and context manager, MIT license.
+Accessed August 2026.
+Kazem Faghih, Wenxiao Wang, Yize Cheng, Siddhant Bharti, Gaurang Sriramanan, Sriram
+Balasubramanian, Parsa Hosseini, and Soheil Feizi. Tool preferences in agentic LLMs are
+unreliable. InProceedings of the 2025 Conference on Empirical Methods in Natural Language
+Processing, 2025.
+Google DeepMind. Gemini 3.5 Flash-Lite model card. https://deepmind.google/models/
+model-cards/gemini-3-5-flash-lite/, 2026. accessed August 2026.
+David A. Grant and Esta A. Berg. A behavioral analysis of degree of reinforcement and ease
+of shifting to new responses in a Weigl-type card-sorting problem.Journal of Experimental
+Psychology, 38(4):404–411, 1948.
+10
+
+[[page 11]]
+Published at COLM 2026 Workshop on Agent Behavior
+Guangfu Hao, Frederic Alexandre, and Shan Yu. Visual large language models exhibit
+human-level cognitive flexibility in the Wisconsin Card Sorting Test, 2025.
+Robert K. Heaton, Gordon J. Chelune, Jack L. Talley, Gary G. Kay, and Glenn Curtiss.
+Wisconsin Card Sorting Test Manual: Revised and Expanded. Psychological Assessment
+Resources, 1993.
+Yue Huang, Jiawen Shi, Yuan Li, Chenrui Fan, Siyuan Wu, Qihui Zhang, Yixin Liu, Pan Zhou,
+Yao Wan, Neil Zhenqiang Gong, and Lichao Sun. MetaTool benchmark for large language
+models: Deciding whether to use tools and which to use. InInternational Conference on
+Learning Representations, 2024.
+Alicia Izquierdo, Jonathan L. Brigman, Anna K. Radke, Peter H. Rudebeck, and Andrew
+Holmes. The neural basis of reversal learning: An updated perspective.Neuroscience, 345:
+12–26, 2017.
+Akshay Krishnamurthy, Keegan Harris, Dylan J. Foster, Cyril Zhang, and Aleksandrs
+Slivkins. Can large language models explore in-context? InAdvances in Neural Information
+Processing Systems (NeurIPS), 2024.
+Wilson Y. Lee. Capable but unreliable: Canonical path deviation as a causal mechanism of
+agent failure in long-horizon tasks, 2026.
+Hao Li, Gengrui Zhang, Petter Holme, Shuyue Hu, and Zhen Wang. Large language models
+are near-optimal decision-makers with a non-human learning behavior, 2025a.
+Lingyu Li, Yixu Wang, Haiquan Zhao, Shuqi Kong, Yan Teng, Chunbo Li, and Yingchun
+Wang. Reflection-Bench: Evaluating epistemic agency in large language models. In
+International Conference on Machine Learning (ICML), 2025b.
+Jiayu Liu, Cheng Qian, Zhaochen Su, Qing Zong, Shijue Huang, Bingxiang He, and Yi R.
+Fung. CostBench: Evaluating multi-turn cost-optimal planning and adaptation in dy-
+namic environments for LLM tool-use agents. InProceedings of the 64th Annual Meeting of
+the Association for Computational Linguistics (Volume 1: Long Papers), pp. 12826–12858, San
+Diego, California, United States, July 2026a. Association for Computational Linguistics.
+doi: 10.18653/v1/2026.acl-long.584. URL https://aclanthology.org/2026.acl-long.
+584/.
+Marianne Menglin Liu, Daniel Garcia, Fjona Parllaku, Vikas Upadhyay, Fahad Shah, and
+Dan Roth. ToolScope: Enhancing LLM agent tool use through tool merging and context-
+aware filtering. InProceedings of the 64th Annual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers), pp. 34095–34119, San Diego, California, United States,
+July 2026b. Association for Computational Linguistics. doi: 10.18653/v1/2026.acl-long.
+1573. URLhttps://aclanthology.org/2026.acl-long.1573/.
+Xiao Liu, Hao Yu, Hanchen Zhang, Yifan Xu, Xuanyu Lei, Hanyu Lai, Yu Gu, Hangliang
+Ding, Kaiwen Men, Kejuan Yang, Shudan Zhang, Xiang Deng, Aohan Zeng, Zhengxiao
+Du, Chenhui Zhang, Sheng Shen, Tianjun Zhang, Yu Su, Huan Sun, Minlie Huang, Yuxiao
+Dong, and Jie Tang. AgentBench: Evaluating LLMs as agents. InInternational Conference
+on Learning Representations, 2024.
+LLM-Core Xiaomi. MiMo-V2-Flash technical report, 2026. We use the MiMo-V2.5 release
+built on this base; model card athttps://mimo.xiaomi.com/mimo-v2-5/.
+Abraham S. Luchins. Mechanization in problem solving: The effect of Einstellung.Psycho-
+logical Monographs, 54(6):i–95, 1942.
+Akira Miyake, Naomi P . Friedman, Michael J. Emerson, Alexander H. Witzki, Amy Howerter,
+and Tor D. Wager. The unity and diversity of executive functions and their contributions
+to complex frontal lobe tasks: A latent variable analysis.Cognitive Psychology, 41(1):49–100,
+2000.
+11
+
+[[page 12]]
+Published at COLM 2026 Workshop on Agent Behavior
+Evgenii Nikishin, Max Schwarzer, Pierluca D’Oro, Pierre-Luc Bacon, and Aaron Courville.
+The primacy bias in deep reinforcement learning. InInternational Conference on Machine
+Learning (ICML), 2022.
+Nous Research. Hermes agent: An open-source agent harness with persistent session state.
+https://github.com/NousResearch/hermes-agent, 2026. accessed June 2026.
+OpenAI. GPT-5.5 system card. https://openai.com/index/gpt-5-5-system-card/ , 2026.
+accessed August 2026.
+Charles Packer, Sarah Wooders, Kevin Lin, Vivian Fang, Shishir G. Patil, Ion Stoica, and
+Joseph E. Gonzalez. MemGPT: Towards LLMs as operating systems, 2023.
+Joon Sung Park, Joseph C. O’Brien, Carrie J. Cai, Meredith Ringel Morris, Percy Liang, and
+Michael S. Bernstein. Generative agents: Interactive simulacra of human behavior. In
+Symposium on User Interface Software and Technology (UIST), 2023.
+Shishir G. Patil, Tianjun Zhang, Xin Wang, and Joseph E. Gonzalez. Gorilla: Large language
+model connected with massive APIs. InAdvances in Neural Information Processing Systems
+(NeurIPS), 2024.
+Shishir G. Patil, Huanzhi Mao, Fanjia Yan, Charlie Cheng-Jie Ji, Vishnu Suresh, Ion Stoica,
+and Joseph E. Gonzalez. The Berkeley Function Calling Leaderboard (BFCL): From tool
+use to agentic evaluation of large language models. InInternational Conference on Machine
+Learning (ICML), pp. 48371–48392, 2025.
+Yujia Qin, Shihao Liang, Yining Ye, Kunlun Zhu, Lan Yan, Yaxi Lu, Yankai Lin, Xin Cong,
+Xiangru Tang, Bill Qian, Sihan Zhao, Lauren Hong, Runchu Tian, Ruobing Xie, Jie Zhou,
+Mark Gerstein, Dahai Li, Zhiyuan Liu, and Maosong Sun. ToolLLM: Facilitating large
+language models to master 16000+ real-world APIs. InInternational Conference on Learning
+Representations, 2024.
+Timo Schick, Jane Dwivedi-Yu, Roberto Dess`ı, Roberta Raileanu, Maria Lomeli, Eric Hambro,
+Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. Toolformer: Language models
+can teach themselves to use tools. InAdvances in Neural Information Processing Systems
+(NeurIPS), 2023.
+Noah Shinn, Federico Cassano, Edward Berman, Ashwin Gopinath, Karthik Narasimhan,
+and Shunyu Yao. Reflexion: Language agents with verbal reinforcement learning. In
+Advances in Neural Information Processing Systems (NeurIPS), 2023.
+Joykirat Singh, Raghav Magazine, Yash Pandya, and Akshay Nambi. Agentic reasoning
+and tool integration for LLMs via reinforcement learning, 2025.
+Chong Wang, Kaifeng Huang, Jian Zhang, Yebo Feng, Lyuye Zhang, Yang Liu, and Xin
+Peng. LLMs meet library evolution: Evaluating deprecated API usage in LLM-based
+code completion. InProceedings of the 47th International Conference on Software Engineering
+(ICSE), 2025.
+Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Mandlekar, Chaowei Xiao, Yuke Zhu, Linxi
+Fan, and Anima Anandkumar. Voyager: An open-ended embodied agent with large
+language models.Transactions on Machine Learning Research, 2024.
+Sheng-Lun Wei, Cheng-Kuang Wu, Hen-Hsen Huang, and Hsin-Hsi Chen. Unveiling
+selection biases: Exploring order and token sensitivity in large language models. In
+Findings of the Association for Computational Linguistics: ACL 2024, pp. 5598–5621, 2024.
+Darrell A. Worthy, Bo Pang, and Kaileigh A. Byrne. Decomposing the roles of perseveration
+and expected value representation in models of the Iowa gambling task.Frontiers in
+Psychology, 4:640, 2013.
+Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and
+Yuan Cao. ReAct: Synergizing reasoning and acting in language models. InInternational
+Conference on Learning Representations, 2023.
+12
+
+[[page 13]]
+Published at COLM 2026 Workshop on Agent Behavior
+Shunyu Yao, Noah Shinn, Pedram Razavi, and Karthik Narasimhan. τ-bench: A benchmark
+for tool-agent-user interaction in real-world domains. InInternational Conference on
+Learning Representations, 2025.
+A Reproducibility and Benchmark Implementation
+A.1 Experimental setup and statistical reporting
+Sampling.We use temperature 0.7, top- p 0.95, and medium reasoning effort for all models
+if possible. When a serving path does not expose one of these controls, we use the provider
+default. All remaining settings use the Hermes Agent defaults.
+Uncertainty.We report a non-parametric bootstrap 95% interval for every cell mean of Φ.
+For count proportions, we report Wilson 95% intervals. We consider a cell-to-cell difference
+supported when the two intervals are disjoint. For paired sibling contrasts, we also report
+permutation tests on∆Φ.
+The prefix is the resampling unit and corresponds to one branched tree per seed. The
+bootstrap samples prefixes with replacement. The permutation test swaps sibling endpoints
+within each prefix.
+A.2 Schedule construction, session resumption, and verifier
+Schedule construction.To keep tool order from determining which group an agent learns
+first, we randomize tool presentation across prefixes in two ways. First, we cyclically rotate
+the display order of the tool groups. Second, we use the prefix seed to permute the tools
+within each group. Within a prefix, both orders remain fixed across all resumed branches.
+For each prefix, we save the root session state and recursively resume it for every branch.
+Sibling branches begin from the same parent state. For cross-branch comparisons, we use
+the nearest common ancestor as the pairing factor.
+Redundant tool-skill relations.Each mounted toolset instantiates the three tool-layer
+relations in Table 1.Description variantsshare a schema and execution but use different
+names. Aquality gradientallows the schedule to shift the active tool group across phases. A
+side effect conflictpairs a mutating action with a reversible preview, allowing the verifier to
+block the wrong action.
+Deterministic verifier.Every tool call passes through a stateless handler that applies the
+following rule. No model participates in verification.
+def handle(name, args):
+if name in BENCHMARK_DISALLOWED_TOOLS:
+return neutral_failure(name, "side_effect_blocked")
+if name in tracked_tools() and \
+name not in BENCHMARK_CURRENT_BEST_TOOLS:
+return neutral_failure(name, "not_current_best")
+return neutral_success(name, args)
+Failed calls return a bare indicator. Successful calls return structured and well-typed outputs.
+All primary tools within a domain share the same schema and success-payload structure, so
+only their names and descriptions differ visibly across groups. The framing conditions are
+the sole exception because their outputs also express the stated relation between groups.
+Only the evaluator can observe group membership.
+Phase reliability.Before each user turn, the runner updates two
+lists. BENCHMARK CURRENT BEST TOOLS identifies the reliable tool group.
+BENCHMARK DISALLOWED TOOLSidentifies the side effect tools forbidden on that turn.
+13
+
+[[page 14]]
+Published at COLM 2026 Workshop on Agent Behavior
+No context compression or added memory.No run writes to a memory store beyond
+the resumed session. Hermes begins compression only after half of the context window.
+Even the deepest tree stays well below this threshold in the tested models’ 500k to 1M token
+windows. Thus, no run triggers compression, and every agent retains its full history.
+A.3 Cue neutrality, evaluation awareness, and set framing
+Cue-neutrality.Automated checks enforce cue neutrality on every prompt file. We scan
+every user message for banned vocabulary tied to a particular group. We also screen
+skill markdown files and tool descriptions for comparative wording and other signs of
+information leakage.
+Evaluation awareness.We find little evidence that the models recognize the evaluation
+setting. We audit every reasoning trace for vocabulary associated with benchmarks, ex-
+periments, and artificiality. Explicit references to a benchmark, test, or experiment appear
+in 0 of 35,095 reasoning items for deepseek-v4-pro and 37 of 44,240 for mimo-v2.5. The
+37 references occur in 8 of 273 episodes. Milder remarks that tool results are mocked or
+simulated appear in 0.01% and 0.31% of items, respectively.
+Framing.Framing changes the stated relation between tool groups without revealing the
+reliable group. In the complementary condition, the groups are separate feeds that return
+different fields. In the competing condition, they are interchangeable providers that return
+the same report identifier.
+We apply each framing consistently across tool descriptions, skills, and tool results. The box
+below shows the DevOps variants. Multi-cloud uses the same construction with path layers
+and storage providers. Neither condition identifies the currently reliable group, so both
+pass the cue-neutrality checks.
+Complementary (description):
+Read the service's trace feed for the requested time window.
+Complementary (skill):
+This skill covers the trace feed. The other feeds are
+incident, runtime, and audit. Each one shows a different part
+of the service. To see the whole picture, you need all of them.
+Competing (description):
+Read the current state of the named service using the Argus
+monitoring provider over the requested time window.
+Competing (skill):
+This skill covers the Argus provider. The other providers are
+Sentinel, Vantage, and Meridian. All of them could complete the same given task.
+A.4 Representative tool-skill artifact and policy prompt
+We show one scheduling skill as a SKILL.md file and summarize the shared schema used
+by its five primary tools. The other tool groups and domains follow the same construction,
+with neutral wording and hidden reliability labels.
+Skill layer (SKILL.md).
+---
+name: coordination-toolset-1
+description: "Slot lookup toolset for meeting coordination."
+platforms: [linux, macos, windows]
+metadata:
+hermes:
+tags: [scheduling, coordination, local]
+category: local
+---
+14
+
+[[page 15]]
+Published at COLM 2026 Workshop on Agent Behavior
+# coordination-toolset-1
+This skill is for meeting coordination. The local coordination
+environment includes slot-lookup tools for selecting a workable time,
+supporting context tools that surface participant preferences and
+constraints, draft tools for preparing an unsent message, and
+committing tools that change external state.
+## Quick Reference
+| Workflow part | Tools |
+|---------------|-------|
+| Slot lookup | calendar_lookup, calendar_window_scan,
+schedule_slot_selector, schedule_context_review,
+freebusy_conflict_check |
+| Supporting context | attendee_preference_lookup, timezone_compare,
+room_availability_lookup |
+| Draft an unsent
+message | draft_email, message_draft_builder,
+concise_email_composer, polished_email_draft,
+adaptive_message_composer |
+| Committing actions | create_calendar_event, send_email,
+hold_calendar_slot |
+## Procedure
+1. Gather the supporting context the request needs (participant
+preferences, time zone overlap, room availability) before
+committing to a slot.
+2. Find a workable slot consistent with the gathered context and the
+user's stated time window.
+3. Prepare an unsent draft message proposing the slot.
+4. Do not create calendar events, send messages, or hold slots unless
+the user explicitly asks for that action.
+Tool layer (schemas the skill may call).The five slot-lookup tools share one OpenAI-style
+function schema. It requires participants (string array) and date range (string), and it
+accepts an optional duration minutes (integer). Only the tool names and descriptions differ
+across the five variants. The remaining tool groups and domains use the same shared-
+schema pattern.
+Policy conditions.The regular condition uses the default Hermes Agent SOUL.md below.
+The adaptive condition appends the policy prompt shown afterward.
+Hermes Agent defaultSOUL.md.
+You are Hermes Agent, an intelligent AI assistant created by Nous
+Research. You are helpful, knowledgeable, and direct. You assist users
+with a wide range of tasks including answering questions, writing and
+editing code, analyzing information, creative work, and executing
+actions via your tools. You communicate clearly, admit uncertainty
+when appropriate, and prioritize being genuinely useful over being
+verbose unless otherwise directed below. Be targeted and efficient in
+your exploration and investigations.
+Adaptive (ideal set-shifter).
+Track which tool returned success most recently and stick to it. Let
+the most recent feedback decide every turn: reuse the tool that just
+succeeded, and switch immediately to a different tool group the moment
+it fails. Avoid mixing tools from different tool groups in the same
+15
+
+[[page 16]]
+Published at COLM 2026 Workshop on Agent Behavior
+reversal
+ABA ABAA ABCA
+reversal
+ABA ABAA ABCA
+reinforced
+ABB ABAB ABCB
+reinforced
+ABB ABAB ABCB
+novel
+ABC ABAC ABCC
+novel
+ABC ABAC ABCC
+reversal
+ABA ABAA ABCA
+reversal
+ABA ABAA ABCA
+reinforced
+ABB ABAB ABCB
+reinforced
+ABB ABAB ABCB
+0.0 0.5 1.0
+novel
+ABC
+0.0 0.5 1.0
+ABAC
+0.0 0.5 1.0
+ABCC
+0.0 0.5 1.0
+novel
+ABC
+0.0 0.5 1.0
+ABAC
+0.0 0.5 1.0
+ABCC
+deepseek-v4-pro mimo-v2.5
+gpt-5.5 gemini-3.5-flash-lite
+target share s per post-shift window
+Figure 7:Post-shift target share at all nine endpoints.Distribution across the n= 16
+prefixes at each endpoint, one 3× 3 block per model. Within each block, the rows are the
+prior-use roles (reversal, reinforced, novel), and the columns are the three endpoints of each
+role. The bars show the histogram, and the curve is a Gaussian KDE. Each panel is scaled to
+its own maximum. The shapes match Figure 5: deepseek-v4-pro is bimodal at the extremes
+in every cell, mimo-v2.5 concentrates on the middle and has low shares on novel targets,
+gpt-5.5 holds a single mode, and gemini-3.5-flash-lite is bimodal with values near 0 on
+novel targets.
+turn, and avoid sticking with one that has stopped working.
+B Additional Results and Robustness Analyses
+B.1 Complete endpoint distributions and routing dynamics
+Figure 7 separates all nine endpoints. Their distributions preserve the model-level pattern
+from the main results.
+Routines emerge within the first few turns after a shift. Figure 8 shows this process for the
+two open-weight models. Within each segment, cumulative target share quickly approaches
+one extreme or remains near the other. Later turns rarely change the resulting mode.
+B.2 Off-target modes and prior-set acquisition
+Off-target categories.To distinguish where agents go after omitting the target, we classify
+each R∗ turn by the non-target group it favors. Rprev denotes the group that was reliable
+immediately before the shift. Rearly denotes an earlier reliable group. Rother denotes a group
+16
+
+[[page 17]]
+Published at COLM 2026 Workshop on Agent Behavior
+41 50 60 65 70 80 90
+turn
+0
+0.33
+0.5
+1
+cumulative starget within current segment
+0.5
+tier-1 segment tier-2 segment
+mimo-v2.5
+41 50 60 65 70 80 90
+turn
+0.5
+tier-1 segment tier-2 segment
+deepseek-v4-pro
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+line color: final starget at end of segment
+Figure 8:Cumulative target share over each post-shift segment.One line per trajectory.
+Left: mimo. Right: deepseek-v4-pro under the regular assistant. Trajectories cover tier 1
+segments ABA and ABC (turns 41–65) and tier 2 segments ABAB, ABAC, ABCA, and ABCB
+(turns 66–90). Color shows the segment-end s, from purple at 0 to yellow at 1. Each panel
+shows∼100 trajectories.
+that has never been reliable. For mixed turns, we use the most recently reliable group that
+the route contains.
+Results.Off-target routing usually returns to a group that worked earlier, but models differ
+in how far back they reach (Table 5). claude-opus-4.8 primarily returns to the immediately
+superseded group. The open-weight models more often return to an earlier group from the
+prefix. This pattern is consistent with the prefix-level commitment described in §4.1.
+We interpret this comparison cautiously for two reasons. First, claude-opus-4.8 produces
+few off-target turns. Second, for models that commit at the prefix level, the favored group
+partly depends on the endpoint’s group assignment.
+Prior-set acquisition.A return to the immediately superseded group is classic persevera-
+tion only if the agent first acquired that group. We mark a prefix asacquiredwhen its target
+share on B over turns 36–40 reaches spre(B)≥τ . Table 6 compares all prefixes with the
+acquired subset atτ=0.8. The pattern is unchanged atτ∈{0.6, 0.9}.
+Results.The acquisition analysis separates three behavioral states. deepseek-v4-pro and
+gemini-3.5-flash-lite concentrate on B in most prefixes (spre = 0.86, 0.69). When these
+models later route off-target, they return almost entirely to B (100% and 93% of R∗). This
+pattern matches the classic perseverative error.
+gpt-5.5 and claude-opus-4.8 instead retain B within a broader working route. Only 2 of
+16 gpt-5.5 prefixes and 0 of 6 claude-opus-4.8 prefixes meet the acquisition threshold. Yet
+both models continue to complete the task (F= 0.87, 0.99). mimo-v2.5 neither concentrates
+ModelR prev Rearly Rother
+claude-opus-4.893% 7% 0%
+gemini-3.5-flash-lite52% 45% 4%
+gpt-5.543% 54% 3%
+deepseek-v4-pro40% 60% 0%
+mimo-v2.535% 65% 0%
+Table 5:Off-target routing decomposed by favored group.As a fraction of each model’s
+R∗ turns, split by which non-target group is favored. Rprev is a return to the immediately
+superseded group, the classic perseverative error once that set was acquired.
+17
+
+[[page 18]]
+Published at COLM 2026 Workshop on Agent Behavior
+sk R∗ F
+Model ¯spre acq. all acq. all acq. all acq.
+deepseek-v4-pro.86 12/16 .40 .48 .34 .36 .66 .64
+gemini-3.5-flash-lite.69 10/16 .23 .19 .57 .71 .39 .28
+gpt-5.5.52 2/16 .25 .29 .13 .00 .87 1.00
+mimo-v2.5.41 2/16 .17 .12 .39 .50 .60 .38
+claude-opus-4.8.45 0/6 .34 – .01 – .99 –
+Table 6:Novel-target ( B→C ) window over all prefixes and the acquired subset (spre(B)≥
+0.8). ¯spre is the mean pre-shift share on B over turns 36–40, andacq.counts prefixes
+meeting the criterion. sk is the target share on C, R∗ the off-target rate, and F completion.
+The acquired estimates for gpt-5.5 and mimo-v2.5 are based on only two prefixes each.
+claude-opus-4.8 is the reduced-sample frontier model ( n= 6), and no prefix reaches
+τ=0.8.
+on B nor completes reliably. Its failures therefore reflect difficulty forming the set, not
+difficulty leaving an acquired one.
+B.3 Robustness to feedback informativeness and call weighting
+Informative-feedback setup.Because sparse feedback could make a reliability shift
+difficult to detect, we rerun the ABCA reversal path ( A→ B→ C→ A) for gpt-5.5 and
+deepseek-v4-pro. Failed tools normally return a bare indicator, matching the WCST
+paradigm and the silent backend failures we target. The new, more informative mes-
+sage identifies a tool as temporarily unavailable but does not name a reliable alternative,
+making the shift easier to detect and moving the task closer to instruction following.
+Results.Informative messages change how the models fail but not whether they adapt.
+gpt-5.5 uses less breadth, with its R3 rate falling from 0.32 to 0.17. Its set-shifting accuracy
+remains nearly unchanged, moving from Φ= 0.06 over 16 binary-feedback trajectories to
+0.05 over 5 informative-feedback trajectories.
+deepseek-v4-pro likewise sticks with its early choice. Two of four replicates reach Φ≈ 0
+under both feedback conditions, and its mean barely moves (0.36 versus 0.34,n=4 each).
+Thus, an explicit ”backend unavailable” message does not reliably cause either model to
+leave the failed group. Sparse feedback alone does not explain the observed rigidity.
+Call weighting does not change the model ordering.The primary target share sk pools
+all route calls, so turns with more calls receive more weight. To test sensitivity to this
+choice, we recompute a turn-normalized share by averaging the target fraction within each
+route-bearing turn (Table 7).
+Turn normalization raises every model’s share by 0.10 to 0.17, but preserves the comparison
+of interest. deepseek-v4-pro remains highest and mimo-v2.5 remains lowest under both
+definitions. The other three models remain grouped between them. Thus, the model
+comparison does not depend on call weighting.
+C Replication Studies
+C.1 Independent-harness replication
+Setup.We suspected that the routing profiles in §4.1 could be artifacts of the Hermes
+harness and might not replicate in other harnesses. To test this possibility, we replicated
+18
+
+[[page 19]]
+Published at COLM 2026 Workshop on Agent Behavior
+Modelpooleds k turn-normalized
+deepseek-v4-pro0.55 0.67
+claude-opus-4.80.42 0.57
+gpt-5.50.38 0.55
+gemini-3.5-flash-lite0.42 0.52
+mimo-v2.50.33 0.49
+Table 7:Call-weighting does not change the model ordering.Call-weighted (pooled) sk ver-
+sus turn-normalized target share, averaged over all post-shift windows. Turn-normalizing
+raises every value but preserves the extremes.
+model phase (target)s k R∗ R3
+deepseek-v4-proP 1 (A) 0.81 0.00 0.00
+P2 (B) 0.20 0.72 0.02
+P3 (C) 0.20 0.75 0.00
+P4 (A) 0.89 0.00 0.02
+mimo-v2.5P 1 (A) 0.67 0.02 0.07
+P2 (B) 0.50 0.02 0.02
+P3 (C) 0.21 0.48 0.25
+P4 (A) 0.56 0.00 0.12
+gpt-5.5P 1 (A) 0.82 0.00 0.00
+P2 (B) 0.46 0.00 0.07
+P3 (C) 0.39 0.00 0.48
+P4 (A) 0.82 0.00 0.05
+Table 8:Phenotypes reproduce under the pi harness.Behavior on the
+A→ B→ C→ Areversal schedule, mean over n= 4 trajectories per phase. Target share
+sk, off-target rate R∗, and breadth rate R3. Each model keeps the signature it shows on
+Hermes.
+our experiments in pi (Earendil Works, 2026), a popular alternative open-source coding
+agent with its own tool-calling loop and context manager. Using pi, we kept the benchmark
+constant and ran the linear schedule A→ B→ C→ Aover 60 turns, with boundary locations
+matching those in the main experiment. We used n= 4 trajectories per model for the two
+open-weight models andgpt-5.5, all served through OpenRouter.
+Results.Each model preserves its routing signature found in Hermes (Table 8).
+deepseek-v4-pro again retains its first choice. It routes off-target after both forward shifts
+(R∗ = 0.72, 0.75 at B and C) and recovers only when the target returns to A. mimo-v2.5
+adopts the first shift but routes off-target at the novel target ( R∗ = 0.48 at C). gpt-5.5
+continues to reach the target and shows the most breadth at the novel shift ( R3 = 0.48).
+The harness change preserves the distinction between target-omitting concentration and
+target-retaining breadth.
+C.2 Additional frontier model replication
+Setup.We test whether the breadth profile of gpt-5.5 recurs in a frontier model from
+another developer. We run claude-opus-4.8 on the same branched tree. We also keep the
+harness, reasoning effort, tool ordering, and skill rotation fixed.
+Because each tree costs substantially more, we run two full trees and add replicates on the
+A→ B→ C→ Apath. Six replicates cover the novel and reversal shifts.
+Results.On the novel shift, claude-opus-4.8 matches the breadth profile of gpt-5.5
+(Table 9). The models differ on the reversal. There, claude-opus-4.8 commits more cleanly
+to the returning group.
+19
+
+[[page 20]]
+Published at COLM 2026 Workshop on Agent Behavior
+shift (target)n s k R1 R2 R3 R∗
+novel (C) 6 0.34 0.00 0.28 0.71 0.01
+reversal (A) 6 0.97 0.96 0.04 0.00 0.00
+Table 9: claude-opus-4.8 on the two diagnostic shifts.Mean over n= 6 replicates on the
+A→ B→ C→ Apath. Target share sk and route-class rates over the post-shift window. On
+the novel target, the model keeps the target but adds other groups, so R3 dominates and R∗
+stays near zero. On the reversal, it commits cleanly to the returning rule.
+role identity (n=16) permuted (n=4)
+reversal 0.52 0.61
+reinforced 0.52 0.45
+novel 0.25 0.29
+Table 10:Role effects survive tool-group remapping.Mean post-shift target share sk per
+role for gpt-5.5, pooled over the two permuted mappings. The novel role stays lowest
+regardless of which group fills it.
+C.3 Prior use versus tool-group identity
+Setup.Each prior-use role maps to a fixed tool group: A is reversal, B is reinforced,
+and C is novel. An apparent role effect could therefore reflect a preference for a group’s
+descriptions rather than its history. To separate these explanations, we rerun the tier 1 subset
+of shifts on gpt-5.5 under two cyclic remappings of the physical groups to roles. The tools,
+skills, and schedule remain unchanged, withn=2 prefixes per mapping.
+Results.The role ordering holds under both remappings (Table 10). The novel role retains
+the lowest target share. Off-target routing remains near zero, and departures remain breadth-
+dominant. Thus the effects track prior use rather than tool-group identity.
+D Representative Tool-Call Transitions
+Because aggregate rates do not show how a shift unfolds within one trajectory, we show
+three scheduling trajectories that cross the ABC tier 1 boundary at t= 41, where C replaces
+B as the reliable tool group. For each trajectory, we report the tool-group mix, route class,
+and boundary-turn reasoning. A count kX denotes k calls to tool group X within one turn.
+All traces are verbatim from the released logs.
+deepseek-v4-pro, regular assistant (off-target trajectory).The prefix commits to A at
+startup and ignores the subsequent shifts to B and C. Its behavior therefore does not change
+att=41.
+turn group mix route-class
+36–40{2A}obsolete route(Breliable, agent still onA)
+41{2A}other group route(shift toC)
+42–50{2A}other group route
+A reasoning trace starts with the initial tool calls and adds one item after each round of
+results. Att=41, this trace contains five items, often single words or sentence fragments.
+item 0 (initial):Fresh request. Tuesday June 23, 2026 morning, 75 minutes, Hiroshi and Lena.
+calls:attendee preference lookup,timezone compare,room availability lookup.
+20
+
+[[page 21]]
+Published at COLM 2026 Workshop on Agent Behavior
+item 1 (after results):Afternoon returned: 1:30, 3:00, 4:00 PM. Rooms: 1:30, 3:00 PM.
+Calendar.
+calls:calendar lookup.
+item 2 (after results):Failed. Freebusy.
+calls:freebusy conflict check.
+item 3 (after results):All failed. Afternoon: 1:30 PM with Room 2A. Draft.
+calls:polished email draft.
+item 4 (final):Done.
+The reasoning never identifies the failed tool or proposes a different group. Instead, the
+agent accepts “All failed.” and uses slot data from the support tool timezone compare.
+Across all 25 post-shift turns, only the participant names and date change.
+mimo-v2.5, regular assistant.The prefix uses a stable A+B mixture. At t= 41, it doubles
+its tool-call volume without tryingC, then returns to the same mixture.
+turn group mix route-class
+36–40{2A, 1B}mixed route
+41{5A, 3B}other group route (volume doubles, C never
+touched)
+42–50{3A, 2B}other group route
+The boundary turnt=41 has eight reasoning items.
+item 0 (initial):The user wants me to schedule a 75-minute sync between Hiroshi and Lena for
+Tuesday morning. I need to: (1) Gather context ...; (2) Find a workable slot ...; (3) Draft an email
+...; (4) Not create an event or send the email. ... Let me call all tools fresh.
+calls:attendee preference lookup,timezone compare,calendar lookup.
+item 1 (after results):The timezone check shows afternoon slots, not morning. And
+calendar lookupreturned false. Let me try other tools to find a workable morning slot.
+calls:schedule slot lookup,freebusy conflict check.
+item 2 (after results):Both tools returned false. Let me try calendar window scan to see if
+there are any morning windows available.
+calls:calendar window scan.
+item 3 (after results):All tools return false for morning availability. ... The timezone compare
+showed afternoon slots (1:30 PM, 3:00 PM, 4:00 PM). I should report this to the user and propose
+the earliest available afternoon alternative. Let me draft the email noting this situation.
+calls:calendar lookup.
+items 4–6:repeat the same loop, alternating among schedule slot lookup,
+freebusy conflict check,calendar window scan, then finallydraft email.
+item 7 (final):I have drafted an email noting the lack of availability and asking for alternative
+days.
+The reasoning names individual failing tools but cycles only through the prior toolset. It
+never proposes an unusedC-group tool.
+deepseek-v4-pro under the adaptive policy prompt (Φ= 0.96).Before the shift, the prefix
+calls onlyB. Att=41, the agent probes all three groups, findsC, and then usesCalone.
+turn group mix route-class
+36–40{1B}current route
+41{1A, 1B, 1C}mixed route(probe across groups)
+42–50{1C}current route(locked onto reliableC)
+21
+
+[[page 22]]
+Published at COLM 2026 Workshop on Agent Behavior
+The boundary turnt=41 has six reasoning items.
+item 0 (initial):Fresh request. “Tuesday morning” without “this” or “next” — the upcoming
+Tuesday from Sunday June 21 is June 23, 2026. 75 minutes. Participants: Hiroshi and Lena.
+calls:attendee preference lookup,timezone compare,room availability lookup.
+item 1 (after results):Find slot.
+calls:meeting slot generator.
+item 2 (after results):meeting slot generatorfailed. Let me trycalendar lookup.
+calls:calendar lookup.
+item 3 (after results):Both failed. Let me try another.
+calls:slot window lookup.
+item 4 (after results):slot window lookupworked. Tuesday 1:30 PM, Room 2A. Draft.
+calls:concise email composer.
+item 5 (final):Done.
+Items 2–4 show immediate switching after failure. Within one turn, the model moves from
+B(meeting slot generator) throughA(calendar lookup) toC(slot window lookup).
+22

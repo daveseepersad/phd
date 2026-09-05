@@ -1,4 +1,4 @@
-# PRISMA 2020 Flow — BPMN process model driven multi-agent workflow automation
+# PRISMA 2020 Flow — process model constraints versus natural language policy for compliance critical LLM business process agents
 
 Generated 2026-09-05 from persisted run artifacts only.
 

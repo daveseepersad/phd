@@ -1,0 +1,1186 @@
+[[page 1]]
+Advancing LLM Agents for Code Generation: 
+Observability, Orchestration, Reliable Performance 
+Alex Kaplunovich 
+Department of Computer Science 
+University of Maryland 
+Baltimore, MD 21250, USA 
+akaplun1@umbc.edu 
+ 
+Abstract - Large Language Model (LLM) agents have gained 
+popularity for constructing complex coding pipeline s that 
+incorporate multiple tools, iterative processes, an d advanced 
+libraries such as LlamaIndex and LangChain. Recogni zing the 
+critical need for observability, we emphasize techn iques to 
+monitor and control the process, costs, frequency o f model calls, 
+prompt usage, and overall logging. While contempora ry agent 
+libraries offer foundational classes for these purp oses, many 
+online examples and articles still rely on default implementations 
+with ChatGPT models, allowing agents to invoke gene rative AI 
+methods without robust flow control, prompt managem ent, or 
+detailed application logging. In our research, we i dentified 
+effective ways to implement essential observability methods for 
+popular frameworks, including LlamaIndex, LangChain , and 
+CreAI. Our approach introduces workflows, custom model calls, 
+comprehensive logging, and enhanced observability, which 
+improve the reliability, controllability, predictab ility, and 
+efficiency of LLM agents in software development ap plications. 
+Through this methodology, we enhanced the architect ure and 
+structure of the evolving agentic framework for cod e generation, 
+achieving a notable 98% accuracy in solving challen ging coding 
+tasks via specified workflows. 
+Keywords - LLM agents, observability, AI code gener ation, 
+LangChain, LangGraph, llama-index, CrewAI, Cursor 
+I. INTRODUCTION 
+The rapid pace of innovation in Generative AI is en abling 
+many corporations to accelerate their code developm ent 
+processes [16]. Prompt - completion (request - resp onse) code 
+generation has become standard among innovative developers, 
+allowing them to produce code snippets using a single prompt to 
+describe the task. However, the agentic approach [14, 15] offers 
+even greater potential benefits by enabling multi - step code 
+creation pipelines. This method allows for the refi nement of 
+prompts, integration of specialized tools or expert agents for 
+specific tasks, verification of code correctness, a nd even 
+potential code execution. 
+Despite the popularity of agent-based methods, ther e are 
+currently no established standards or best practices. Many data 
+scientists attempt to implement solutions without t horough 
+testing or the application of essential practices s uch as 
+observability. Our work addresses this gap, refining the agentic 
+approach for code generation and establishing a fra mework of 
+best practices to enhance its effectiveness and reliability. Using 
+LLM agents in a controllable and reliable manner is essential for 
+ensuring consistent, efficient, and cost - effective performance, 
+especially in production environments. Without proper control 
+and reliability mechanisms, agents can exhibit unpr edictable 
+behavior, leading to high operational costs, potent ial security 
+risks, and performance degradation. 
+II. LLM AGENTS 
+A. LLM model selection 
+Selecting the appropriate generative and embedding models 
+is one of the most fundamental tasks in AI developm ent. Most 
+existing frameworks assume the use of OpenAI ChatGP T 
+models with an API key to proceed, but we recommend a more 
+flexible approach that allows users to choose their model 
+provider and log all model - related activities. Ideally, codebases 
+should centralize model calls to enable additional operations 
+such as logging, observability, cost control, and more. 
+It is well known that different models can signific antly 
+impact application performance, and there is no "one - size - fits 
+- all" solution in Generative AI. Often, models need to be fine - 
+tuned for specific datasets, or certain applications may prioritize 
+quick response times, favoring smaller models over higher - 
+quality, resource - intensive ones for optimal performance. 
+With each new flagship model release, there tends t o be 
+considerable excitement about a supposedly “better” model. 
+However, users should be mindful of pricing. For instance, the 
+OpenAI 4 - turbo preview costs $60 per 1 million output tokens 
+[1], which is six times the cost of the standard OpenAI 4o model, 
+and the newer “reasoning” model is also slower. While vendors 
+may encourage users to adopt more expensive models, savvy 
+data scientists should carefully evaluate costs and performance 
+trade - offs to make informed choices. 
+B. Generative model options 
+With the growing popularity of generative AI, a wide range 
+of model architectures and deployment options are available. It’s 
+essential to recognize that each application has un ique 
+requirements, and the choice of a Large Language Model (LLM) 
+should be tailored to meet those needs. As models a re rapidly 
+becoming commodities, with new options released weekly, it’s 
+advantageous to adopt a setup that enables seamless model 
+switching with minimal code changes. 
+1) Ollama – local model (FREE) 
+Ollama is a library that enables local model deployment with 
+GPU acceleration support. It offers models such as Llama3, 
+Gemma2, Mistral, Mixtral, and Deepseek - Coder - v2 [2]. 
+While these models require disk space, CPU, and GPU 
+2025 International Conference on Intelligent Computing, Communication, Networking
+979-8-3315-7430-7/25/$31.00 ©2025 IEEE 108
+2025 International Conference on Intelligent Computing, Communication, Networking and Services (ICCNS) | 979-8-3315-7430-7/25/$31.00 ©2025 IEEE | DOI: 10.1109/ICCNS66249.2025.11428688
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:34:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 2]]
+resources, they are entirely free and suitable for a wide range of 
+critical tasks. 
+2) Llama - cpp – local CPU model (FREE) 
+Llama - cpp [3] provides an excellent option for ru nning 
+popular LLM models locally and at no cost. Note tha t the 
+supported models are quantized, which may lead to r educed 
+performance compared to their original versions. 
+3) AWS Bedrock – One - Stop Model Hub with Multiple 
+Vendors 
+Amazon’s managed service, AWS Bedrock, allows access to 
+many cutting - edge models, including Anthropic’s Claude [4]. 
+This approach relieves users from the burden of model hosting. 
+A key advantage is the variety of models from different vendors 
+(both commercial and open - source), with full integration into 
+the cloud ecosystem for billing and administrative support. 
+Bedrock also offers integration with Guardrails to filter or block 
+unwanted content. 
+4) OpenAI – the most popular models 
+OpenAI’s ChatGPT remains the most popular commercia l 
+model, accessible with an API key. Many generative AI 
+frameworks use OpenAI as the default option, offeri ng full 
+integration with its models. However, the main limitation is that 
+only OpenAI models are supported. 
+C. Agentic approach 
+LLM agents extend beyond simple question - answer 
+models; they are designed to autonomously perform c omplex 
+workflows. Their capabilities include: 
+• Interpreting Commands or Requests: They 
+understand natural language instructions from users 
+and can even correct or refine these inputs before 
+sending them to a model. 
+• Planning and Executing Tasks: Agents can break 
+down tasks into smaller steps, query databases or 
+APIs, perform calculations, interact with external 
+systems, and synthesize information. 
+• Interacting with External Tools or Environments: 
+They integrate with APIs, databases, web browsers, or 
+software applications to exchange data, making them 
+highly useful for automation. 
+• Reasoning and Improving Performance Over 
+Time: Some agents learn from feedback or previous 
+interactions, enhancing task efficiency and decisio n - 
+making. 
+Agents support multi - step processes, which can be 
+particularly valuable for code generation, where th e software 
+development life cycle (SDLC) can be emulated. For instance, 
+agents could be set up to perform roles similar to those of a 
+business analyst, architect, developer, tester, verifier, and release 
+engineer, collaborating to generate functional, efficient code. 
+Given that agents make numerous autonomous decisions, it 
+is essential to ensure that these align with our expectations. This 
+makes observability crucial in agent applications, enabling 
+control over model calls, costs, workflow monitorin g, and 
+logging. By integrating observability, developers can effectively 
+track and analyze the agents' behaviors, making it easier to 
+debug and optimize performance. Moreover, enhanced 
+oversight helps in maintaining compliance with regulatory and 
+ethical standards, especially when agents interact with sensitive 
+data or critical systems. Our approach integrates o bservability 
+into the agentic code generation process for severa l popular 
+frameworks, providing greater transparency and control. 
+III. IMPLEMENTATION 
+A. Agent Objectives 
+The most popular agent libraries today include LangChain, 
+LlamaIndex, and CreAI. All of these can be easily i ntegrated 
+with the ChatGPT model by simply providing an OpenA I API 
+key - often requiring just a single line of code. However, we have 
+identified several limitations with this standard approach: 
+• LLM Invocation Control: Data scientists often lack 
+control over the calling and integration code, whic h 
+makes it difficult to add debugging or logging 
+statements. This limits their ability to verify pro mpt 
+content, monitor the frequency of model calls, or 
+measure execution timing. 
+• Flow Control : Users frequently know more about 
+how to guide tool interactions than the model itsel f, 
+yet these libraries do not always allow for customized 
+control flow between tools based on specific 
+parameters. 
+• Prompt Control: Many agent libraries conceal the 
+actual prompts passed to LLMs, relying on complex, 
+often opaque prompts (Fig. 1), and making decisions 
+based on tool function comments and argument types 
+in ReAct agents. 
+• Cost Control : Generative models are invoked by 
+agents without transparency, making it difficult to 
+track the number of calls per execution and manage 
+associated costs. 
+• Logging: Workflow data is often not logged in a 
+structured way, making it challenging to query or 
+understand the flow of actions within the agent. 
+• LLM Model Selection : Different tools, agents, or 
+steps within a workflow may require specific models 
+with tailored parameters, yet most libraries lack 
+flexibility in model selection. 
+• State Management: Passing data between tools or 
+agents in a standardized, uniform way remains a 
+challenge, often resulting in inconsistencies. 
+Our research has addressed these concerns, resulting in LLM 
+agents that are more robust, flexible, reliable, an d cost - 
+effective. This approach empowers data scientists w ith full 
+control over agent workflows, enhancing customizati on, 
+observability, and transparency. 
+B. Custom model integration into Agentic frameworks 
+ To integrate generative model calling code into ag ents, most 
+frameworks provide support for custom model integra tion, 
+2025 International Conference on Intelligent Computing, Communication, Networking
+109
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:34:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 3]]
+allowing data scientists to create a model - calling class that can 
+manage parameters and customize the generation workflow. By 
+implementing this custom class, data scientists can introduce 
+flexible parameters, synchronous and asynchronous m odel 
+generation calls, and logging instructions. For exa mple, they 
+might include DynamoDB logging for tracking calls a nd 
+execution times, as well as aggregation code to monitor usage, 
+such as counters for the number of model calls. 
+Each agentic library typically has its own class structure for 
+implementing custom models, so integration steps ca n vary 
+slightly across frameworks. For instance, LangChain , 
+LlamaIndex, and CrewAI offer distinct interfaces and methods 
+for custom model configuration, making it essential to 
+understand the specifics of each when setting up a custom model 
+class. In the following sections, we will explore these classes in 
+detail, showing how to tailor each library to suppo rt enhanced 
+model control, logging, and flexible parameters. 
+1) LlamaIndex framework 
+We need to implement a class CustomLLM from 
+llama_index.core.llms, containing code to call a mo del and 
+populate CompletionResponse with model response. Th e 
+following methods need to be implemented: complete, 
+stream_complete, and metadata. The methods contain the code 
+that calls a Large Language Model of your choice wi th 
+necessary parameters (for example temperature, max_ tokens, 
+top - k, region or model name). We need to make sure to handle 
+possible exceptions and return the results in the f ormat of 
+llama_index.core.llms.CompletionResponse. 
+2) Langchain framework 
+To implement a custom LLM we need to implement a class 
+LLM from the package langchain_core.language_models .llms 
+containing the following methods: _call, _llm_type and init. We 
+can definitely add important logging and aggregatio n methods 
+to calculate the number of model calls, length of i nput and 
+output, call sequence, task id, execution time, mod el called, 
+errors, and any other potentially important information that will 
+help us to understand and analyze the flow in the f uture. The 
+generation result should return a string. 
+3) Crewai framework 
+Crewai implementation will need the following metho ds 
+added to crewai.LLM: init, call, _llm_type and 
+identifying_params. The call method also should return a string. 
+In our implementation we have been using the common code to 
+log the results into AWS DynamoDB. 
+We can see that the custom model implementation if very 
+similar for different frameworks. It makes it easier to integrate 
+into new frameworks, models, or to log new important metrics 
+for LLM agent workflow or performance monitoring. 
+4) Agentic Flow control for Coding 
+The Software Development Lifecycle (SDLC) has evolv ed 
+significantly over the past several years. Today, m ultiple 
+stakeholders - including designers, analysts, archi tects, testers, 
+developers, reviewers, and deployment teams - activ ely 
+participate in the process. Control flow often circ ulates among 
+these roles; for example, after code development, i t is handed 
+over to testers. If the test cases fail, the code r eturns to the 
+developer for revisions; if successful, it proceeds to production. 
+Fig. 1. ReAct Coding agent complex prompt 
+Code development is a complex process that goes bey ond 
+simple validation methods like cosine similarity or ROUGE 
+scores [7], which are often used for text. Comparing, validating, 
+and executing generated code introduces unique challenges, as 
+demonstrated by extensive research with great results, including 
+[5] and [6], on multi - step iterative development and testing 
+workflows. Unlike simple prompt - completion tasks, code 
+development requires an iterative flow that include s several 
+stages to refine and validate the results. 
+In our agentic workflow, we aimed to replicate a re al - life 
+SDLC process for developing and testing Python code. 
+5) Tools (agent steps or functions) 
+Agent tool represent a single step, that needs to be executed. 
+For our coding agent we have been using the followi ng four 
+tools taking care of different aspect of software development and 
+handling various errors and redirections. 
+• Analyzer: This tool verifies if a task is a coding - 
+related one. If it is, it directs the task to the Developer; 
+if not, it responds with a generic answer. 
+• Developer: Responsible for designing and 
+implementing Python code to solve the task. It also 
+generates test cases and code to execute them. When 
+all tests pass, the tool outputs “All tests passed.” 
+• Evaluator: Acts as a code reviewer, validating the 
+code, making necessary corrections, and adding 
+comments for clarity. 
+• Executor (Tester): Runs the code and checks for the 
+presence of the phrase “All tests passed” in the output. 
+If successful, it returns the result; otherwise, it sends 
+the task back to the Developer with detected errors. 
+6) ReAcrt agents flow implementation 
+Many agentic applications attempt to implement flow s 
+between these tools. Popular libraries offer ReAct (Reasoning 
+and Acting) agents to facilitate this process throu gh complex 
+prompts (see Fig. 1). It is tempting to rely on the LLMs to handle 
+task flow and parameter passing between tools automatically. 
+A data scientist needs only to define the tools, pr ovide 
+descriptions and parameters. The agent then autonom ously 
+directs tasks from one tool to another, adjusting p rompts, 
+Thought: you should always think about what to do 
+Action: the action to take, should be one of 
+[tool_analyzer, tool_developer, tool_eval, tool_executor] 
+Action Input: the input to the action, dictionary 
+enclosed in curly braces 
+Observation: the result of the action 
+... (this Thought/Action/Action Input/Result can 
+repeat N times) 
+Thought: I now can give a great answer 
+Final Answer: Your final answer must be the great and 
+the most complete as possible, it must be outcome 
+2025 International Conference on Intelligent Computing, Communication, Networking
+110
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:34:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 4]]
+selecting models, formatting inputs and outputs, an d 
+determining when to stop and provide a final answer . This 
+approach makes agents almost entirely self - sufficient, enabling 
+them to make intelligent decisions without constant oversight. 
+It is beneficial if agents can work effectively for specific use 
+cases; however, in our experience, such applications often make 
+too many autonomous decisions, leading to frequent errors and 
+incorrect outcomes. In the next section, we will discuss a more 
+controllable and reliable approach. 
+7) LangGraph flow implementation 
+The LangGraph library [8] within LangChain provides a 
+robust infrastructure for structuring and orchestra ting complex 
+workflows, which is particularly valuable in applic ations 
+involving multi - step language model tasks. By lev eraging a 
+graph - based approach, LangGraph enables the desig n of 
+workflows where tasks are represented as interconnected nodes, 
+supporting branching, looping, and conditional flow s. This 
+architecture is well - suited for problems requiring multiple steps 
+or decision points, such as data ingestion, transformation, model 
+inference, and output formatting, all managed as distinct stages 
+within the workflow. 
+As part of the LangChain ecosystem, LangGraph easil y 
+integrates with a wide array of language models and tools, 
+enabling users to build sophisticated multi - step pipelines that 
+make use of LangChain’s extensive model support. Wh ether 
+applied to tasks like summarization, question - ans wering, or 
+code generation, LangGraph manages the sequence and 
+dependencies between these model invocations, making it ideal 
+for workflows that require clear task orchestration, such as multi 
+- step reasoning or pipeline processing. 
+The interoperability of LangGraph with frameworks l ike 
+CrewAI and LlamaIndex further expands its utility, enabling 
+diverse applications. For instance, CrewAI facilita tes dynamic 
+task assignment, result tracking, and agent - based interactions 
+that complement LangGraph’s workflow management, allowing 
+for the creation of intelligent and adaptable agent systems. 
+Similarly, LlamaIndex’s focus on indexing and retrieval - based 
+generation is valuable for document - centric applications where 
+LangGraph can coordinate the retrieval, processing, and 
+synthesis of information across multiple steps, sea mlessly 
+integrating retrieval and generative capabilities t o produce 
+coherent and relevant outputs from large text corpora. 
+LangGraph also incorporates built - in mechanisms for error 
+handling and retries, which are essential for mainta ining 
+workflow robustness, especially in scenarios where multiple 
+LLM calls or interactions with external data source s are 
+involved. These features ensure that workflows conti nue to 
+completion even if individual steps encounter errors, enhancing 
+reliability and efficiency in complex task sequences. 
+The scalable and flexible design of LangGraph makes it 
+adaptable to evolving project requirements, allowin g for 
+incremental workflow modifications as application needs grow. 
+This adaptability is particularly beneficial for it erating quickly 
+in response to changing demands. Overall, LangGraph excels at 
+enabling complex problem - solving workflows that i nvolve 
+decision trees, conditional logic, and interdepende nt tasks, 
+making it a valuable tool for orchestrating advance d language 
+model applications across various domains, and visualizing the 
+flows. 
+In our AI agent implementation, we crafted precise prompts 
+tailored to each tool, ensuring the models perform as intended. 
+Additionally, we configured the system to pass an LLM model 
+to each tool at every step through the agent’s stat e, enabling 
+seamless control and state - sharing throughout the generation 
+process. We implemented a structured iterative workflow agent 
+(see Fig. 2), which provides process control and ma intains 
+shared state across tools throughout the entire generation flow. 
+A retry mechanism was also incorporated, allowing to configure 
+code - generation attempts (a state parameter) to e ffectively 
+manage unsuccessful outputs. This structure is clea r, intuitive, 
+and closely mirrors a human - driven software devel opment 
+lifecycle (SDLC). 
+ 
+Fig. 2. Coding agent implementation using LangGraph 
+Another critical feature of LangGraph is its abilit y to share 
+state across tools. This capability enabled us to s tandardize the 
+parameters passed between tools in a uniform format and to log 
+the entire state at each step of the agent’s workflow, significantly 
+enhancing observability and monitoring. By establis hing a 
+canonical state, we effectively addressed the chall enge of data 
+exchange between tools - a particularly complex issue for agents 
+built with React. React agents often suffer from inconsistent or 
+missing state management, which can lead to unpredic table 
+behavior and errors when state isn’t properly passed or updated 
+across tools. This flaw complicates the debugging p rocess and 
+can result in data loss or misinterpretation betwee n steps. Our 
+2025 International Conference on Intelligent Computing, Communication, Networking
+111
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:34:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 5]]
+unified state structure addresses these issues by s treamlining 
+data flow, reducing inconsistencies, and making debugging and 
+performance tracking much more efficient.. 
+C. Architecture 
+We designed an approach that enables the integratio n of 
+LLM calling code into popular agent frameworks, whi le also 
+logging each model call into a cloud NoSQL database for 
+comprehensive querying and workflow monitoring. For this, we 
+utilized AWS ecosystem services, including DynamoDB , a 
+millisecond - latency NoSQL database. 
+For the LLM model hosting we have been using Ollama 
+(hosted models locally for free) and AWS Bedrock, p roviding 
+scalable and reliable inference for diverse models (commercial 
+service). Bedrock is an LLM hub hosting a variety o f popular 
+models like Claude, Mixtral, and Llama3. Ollama also supports 
+many popular models including DeepSeek - Coder - V2. 
+ 
+Fig. 3. LLM agent implementation architecture 
+Fig. 3 illustrates the architecture of our agent - based system. 
+Each LLM call is routed through AWS Bedrock Guardra ils, 
+which filters out inappropriate or offensive conten t. To ensure 
+robust monitoring and observability, we log every t ool's state, 
+utilizing AWS CloudWatch for real - time logs and alerts. This 
+setup enables our agent to generate code automatica lly and 
+reliably while maintaining a high level of system observability. 
+D. LLM Model Selection and Cost 
+Selecting large language models is a very challengi ng 
+process. Over last several years, new models (comme rcial and 
+open source) were released weekly by leading resear chers, 
+innovators, and corporations. When OpenAI releases a new 
+better version (for example, GPT - 4o1 - preview) m any 
+publications are praising it, detailing its advanta ges over other 
+models, avoiding discussions about cost. However, the price and 
+execution time are very important factors for many companies. 
+In our example, o1 - preview costs $15.00 / 1M inpu t tokens, 
+while its predecessor gpt - 4o - $2.50 / 1M input tokens [9], or 
+6 times more expensive. On top of that, the new “re asoning” 
+model is substantially slower than its predecessor is. 
+We should always distinguish between user needs and 
+system requirements and avoid relying solely on ven dor 
+marketing materials, which may aim to justify higher costs. It's 
+essential to test a model with our specific dataset to achieve 
+optimal results, as no single LLM is universally suitable for all 
+tasks and datasets. Often, models that perform well in one 
+context may fall short in others, emphasizing the n eed for 
+customized testing and evaluation. By rigorously assessing each 
+model’s performance on our unique dataset, we can select or fine 
+- tune models that deliver the most relevant and ef fective 
+outcomes, rather than defaulting to potentially ove rhyped or 
+generalized solutions. 
+In our research, we selected well - established, hi gh - 
+performing models with reasonable costs. Our findin gs 
+demonstrate that achieving strong results does not require the 
+most expensive models, highlighting the effectivene ss of 
+thoughtful, cost - efficient model selection.. 
+TABLE I. LLM MODELS USED FOR EXPERIMENTS 
+Model 
+Model pricing from [10] 
+Vendor 
+Hosting 
+Price per 
+1M 
+input 
+tokens 
+Price per 
+1M 
+output 
+tokens 
+Q
+u
+a
+n
+t
+i
+z
+a
+t
+i
+o
+n 
+MMLU 
+score 
+llama3 - 2 - 
+11b - 
+instruct 
+Meta 
+AWS 
+Bedrock $0.35 $0.35 
+73 
+claude - 3 - 
+haiku Anthropic AWS 
+Bedrock $0.25 $1.25 75.2 
+mixtral - 
+8x7b - 
+instruct 
+Mistral 
+AWS 
+Bedrock $0.45 $0.70 
+70.6 
+deepseek - 
+coder - v2 
+DeepSeek 
+- AI 
+locally 
+free free 
+4 
+b
+i
+t 
+79.2 
+Table I contains the details of the models we have used. All 
+models are from reliable and trustworthy vendors (M eta, 
+Anthropic, AWS, Depseek - AI and Mistral), costing less than 
+$1 per one million tokens, and MMLU benchmark over 70. Our 
+average generated code contains about 500 output tokens, giving 
+us 2000 generated solutions for 1M tokens (1,000,00 0 tokens 
+divided by 500) for our most expensive model. Such 
+calculations can help to estimate and control experiment costs. 
+There are numerous model benchmarks including MMLU, 
+HumanEval, MBPP, MATH or Aider's Code Editing 
+Benchmark [11]. All of our models perform really we ll (see 
+Table I for MMLU scores). However, it is beyond the scope of 
+this paper to discuss those methods in detail. 
+In the plethora of available models (just Huggingfa ce has 
+over 147,289 open source generative models in November 2024 
+[12]), we have picked four reasonably priced and benchmarked 
+models for good coding results (Table I). 
+With the increasing demand for large language model s 
+(LLMs) across various domains, running these models locally 
+and efficiently has become a critical challenge. As LLMs 
+continue to expand in scale and performance, their deployment 
+on local infrastructure has garnered significant at tention. 
+Ollama, an open - source application, facilitates the installation 
+and execution of LLMs directly on user devices, off ering 
+enhanced privacy and operational flexibility. In th is study, we 
+2025 International Conference on Intelligent Computing, Communication, Networking
+112
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:34:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 6]]
+leverage Ollama to run the DeepSeek - Coder - V2 LLM, which 
+has been 4 - bit quantized to optimize memory footp rint and 
+speed. 
+While the 4 - bit quantization of DeepSeek - Coder - V2 
+offers significant advantages in terms of reduced m emory and 
+power requirements, it also poses challenges in mai ntaining 
+model accuracy. This quantized approach can lead to 
+performance trade - offs, particularly in complex or precision - 
+demanding tasks. However, for applications where privacy and 
+local deployment are paramount, these trade - offs may be 
+justified. This paper presents an analysis of the q uantization’s 
+impact on model fidelity and discusses potential mi tigation 
+strategies, including hybrid quantization techniques, to optimize 
+performance. Potentially, we could have loaded the DeepSeek - 
+Coder - V2 model from Huggingface (over 50GB of binary files) 
+and host its non - quantized version using AWS Sage maker 
+endpoints for inference. However, that approach wil l require 
+hardware costs and endpoint development, deployment and 
+monitoring. 
+The other LLMs we use for our studies are from AWS 
+Bedrock service using non - quantized models. The a dvantage 
+of that approach is that Amazon takes care of models availability 
+and deployment; we do not have to worry about server costs or 
+LLM endpoints monitoring. Given we have chosen rela tively 
+cheap on - demand models costing less than $1 per 1M tokens, 
+it is a good deal that saves a lot of worries, time and money for 
+hardware, maintenance, monitoring and deployment. It is very 
+important to know that hosting LLMs reliably is not easy and 
+requires a lot of time, creativity, and money, espe cially when 
+expensive multi - GPU instances need to be involved. 
+IV. DATASET 
+The LeetCode dataset [15] is an extensive collectio n of 
+programming problems designed to challenge develope rs' 
+understanding of algorithms, data structures, and p roblem - 
+solving strategies. Each problem in the dataset is crafted to test 
+specific skills, such as array manipulation, dynami c 
+programming, recursion, graph traversal, and string 
+manipulation, among others. The variety and breadth of tasks 
+within the dataset make it highly valuable for both beginner and 
+advanced programmers who wish to hone their technic al 
+abilities and deepen their understanding of compute r science 
+concepts. Each problem is also categorized by diffi culty level 
+(easy, medium, and hard), allowing users to gradually progress 
+from simpler exercises to more complex challenges. 
+What makes the LeetCode dataset particularly interesting is 
+the complexity and depth of the harder problems, wh ich often 
+require sophisticated solutions involving advanced algorithms 
+and optimal performance considerations. These tasks are more 
+than just exercises; they are often designed to mirror real - world 
+coding scenarios, where efficiency, readability, an d scalability 
+of the solution are crucial. For instance, problems involving 
+dynamic programming may require carefully designed recursive 
+solutions with memorization, while graph - related problems can 
+demand deep knowledge of graph traversal algorithms like 
+Dijkstra’s or BFS. These tasks not only test the LL M agent’s 
+technical knowledge but also encourage strategic th inking and 
+creativity, as many problems can be solved in multi ple ways, 
+each with different trade - offs in terms of time a nd space 
+complexity. Consequently, the LeetCode dataset serves as both 
+a learning tool and a benchmarking platform for pro grammers 
+to tackle complex, practical coding challenges. Lee tCode 
+problems are frequently used as a core part of preparation for top 
+IT companies interviews, helping candidates practi ce the 
+algorithmic and problem - solving skills essential for success in 
+technical rounds. We have been using LeetCode tasks as input 
+to our agent. 
+V. EXPERIMENTS 
+We designed our experiments to validate that our ag entic 
+flow operates effectively, allowing us to monitor e very step of 
+the process using advanced observability techniques . We 
+implemented an agentic workflow that enables contro l over 
+LLM model utilization, the prompts passed, the numb er of 
+iterations for each generation, and logging to DynamoDB via the 
+LangGraph approach.. 
+We have implemented the following experiments: 
+• Code generation with different LLM models to compare 
+performance, time and costs 
+• Utilization of different number of iterations to see if extra 
+iterations improve performance, and how many 
+generation iterations needed for each LLM 
+• Usage of different models for different tools, or steps of 
+the generation iterative process 
+• Code validation and documentation (comments) 
+augmentation during evaluation 
+• Verification if we need more advanced (expensive) 
+models for code validation, or existing up to $1 pe r 
+million tokens LLM would be sufficient 
+• Evaluation of the amounts of extra text generated 
+(besides code), we call it prefix and suffix to keep track 
+of every single token generated 
+ Generative models offer fascinating possibilities. By 
+design, they always generate a response, and, notably, an LLM 
+can often produce different outputs for the same prompt due to 
+inherent variability. One challenge, however, is hallucination - 
+when the model generates erroneous information that may not 
+align with the prompt or its training data. This un predictability 
+underscores the importance of validation and verifi cation to 
+ensure output accuracy and reliability. 
+Another critical aspect is executing generated code for 
+testing. Testers may encounter a range of potential errors when 
+running these scripts, and it’s essential for our a gent to handle 
+and log these issues effectively. Our validation to ol acts much 
+like a code reviewer in a traditional SDLC, address ing a 
+substantial portion of errors before execution. Thi s capability 
+not only ensures smoother code flow but also mirrors the role of 
+a code approver used in many corporate SDLC processes. Here 
+are a few common issues that may arise during code execution: 
+• Infinite loops 
+• Runtime exceptions 
+• Missing or invalid imports 
+2025 International Conference on Intelligent Computing, Communication, Networking
+113
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:34:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 7]]
+• User required input 
+• Output handling and formatting 
+• Excessive resources consumption 
+• Network issues 
+ Our agent tools are designed to address many of th ese issues, 
+enabling automation for batch code generation, main taining 
+state between iterations, and enhancing reliability and 
+observability throughout the workflow. This approach provides 
+a robust framework for handling the complexities of code 
+generation and testing in real - world applications. 
+ RESULTS 
+ We were able to achieve very good results for solv ing 
+complex development tasks from LeetCode with LLM ag ents 
+with success rate of up to 98 percent for Mata’s llama3 - 2 - 11b 
+- instruct model. For the other models, the perform ance of our 
+agentic approach is above 90% success rate. 
+A. claude - 3 - haiku LLM 
+TABLE II. LLM AGENT RESUTS FOR MIXTRAL - 8X7B - INSTRUCT 
+Tool_developer Tool_eval 
+ Results 
+ 
+LLM 
+model 
+Avg 
+generation 
+time sec/ 
+Cost $ per 
+call 
+ 
+Avg 
+Input/ 
+Prefix/ 
+Suffix/ 
+Code, 
+tokens 
+LLM 
+model 
+Avg 
+generation 
+time sec/ 
+Cost $ per 
+call 
+ 
+Avg 
+Prefix/ 
+Suffix/ 
+Code, 
+tokens 
+Retry#/ 
+Success 
+% 
+claude 
+- 3 - 
+haiku 
+4.38 sec/ 
+$0.00059 
+ 
+101/ 
+1/ 
+12/ 
+436 
+claud
+e - 3 - 
+haiku 
+5.11 sec/ 
+$0.00082 
+ 
+481/ 
+17/ 
+101/ 
+444 
+0: 85% 
+1: 89% 
+2: 91% 
+3: 91% 
+4: 93% 
+5: 93% 
+6: 94% 
+claude 
+- 3 - 
+haiku 
+4.53 sec/ 
+$0.00059 
+ 
+ 
+101/ 
+1/ 
+8/ 
+431 
+llama
+3 - 2 - 
+11b - 
+instru
+ct 
+5.8 sec/ 
+$0.00042 
+ 
+481/ 
+1/ 
+151/ 
+547 
+0: 78% 
+1: 85% 
+2: 85% 
+3: 88% 
+4: 92% 
+5: 92% 
+6: 93% 
+Table II demonstrates the results for claude - 3 - haiku. We 
+can see that depending on the model we use for vali dation, we 
+achieve 93 - 94% accuracy for our iterative code de velopment 
+workflow. Code generation and validation time is between 4 to 
+6 seconds. Because the number of tokens for our inp ut and 
+output prompts are much less than 1 million (actually, less than 
+1000), and models we have chosen cost reasonably (s ee Table 
+I). The generation calls cost less than a penny. 
+B. llama3 - 2 - 11b - instruct LLM 
+It is ironical and impressive that the cheapest model we have 
+chosen gives us the best results. However, it prove s our point 
+that testing model is very important, and often you can achieve 
+excellent results without highest priced models. Ta ble III 
+demonstrates the performance and costs for Meta’s llama3 - 2 - 
+11b - instruct model with the best accuracy of 98%. 
+ Comparing Table II and Table III, we can observe h ow 
+models differ. For example, claude - 3 - haiku (Tab le II) 
+produces 85% accuracy after first iteration, while llama3 - 2 - 
+11b - instruct – only 73%. However, it does not prevent llama3 
+- 2 - 11b - instruct to overperform after three retries resulting in 
+98% accuracy. Nobody will be able to predict those results 
+without actually conducting the experiments with di fferent 
+LLMs. Moreover, in the tandem of models the order ( tool) of 
+model inference matters, because we only got 93% ac curacy 
+when using claude - 3 - haiku for tool_developer and llama3 - 2 
+- 11b - instruct for tool_eval. 
+TABLE III. LLM AGENT RESUTS FOR LLAMA3 - 2 - 11B - INSTRUCT 
+Tool_developer Tool_eval 
+ Results 
+ 
+LLM 
+model 
+Avg 
+generation 
+time sec/ 
+Cost $ per 
+call 
+ 
+Avg 
+Input/ 
+Prefix/ 
+Suffix/ 
+Code, 
+tokens 
+LLM 
+model 
+Avg 
+generation 
+time sec/ 
+Cost $ per 
+call 
+ 
+Avg 
+Prefix/ 
+Suffix/ 
+Code, 
+tokens 
+Retry#/ 
+Success 
+% 
+llama
+3 - 2 - 
+11b - 
+instru
+ct 
+6.95 sec/ 
+$0.00027 
+ 
+ 
+101/ 
+37/ 
+182/ 
+450 
+llama3 
+- 2 - 
+11b - 
+instruc
+t 
+7.59 sec/ 
+$0.0005 
+ 
+493/ 
+1/ 
+308/ 
+616 
+0: 58% 
+1: 78% 
+2: 85% 
+3: 89% 
+4: 90% 
+5: 91% 
+6: 92% 
+llama
+3 - 2 - 
+11b - 
+instru
+ct 
+6.95 sec/ 
+$0.00027 
+ 
+ 
+101/ 
+37/ 
+182/ 
+450 
+claude 
+- 3 - 
+haiku 
+6.7 sec/ 
+$0.00099 
+ 
+493/ 
+9/ 
+153/ 
+529 
+0: 73% 
+1: 92% 
+2: 97% 
+3: 98% 
+ The combination of llama3 - 2 - 11b - instruct for generation 
+and claude - 3 - haiku for validation yields impres sive results. 
+We achieved an accuracy of 98% after three retries, whereas 
+using Llama3 - 2 - 11B - Instruct for both developm ent and 
+validation resulted in only 92% accuracy. This outcome suggests 
+that the models complement each other by leveraging their 
+respective strengths to produce higher - quality co de when 
+working together. 
+TABLE IV. LLM AGENT RESUTS FOR MIXTRAL - 8X7B - INSTRUCT AND 
+DEEPSEEK - CODER - V2 
+Tool_developer Tool_eval 
+ Results 
+ 
+LLM 
+model 
+Avg 
+gener
+ation 
+time 
+sec/ 
+Cost $ 
+per 
+call 
+ 
+Avg 
+Input/ 
+Prefix/ 
+Suffix/ 
+Code, 
+tokens 
+LLM 
+model 
+Avg 
+generation 
+time sec/ 
+Cost $ per 
+call 
+ 
+Avg 
+Prefix/ 
+Suffix/ 
+Code, 
+tokens 
+Retry#/ 
+Success 
+% 
+mixtral - 
+8x7b - 
+instruct 
+6.10 
+sec/ 
+$0.00
+037 
+ 
+101/ 
+7/ 
+119/ 
+338 
+claude 
+- 3 - 
+haiku 
+7.04 sec/ 
+$0.00090 
+ 
+381/ 
+9/ 
+143/ 
+489 
+0: 58% 
+1: 73% 
+2: 81% 
+3: 86% 
+4: 89% 
+5: 90% 
+6: 91% 
+deepseek 
+- coder - 
+v2 
+132 
+sec/ 
+$0 
+ 
+ 
+101/ 
+44/ 
+148/ 
+366 
+claude 
+- 3 - 
+haiku 
+6.56 sec/ 
+$0.00089 
+ 
+409/ 
+12/ 
+126/ 
+491 
+0: 78% 
+1: 91% 
+2: 93% 
+3: 95% 
+ Additionally, the final code after validation cont ains 529 
+tokens, compared to the original 450 tokens generated initially. 
+2025 International Conference on Intelligent Computing, Communication, Networking
+114
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:34:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 8]]
+This indicates that the validation model not only c orrects the 
+code but also enriches it with detailed comments, as specified in 
+the prompt instructions. Using ensemble models with distinct 
+roles - where the critic/validator is a separate model - proves to 
+be an intuitive and effective approach for achievin g optimal 
+results. 
+C. mixtral - 8x7b - instruct and deepseek - coder - v2 LLMs 
+ Table IV demonstrates the LLM agent results for re maining 
+models - mixtral - 8x7b - instruct and deepseek - coder - v2. 
+We can see that accuracy of 91% and 95% respectively. 
+ We can see that even 4 - bit quantized deepseek - coder - 
+v2model performs well; working with claude - 3 - ha iku for 
+validation, we have achieved 95% accuracy. However, its 
+execution time is significantly slower, taking 132 seconds (over 
+two minutes) compared to commercially hosted AWS Bedrock 
+models, which respond within 4–7 seconds. It is a good example 
+of tradeoffs between using commercial non - quantized models 
+and deploying quantized LLMs locally, sometimes without GPU 
+instances. 
+Fig. 4 demonstrates dependency between number of re tries 
+and agent accuracy. We can see that mixtral - 8x7b - instruct and 
+llama3 - 2 - 11b - instruct have the lowest accuracy for the first 
+iteration, but they get to over 90% after the sixth retry. claude - 
+3 - haiku model has the highest accuracy (85%) afte r first 
+iteration. 
+ 
+Fig. 4. Coding Agent Retry vs. Accuracy for different LLM models 
+We successfully selected high - performing LLMs and 
+verified that our observable LLM agent workflow ach ieved 
+excellent accuracy. Notably, the local model (deepseek - coder - 
+v2) performs well with a cost of $0 per invocation. The 
+commercial models we used (llama3 - 2 - 11b - instruct, claude 
+- 3 - haiku and mixtral - 8x7b - instruct) provided accuracy from 
+91% to 98%. 
+VI. CONCLUSION 
+ Large Language Models are revolutionizing software 
+development. There are many coding tools including Amazon Q 
+or Github Copilot that help developers to write cod e faster. 
+However, these tools utilize “human in the loop” ap proach. 
+Agentic approach helps us to automate the whole SDLC coding 
+pipeline, specify the workflow and choose models for each actor 
+(coder, tester, architect, analyst, etc.) It is ver y important to 
+maintain the flow control, and we have accomplished it with 
+LangGraph, tools and custom LLM class wrappers for the most 
+popular Generative AI frameworks. Our implementatio n 
+includes full observability stack, including AWS cl oud 
+integration, logging and cloud Watch alarms, and ti mestamps. 
+One important lesson we have learned – it is important to make 
+sure the LLM follows certain workflow and if possible we need 
+to control flow, iteration parameters, data exchang es, model 
+arguments, and LLM prompts rather than relying on models to 
+figure it our autonomously. 
+ We were able to solve many interesting problems an d 
+benchmark our agent for various moderately priced m odels, 
+achieving up to 98% accuracy. Prompt engineering is also a very 
+important aspect of agentic approach. Instead of relying on agent 
+to communicate with the model, we could tailor each tool’s 
+specific prompt to achieve the best results managing the process. 
+A prime example of LLM-powered orchestration in practice 
+is Cursor, a purpose-built, AI-native code editor that has rapidly 
+become a benchmark for agentic coding tools. Cursor 
+distinguishes itself from traditional IDEs and AI p lugins by 
+deeply integrating state-of-the-art models - includ ing GPT-4 
+Turbo, Claude Opus 4, Sonnet 4, and Gemini 2.5 Pro - right at 
+the core of the developer experience. Its architect ure not only 
+supports seamless code completion and refactoring b ut also 
+allows for agent-driven workflows, automated bug fixes, in-line 
+explanations, and codebase-scale search and reasoning. 
+Cursor’s “Auto Mode” dynamically selects the most 
+appropriate LLM for each coding task, balancing con text, 
+latency, and cost, while “Max Mode” leverages massive context 
+windows to enable holistic codebase understanding. The editor’s 
+extensibility and its robust plugin ecosystem encou rage the 
+development of bespoke agents - test writers, docum entation 
+generators, and code reviewers - that operate auton omously 
+within the developer’s workflow. According to recen t user 
+engagement statistics, Cursor surpassed 500,000 active users by 
+mid-2025, with studies showing an average 35% reduc tion in 
+boilerplate and debugging time for professional dev elopers. 
+These numbers signal not just rapid adoption but a shift toward 
+LLM-centric development environments where agentic models 
+and observability infrastructure are first-class citizens. 
+Meanwhile, Claude Code - Anthropic’s specialized coding 
+assistant - exemplifies the power of conversational LLM agents 
+designed for the entire software development lifecycle. Built on 
+the latest Claude 4 models (Opus 4 and Sonnet 4), Claude Code 
+brings advanced long-context reasoning, hybrid step -by-step 
+execution, and contextual awareness to code underst anding, 
+modification, and review. Its agentic CLI interface enables 
+developers to not only generate and edit code, but also perform 
+deep codebase navigation, automated testing, and ev en multi-
+file refactoring through natural language conversations. 
+Enterprise trials report that over 70% of developer s using 
+Claude Code experienced faster resolution of techni cal 
+challenges, with notable improvements in code quali ty and 
+onboarding efficiency. Public engagement figures indicate that 
+within weeks of launch, Claude Code had attracted over 100,000 
+users, becoming a staple in both startups and large enterprise 
+workflows. The platform’s ability to directly manip ulate files, 
+2025 International Conference on Intelligent Computing, Communication, Networking
+115
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:34:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 9]]
+integrate with version control, and maintain state over extended 
+coding sessions positions it as a key enabler for a gent-driven 
+SDLC automation and orchestration. 
+Both Cursor and Claude Code illustrate the potentia l of 
+agentic LLM frameworks - especially when coupled wi th full 
+observability, controlled orchestration, and custom izable 
+prompt engineering. Their popularity and tangible productivity 
+gains highlight the hunger among developers for too ls that do 
+more than autocomplete: they act, learn, adapt, and coordinate 
+with other agents in the software pipeline. 
+Crucially, their rapid adoption demonstrates that we are only 
+witnessing the beginning of a much broader transformation. As 
+LLM agent orchestration matures and personalized co pilots 
+become more deeply embedded in every aspect of the SDLC, 
+the future points toward development environments where every 
+coder, tester, and architect is supported by a suit e of adaptive, 
+observant, and reliable AI teammates. This will not only 
+accelerate productivity and innovation but will als o demand 
+continued research into workflow control, prompt optimization, 
+benchmarking, and robust observability to ensure tr ustworthy, 
+scalable AI-driven software engineering. 
+ Given the huge attention to Generative AI and the fast pace 
+of innovation, new models, tools, and agentic libra ries will 
+transform the software development industry. We believe that, 
+in the future, each developer will have a personali zed agent to 
+help him write the best possible code and test it, boosting 
+productivity, stimulating creativity and innovation. 
+ 
+ 
+ 
+ 
+REFERENCES 
+[1] OpenAI Pricing web site, https://openai.com/api/pricing/ 
+[2] Ollama supported models we site, https://ollama.com/library 
+[3] Llama.cpp documentation web site, 
+https://github.com/ggerganov/llama.cpp 
+[4] Amazon Bedrock models, 
+https://docs.aws.amazon.com/bedrock/latest/userguide/model - ids.html 
+[5] Zhong, Li, and Zilong Wang. "Can LLM Replace Stack Overflow? A 
+Study on Robustness and Reliability of Large Langua ge Model Code 
+Generation." In Proceedings of the AAAI Conference on Artificial 
+Intelligence, vol. 38, no. 19, pp. 21841 - 21849. 2024. 
+[6] Ridnik, Tal, Dedy Kredo, and Itamar Friedman. "Code generation with 
+alphacodium: From prompt engineering to flow engine ering." arXiv 
+preprint arXiv:2401.08500 (2024). 
+[7] Lin, Chin - Yew, and F. J. Och. "Looking for a few good metrics: ROUGE 
+and its evaluation." In Ntcir workshop. 2004. 
+[8] LangGraph documentation, https://www.langchain.com/langgraph 
+[9] OpenAI pricing web site, https://openai.com/api/pricing/ 
+[10] Amazon Bedrock model pricing web site, 
+https://aws.amazon.com/bedrock/pricing/ 
+[11] Aider LLM Leaderboard web site, https://aider.chat/docs/leaderboards/ 
+[12] Huggingface text generation models web site, 
+https://huggingface.co/models?pipeline_tag=text - generation 
+[13] Huang, Dong, Jie M. Zhang, Michael Luck, Qingwen Bu , Yuhao Qing, 
+and Heming Cui. "Agentcoder: Multi - agent - based code generation with 
+iterative testing and optimisation." arXiv preprint arXiv:2312.13010 
+[14] Qian, Chen, Wei Liu, Hongzhang Liu, Nuo Chen, Yufan Dang, Jiahao Li, 
+Cheng Yang et al. "Chatdev: Communicative agents fo r software 
+development." In Proceedings of the 62nd Annual Meeting of the 
+Association for Computational Linguistics (Volume 1: Long Papers), pp. 
+15174 - 15186. 2024. 
+[15] Hou, Wenpin, and Zhicheng Ji. "A systematic evaluat ion of large 
+language models for generating programming code." arXiv preprint 
+arXiv:2403.00894 (2024). 
+[16] Kaplunovich, Alex. "Transforming Code Development w ith Large 
+Language Models." 2025 International Conference on Intelligent 
+Computing, Communication, Networking and Services ( ICCNS). IEEE, 
+2025. 
+ 
+2025 International Conference on Intelligent Computing, Communication, Networking
+116
+Powered by TCPDF (www.tcpdf.org)
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 05,2026 at 13:34:01 UTC from IEEE Xplore. Restrictions apply.

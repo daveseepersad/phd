@@ -1,0 +1,1534 @@
+[[page 1]]
+Adaptive Orchestration with Cross-Episode Memory for Dynamic
+LLM-based Agent Pools
+Marleen Lukei
+Quality and Usability Lab
+Institute of Software Engineering
+and Theoretical Computer Science
+Technische Universität Berlin
+Berlin, Germany
+marleenlukei@gmail.com
+Philine Thalia Kowol
+Quality and Usability Lab
+Institute of Software Engineering
+and Theoretical Computer Science
+Technische Universität Berlin
+Berlin, Germany
+kowol@tu-berlin.de
+Abstract
+Multi-agent systems are moving toward open
+ecosystems in which agents may appear,
+change, or disappear at runtime. Orchestra-
+tors must therefore discover relevant black-box
+specialists from large pools and learn how to
+coordinate them across repeated tasks. Exist-
+ing methods typically either maintain cross-
+episode memory for fixed, well-known teams or
+retrieve agents without accumulating reusable
+coordination knowledge. We propose an adap-
+tive orchestration architecture with an exter-
+nal memory layer that enables in-context learn-
+ing over dynamic agent pools without param-
+eter updates. This layer combines agent play-
+books, which store per-agent evidence, with
+delegation blueprints, which capture reusable
+workflows distilled from successful episodes.
+On OfficeBench with a 50-agent pool includ-
+ing distractors, we show that the adaptive sys-
+tem achieves the strongest overall performance
+across all evaluated configurations when oper-
+ating with its own Agent Cards, outperform-
+ing both sparse-card and rich-card stateless
+baselines while requiring fewer orchestrator
+turns. Ablations show that blueprints drive the
+main end-to-end gains, whereas playbooks are
+most useful when descriptions are sparse. A
+dynamic-pool experiment further shows that
+the memory layer incorporates newly added
+specialists and prunes obsolete capability evi-
+dence without manual intervention.
+1 Introduction
+Large language models (LLMs) increasingly serve
+as autonomous agents that reason, plan, and act
+across diverse tasks without task-specific training
+(Fang et al.). For complex tasks, multi-agent sys-
+tems distribute work across specialized agents and
+have shown improvements over single-agent base-
+lines on challenging benchmarks (Guo et al., b).
+Open interoperability protocols such as Anthropic’s
+Model Context Protocol (MCP) 1 and Google’s
+1https://modelcontextprotocol.io
+Agent-to-Agent Protocol (A2A)2 are making agent
+ecosystems more modular: agents can expose ca-
+pabilities through standardized interfaces and be
+discovered at runtime. This shift turns orchestra-
+tion from a problem of coordinating a fixed team
+into one of discovering, selecting, and coordinat-
+ing unfamiliar specialists. Despite these advances,
+current multi-agent systems face two limitations
+that prevent them from fully exploiting more open
+and registry-based ecosystems.(i) Rigidity.Most
+systems are manually composed and statically con-
+figured at design time, requiring substantial human
+intervention to introduce new capabilities or inte-
+grate unfamiliar agents (Hong et al.).(ii) State-
+lessness.Each task is solved from scratch without
+retaining knowledge from prior episodes (Fourney
+et al.). This absence of memory prevents orchestra-
+tors from improving their coordination decisions
+over time, forcing them to repeatedly rediscover
+which agents to select and how to combine them
+for similar tasks. Existing approaches address
+parts of this challenge but not their intersection.
+Experience-driven multi-agent methods equip or-
+chestrators with cross-episode memory but assume
+fixed agent pools with well-known capabilities (He
+et al.). Capability discovery and retrieval methods
+address selection from large or changing pools but
+focus on the retrieval process itself rather than on
+learning how to coordinate retrieved agents across
+tasks (Guo et al., a). The combination of both has
+received limited systematic study.
+This work makes four contributions. First, we
+propose an adaptive orchestration architecture for
+dynamic pools of black-box specialist agents, us-
+ing a dual cross-episode memory layer that com-
+bines per-agent playbooks with reusable delega-
+tion blueprints. Second, we show that the adaptive
+system achieves the strongest overall performance
+across all evaluated configurations when operating
+2https://a2a-protocol.org
+WOCHAT2026: Workshop on Chatbots and Agentic Technologies
+2 August 2026, Atlanta, Georgia, USA
+22 10.21437/WoChat.2026-4
+
+[[page 2]]
+with its own learned Agent Cards, outperforming
+stateless systems that rely on either static sparse
+or rich Agent Cards alone. Third, we introduce
+a retrieval-to-execution error decomposition and
+a dynamic-pool experiment, demonstrating that
+memory can expose downstream selection bottle-
+necks, integrate newly registered specialists, and
+prune obsolete capability evidence without manual
+reconfiguration. Fourth, we extend OfficeBench
+by providing a collection of gold agent annotations
+for each task, specifying the minimal set of agents
+necessary to successfully complete that task.
+2 Related Work
+This work builds on two lines of research: non-
+parametric cross-episode adaptation and capability
+discovery. The first studies how agent systems im-
+prove across tasks without updating model param-
+eters. The second addresses how an orchestrator
+identifies suitable agents or tools from large candi-
+date pools.
+Non-Parametric Cross-Episode Adaptation.In
+single-agent settings, a number of systems com-
+press past trajectories into reusable knowledge that
+is stored persistently in memory. ExpeL (Zhao
+et al.) extracts generalized insights by compar-
+ing successful and failed attempts and reuses them
+with retrieved trajectories at test time. Reason-
+ingBank (Ouyang et al.) accomplishes this while
+avoiding dependence on ground-truth labels by em-
+ploying an LLM judge, which distills successful
+traces into strategies and transforms failed traces
+into cautionary examples. Agentic Context Engi-
+neering (Zhang et al., a) takes a related but dis-
+tinct approach by adapting the agent’s prompt it-
+self. The prompt is treated as an evolving play-
+book of bullets. In later runs, a generator marks
+which bullets were useful or misleading; a reflec-
+tor extracts lessons from the traces, and a curator
+adds delta updates to the playbook. A grow-and-
+refine mechanism updates bullets in place, merges
+semantically similar entries, and removes harm-
+ful bullets. Multi-agent systems shift adaptation
+to orchestration, decomposing tasks and routing
+work among specialized agents. They have evolved
+from static, role-based workflows (Hong et al.) to-
+ward in-episode adaptive planning. Magentic-One
+embeds planning and recovery into the orchestra-
+tor’s control loop via task and progress ledgers,
+gaining 31% on GAIA (Fourney et al.). Verified
+Multi-Agent Orchestration (Zhang et al., b) adds an
+LLM verifier that checks result completeness and
+replans when gaps remain, improving complete-
+ness at the cost of higher resource use. These sys-
+tems achieve in-episode adaptivity but reset all ac-
+cumulated state between tasks. A complementary
+line learns across episodes. ALMC (He et al.) uses
+a Judge Agent to evaluate each task and persists
+successful role-phase-workflow configurations in
+RAG-backed memory. LEGOMem (Han et al.)
+splits successful trajectories into orchestrator- and
+agent-level memories retrieved by semantic sim-
+ilarity, showing on OfficeBench that orchestrator
+memory alone yields 12-13% over stateless base-
+lines. Across all of these, the agent set is controlled
+internally or fixed at design time; none assumes
+an external pool of agents whose capabilities are
+unknown or shift during evaluation.
+Capability Discovery and Retrieval.As AI
+agents are developed across independent frame-
+works and platforms, discovering potential col-
+laborators and assessing their capabilities at run-
+time has become a fundamental challenge (Guo
+et al., a). The A2A Protocol addresses capa-
+bility announcement through Agent Cards that
+declare an agent’s skills and invocation require-
+ments. As agent pools grow, curated registries
+serve as central catalogs against which clients is-
+sue queries based on declared skills or provider
+metadata (A2A Project). At larger scale, the In-
+ternet of Agents paradigm (Chen et al., a) en-
+visions cross-organisational collaboration where
+embedding-based retrieval becomes the only prac-
+tical selection mechanism. Guo et al. (a) formalize
+the resulting problem as agent capability discov-
+ery, proposing semantic matching in which agent
+descriptions and task requirements are jointly em-
+bedded for similarity-based retrieval. This casts
+agent selection as a retrieval problem structurally
+analogous to tool retrieval, where an agent selects
+suitable APIs or functions from a large candidate
+pool (Haque et al.). A key limitation shared by
+both settings is that static descriptions such as tool
+documentation or Agent Cards do not necessar-
+ily align with the retrieval queries formulated at
+task time. Recent work addresses this gap through
+indexing-time enrichment, where a tool’s index
+entry is augmented with synthetic content so that
+retrieval becomes query-to-query matching. Re-
+Invoke (Chen et al., b) generates a diverse set of
+hypothetical user queries per tool at indexing time,
+against which incoming requests are matched. Be-
+yond indexing-time enrichment, ToolMem (Xiao
+23
+
+[[page 3]]
+et al.) stores observed strengths, weaknesses, and
+usage experiences of tools in memory, enabling fu-
+ture selections to be informed by past performance.
+All capability discovery and retrieval approaches
+reviewed here share a common limitation. They
+either rely on fixed descriptions or build one-shot
+enrichments at indexing time. ToolMem advances
+this idea with experience-driven memory, but still
+its update mechanism is only accumulative, and
+does not consider changes in capability.
+3 Methodology
+This section introduces an adaptive orchestra-
+tion system that selects and coordinates specialist
+agents from a dynamic agent pool. The orches-
+trator is implemented as a dedicated LLM-based
+agent operating in a ReAct-style control loop (Yao
+et al.). Specialist agents are treated as black boxes
+that announce their capabilities at registration time,
+but their underlying models, prompts, and tools
+remain opaque to the orchestrator. Agents may be
+added, removed, or updated between episodes with-
+out requiring changes to the orchestrator itself. All
+adaptation occurs through in-context learning at the
+orchestrator level, backed by an external memory
+layer. To isolate the effect of accumulated mem-
+ory on task performance, our evaluation separates
+a warm-up phase, during which the full curation
+cycle is active, from a held-out evaluation phase in
+which memory is frozen.
+Figure 1 illustrates the overall architecture, in-
+cluding its control loop. The full procedure is pro-
+vided as pseudocode in Appendix D.
+3.1 Agent Registration
+Specialists are decoupled from the orchestrator
+through an agent registry. Any LLM-driven agent
+can enter the pool by providing an Agent Card
+containing a natural-language description and a
+list of tools, including tool-level descriptions. As
+the registry grows, loading all cards into the or-
+chestrator’s context becomes impractical. Each
+card is therefore indexed with dense text embed-
+dings, and only a semantically relevant subset is
+retrieved per task. However, retrieval quality de-
+pends on how well cards match the orchestrator’s
+capability-oriented queries. Following indexing-
+time enrichment methods for tool retrieval (Chen
+et al., b), each card undergoes a capability profil-
+ing step at registration time. A LLM generatesN
+synthetic capability queries that the agent could
+plausibly address, conditioned on the card content.
+Each query is evaluated against the card’s current
+retrieval representation, and queries for which the
+agent is not retrieved under the configured similar-
+ity threshold indicate coverage gaps. For identified
+gaps, up to Nb capability-oriented bullets are de-
+rived and added to the retrieval index. These bullets
+are created as playbook entries (Section 3.2) with
+confirmation and contradiction counts initialized to
+zero, representing unvalidated hypotheses about the
+agent’s capabilities. These can later be confirmed,
+contradicted, or pruned by the curation loop.
+3.2 Memory Layer
+The external memory layer persists two forms of
+knowledge across episodes. Agent playbooks store
+agent-level evidence about individual specialists,
+while delegation blueprints store workflow-level
+patterns for composing multiple agents. Both struc-
+tures are populated and revised through the post-
+episode curation loop described in Section 3.4.
+Agent playbooks.For each registered agent,
+the system maintains an ACE-inspired play-
+book (Zhang et al., a). Unlike ACE’s global play-
+book, we keep one playbook per specialist. Each
+entry records a rule, its type (capability, limitation,
+or strategy), and how often it has been confirmed
+versus contradicted. At task time, capability entries
+are indexed alongside the Agent Card for retrieval.
+The selected agent’s full playbook is then injected
+into the orchestrator context to guide delegation.
+Entries are pruned once the number of contradic-
+tions exceeds a predefined threshold.
+Delegation blueprints.A delegation blueprint
+abstracts a successful coordination episode into a
+reusable pattern. It includes a retrieval-oriented
+task summary and a sequential list of delegation
+steps. Each step records which agent was assigned
+to which sub-task, what input it received, and what
+output it produced for downstream use. A short ra-
+tionale captures why the overall coordination strat-
+egy was chosen.
+3.3 Task Execution
+At task time, the orchestrator operates a control
+loop in which it retrieves context from memory,
+optionally formulates a plan, delegates sub-tasks
+to specialists, and produces a final answer. Each
+of these actions is implemented as an explicit tool
+call within the loop.
+24
+
+[[page 4]]
+Figure 1: Training-phase architecture of the adaptive orchestration system.
+Retrieval.The retrieval tool constructs the task-
+specific context that the orchestrator calls before
+making its initial delegation. The orchestrator pro-
+vides a task description along with a list of capa-
+bility queries that specify the skills likely needed
+to complete the task. Each query is scored against
+every registered agent through two channels. The
+first channel computes a cosine similarity on em-
+beddings against the agent’s card text. The second
+channel matches the same query against the learned
+capability bullets in the playbook store. The agent’s
+final score is the maximum of the two channels:
+if either the card text or a learned bullet matches
+the query, the agent enters the candidate pool. In
+parallel, the task description is embedded and com-
+pared to stored delegation blueprints as well. If
+the best-matching blueprint exceeds a similarity
+threshold and all agents it references are currently
+registered, it is returned. Agents referenced in the
+blueprint that were not surfaced through the ca-
+pability queries are added to the candidate pool,
+allowing previously successful delegation patterns
+to highlight agents whose relevance is not apparent
+from the current task description alone.
+Planning.Planning is implemented as an op-
+tional tool that the orchestrator may invoke for
+complex or long-horizon tasks. For simpler tasks
+requiring only a few delegations, the orchestrator
+may proceed directly to delegation.
+Delegation.The delegation tool dispatches a sub-
+task to a specialist agent by name and returns its re-
+sponse. Instructions are self-contained and include
+all context the agent requires, since specialists have
+no access to the broader task state. To support mem-
+ory updates, each delegation optionally includes a
+list of the specific playbook bullets the orchestrator
+relied on when composing the instruction. These
+bullets serve as citations. They document which
+evidence informed the delegation and provide a
+direct attribution signal for subsequent curation.
+Completion.Once all sub-tasks are resolved, the
+completion tool submits the final answer. During
+warm-up, a stronger judge LLM assesses the final
+response against the task requirements and the exe-
+cution trajectory. If the judge rejects the answer, it
+returns targeted feedback, and the orchestrator may
+revise and resubmit. After one allowed revision at-
+tempt, the episode terminates. The judge decision
+is retained as the success/failure label for curation.
+3.4 Cross-Episode Curation
+After each warm-up episode, the system updates
+memory from the executed trajectory and the judge
+decision. Each trajectory records the task descrip-
+tion, delegation instructions, agent responses, and
+the playbook bullets cited by the orchestrator. Cu-
+ration operates at two levels. At the workflow level,
+successful episodes may be distilled into reusable
+delegation blueprints. At the agent level, both suc-
+cessful and failed episodes may update the play-
+books of agents that were actually delegated to. To
+prevent redundant curation of near-duplicate expe-
+riences, both levels are controlled by a semantic
+familiarity criterion. If a sufficiently similar task
+has been previously processed, the curation step
+is skipped. In contrast, all failed episodes always
+trigger agent-level curation, as they may reveal ob-
+solete or overstated capabilities.
+Workflow-level curation.If the episode is
+judged successful and is not semantically familiar
+to existing blueprints, the curator distills the trajec-
+tory into an idealized delegation sequence. This
+sequence contains the minimal chain of agents, in-
+puts, and outputs needed to solve the task. Failed
+attempts, corrective detours, and redundant delega-
+tions are removed so that future executions do not
+reproduce accidental or inefficient behavior. The re-
+sulting sequence is stored as a delegation blueprint
+together with a retrieval-oriented task summary.
+25
+
+[[page 5]]
+Agent-level curation.For each agent that re-
+ceived at least one delegation, the curator per-
+forms a separate playbook update using only agent-
+specific evidence: the instructions sent to that agent,
+the agent’s responses, and the playbook bullets
+cited by the orchestrator. The curator may con-
+firm or contradict cited bullets and may introduce
+new capability, limitation, or strategy bullets when
+they are supported by observed behavior. Profiling-
+derived bullets are treated as unvalidated assump-
+tions. If they have never been confirmed, a single
+contradiction removes them. Bullets derived from
+runtime observations are pruned only after contra-
+dictions exceed the harm threshold τ. When an
+agent’s playbook exceeds the size limit, semanti-
+cally redundant bullets are consolidated to keep the
+memory compact.
+4 Experiments
+The evaluation tests whether cross-episode mem-
+ory improves orchestration and remains robust over
+a dynamic pool of agents. The design of the exper-
+iments is presented first, followed by the results.
+4.1 Experimental Setting
+Benchmark.We evaluate on OfficeBench (Wang
+et al.), an office-automation benchmark of 300
+tasks across three difficulty tiers. Each task re-
+quires a multi-step workflow over several office
+applications in an environment that marks the task
+as solved when it reaches the designated target
+state. We construct three independent splits by
+shuffling the tasks within each tier using different
+fixed seeds, then partitioning them into a memory-
+building warm-up phase and a separate evaluation
+phase, in a 40/60 ratio. Memory is formed from
+the warm-up episodes of each split and is assessed
+only on the held-out tasks. Warm-up episodes are
+not included in any reported metrics. Final results
+are obtained by averaging across the three splits.
+Agent pool.The pool combines 8 task-relevant
+OfficeBench agents with 42 synthetic distractors
+whose descriptions are semantically close to the
+real agents, creating realistic retrieval competition
+(Appendix A). All agents, including distractors,
+undergo registration-time profiling to ensure that
+their capability bullets compete for retrieval on
+equal terms.
+Hyperparameters.Both retrieval thresholds for
+agent playbooks and delegation blueprints are fixed
+τagent Precision Recall AllGold Pool
+0.70 0.263 0.941 0.837 8.72
+0.75 0.271 0.942 0.833 8.40
+0.80 0.383 0.908 0.767 5.81
+0.85 0.660 0.802 0.573 2.85
+Table 1: Sensitivity of the agent playbook threshold
+τagent at a fixed blueprint threshold of 0.75.
+at 0.75. The value follows from an upfront analysis
+on a subset of the OfficeBench evaluation tasks
+(Table 1). Coverage is prioritized over precision
+since a missing gold agent renders a task unsolv-
+able, while an unnecessary agent only adds selec-
+tion overhead. The playbook threshold governs
+coverage. Recall and AllGold remain stable up to
+0.75 but degrade at higher thresholds, making 0.75
+the highest threshold that still preserves coverage.
+The blueprint threshold has a negligible effect up to
+0.80 and is fixed at the same value for consistency.
+Configurations and conditions.The evaluation
+uses three configurations and two ablations, each
+run under two Agent Card conditions. Thelower
+baseline(BL-Lower) is a stateless orchestrator
+with no cross-episode memory and no runtime
+judge. Theupper baseline(BL-Upper) adds an in-
+episode judge implemented with a stronger model
+that provides one round of corrective feedback be-
+fore force-acceptance. Theadaptive systemac-
+cumulates memory in the form of playbooks and
+blueprints during a judge-assisted warm-up. At
+evaluation, the judge is disabled, and the orches-
+trator relies solely on the accumulated memory.
+The two ablations isolate each memory compo-
+nent:Blueprint-onlyandPlaybook-only, each
+disabling the other. The card conditions vary in
+description richness:rich cardsprovide a multi-
+sentence capability description, along with the tool
+list and per-tool descriptions, whilesparse cards
+reduce each card to the agent’s name and a one-
+sentence summary (Appendix A.1).
+Metrics.We report two metric sets.Retrieval
+metrics utilize task-specific gold-agent annotations,
+where the gold set is the smallest subset of Of-
+ficeBench agents required to achieve the target
+state. Each agent is linked to a single OfficeBench
+application. Therefore, the gold set is determined
+by the applications used in a given task. We identi-
+fied these applications based on the task description
+and the reference solution. Additionally, we con-
+sidered the difficulty tier, which specifies the num-
+26
+
+[[page 6]]
+ber of applications involved. Finally, we mapped
+these applications to their corresponding agents.
+We report Recall and Precision over the candidate
+set, as well as AllGold, which is the proportion of
+sub-tasks in which every gold agent is retrieved.
+Orchestrationsuccess is defined as the task suc-
+cess rate, reported overall and by tier. Efficiency
+is assessed by orchestrator turns, token consump-
+tion, and API costs, while the distractor delegation
+rate is the fraction of delegations sent to distractor
+agents.
+4.2 Results and Discussion
+The following analysis evaluates the adaptive sys-
+tem across three dimensions: end-to-end task suc-
+cess, the individual contributions of playbooks and
+blueprints, the pipeline stage at which failures oc-
+cur, and robustness to changes in the agent pool.
+4.2.1 End-to-End Performance
+Table 2 reports end-to-end results for all configura-
+tions across both Agent Card settings.
+Under rich Agent Cards, cross-episode mem-
+ory matches BL-Upper while using fewer turns.
+The adaptive system achieves 41.2% overall, which
+is well above the stateless BL-Lower and within
+range of BL-Upper, but with 46% fewer turns per
+task. It matches or outperforms BL-Upper on Tier
+1 and Tier 2, but falls behind on Tier 3, where
+delegation chains are longer and early mistakes
+can no longer be identified and corrected with-
+out the in-episode judge.Under sparse Agent
+Cards, cross-episode memory outperforms the
+BL-Upper.Shortening the descriptions degrades
+both baselines, whereas the adaptive system im-
+proves to 47.4%, exceeding even the rich-card BL-
+Upper. Its distractor-delegation rate stays low while
+the baselines’ rates roughly double, indicating that
+memory influences agent selection. The reason for
+this improvement is interpreted in the next section.
+4.2.2 Component Contributions
+The two memory components matter in different
+ways depending on how informative the Agent
+Cards are (Table 2). When cards already describe
+an agent’s capabilities in detail (rich cards), adding
+agent-level playbooks brings only small gains over
+using workflow blueprints alone. In this setting,
+playbooks often repeat what is already in the card
+and can even hurt: the extra evidence increases
+the amount of generic agent information in con-
+text, which makes the orchestrator more likely to
+pick the wrong agent (Section 4.2.3). When cards
+are brief (sparse cards), both components are ben-
+eficial, and the full system outperforms Blueprint-
+only, demonstrating that they complement each
+other. Blueprints provide task-level workflow guid-
+ance that cards typically do not include. Since we
+retrieve only the single most relevant workflow per
+task, this guidance is inexpensive in context. Play-
+books offer agent-specific evidence. This evidence
+scales with the number of agents retrieved, but un-
+der sparse cards, it substitutes for missing Agent
+Card descriptions.
+4.2.3 Retrieval and Error Decomposition
+Memory changes orchestration by shifting where
+the pipeline fails. Each task outcome is decom-
+posed into three failure types: aretrieval miss,
+where at least one gold agent never enters the candi-
+date set; aselection miss, where all gold agents are
+retrieved but the orchestrator delegates elsewhere;
+and anexecution failure, where a gold agent is se-
+lected but the task still fails. Tables 3 and 4 report
+retrieval quality and this decomposition.
+Memory improves retrieval but reduces pre-
+cision.Recall and AllGold rise sharply under both
+card regimes (e.g., recall increases from 0.755 to
+0.953 under rich cards). However, precision de-
+creases for both the playbook-only and adaptive
+systems because learned capability bullets expand
+the retrieved candidate set (Table 3).
+The use of these recovered agents depends on
+the Agent Card.Under rich cards, the bottleneck
+shifts from retrieval to selection.Retrieval misses
+fall from 39.3% to 9.0%, but selection misses rise
+from 6.1% to 22.9%. The gold agents are now
+surfaced but are no longer chosen reliably.
+This is caused by two generalist agents, shell
+and llm, whose playbooks expand their retrieval
+surface. Therefore, they match many tasks through
+broad descriptions. Under the Playbook configu-
+ration, shell appears in 63.6% of retrieval calls
+and llm in 75.1%, against 12.7% and 5.2% un-
+der BL-Lower. Moreover, shell is delegated in
+42.0% of episodes where it is not a gold agent, up
+from 17.2%. This over-selection coincides with
+lower success. Episodes that delegate to shell
+or llm succeed in 24.3% of cases against 41.6%
+for those that do not, whereas under BL-Lower the
+same split shows no gap (28.9% versus 29.1%) (Ap-
+pendix C, Table 7). Qualitative inspection of trajec-
+tories shows a recurring failure mode: shell acts
+as a workaround agent, for example writing .eml
+27
+
+[[page 7]]
+Table 2: End-to-end performance across conditions.
+System T1 (%) T2 (%) T3 (%) Overall (%) Turns Tokens (K) Cost ($) Distr. (%)
+Rich Cards
+BL-Lower 45.1 26.3 17.2 28.9±2.0 2.9341 0.04018.5
+BL-Upper 59.6 40.930.7 43.0±1.35.70 64 0.069 17.4
+Blueprint60.6 42.2 25.6 41.9±4.5 3.28 51 0.054 7.4
+Playbook 48.6 28.9 17.2 30.8±3.32.76 54 0.050 4.5
+Adaptive System 58.346.622.2 41.2±3.6 3.07 67 0.0632.3
+Sparse Cards
+BL-Lower 45.2 18.3 5.0 21.9±2.63.08 42 0.04032.3
+BL-Upper 48.9 24.2 9.3 26.5±0.8 6.03 74 0.076 38.9
+Blueprint 58.3 48.5 24.3 42.6±7.6 3.66 71 0.073 11.2
+Playbook 52.0 34.2 14.4 32.5±6.1 3.12 49 0.047 13.0
+Adaptive System58.9 56.0 30.3 47.4±1.6 3.58 73 0.0727.2
+Table 3: Retrieval quality across conditions.
+System Recall Precision AllGold (%)
+Rich Cards
+BL-Lower 0.755 0.334 51.1
+BL-Upper 0.815 0.319 60.0
+Blueprint 0.9180.335 79.7
+Playbook 0.897 0.277 76.1
+Adaptive System0.953 0.27588.3
+Sparse Cards
+BL-Lower 0.640 0.243 39.2
+BL-Upper 0.678 0.214 42.7
+Blueprint 0.8470.26766.7
+Playbook 0.785 0.203 56.9
+Adaptive System0.8810.19873.1
+files directly instead of invoking email, which
+can address the underlying task but often fails the
+benchmark’s target-state check.
+The likely reason for this inflation is outcome-
+level curation. Because every agent delegated to
+in a successful episode is credited regardless of
+its actual contribution, generalist agents accumu-
+late playbook evidence by co-occurrence, which
+inflates their retrieval scores and places them be-
+side the gold agents at selection time. This might
+explain why playbooks add little over blueprints
+under rich cards and can even reduce success. The
+card already describes each agent, so the added
+evidence primarily inflates these generic agents.
+Under sparse cards the same evidence be-
+comes useful.The stateless baselines fail mostly at
+retrieval. Memory cuts those misses while holding
+selection misses below the rich-card level. With lit-
+tle card text competing in context, memory-derived
+evidence recovers the missing specialists instead
+of boosting generic agents. Both components now
+contribute, and the full system outperforms the
+Blueprint-only approach: blueprints provide the
+Table 4: Error source decomposition.
+System SR (%)
+Retr.
+Miss (%)
+Sel.
+Miss (%)
+Exec.
+Fail (%)
+Rich Cards
+BL-Lower 28.9 39.3 6.1 25.6
+BL-Upper43.0 28.45.922.7
+Blueprint 41.9 14.6 15.7 27.9
+Playbook 30.8 20.3 27.121.8
+Adaptive System 41.2 9.0 22.9 26.9
+Sparse Cards
+BL-Lower 21.8 53.9 3.420.9
+BL-Upper 26.5 48.62.6 22.3
+Blueprint 42.7 21.4 7.0 28.8
+Playbook 32.4 35.0 8.3 24.3
+Adaptive System47.4 16.98.3 27.4
+workflow structure that cards lack, while playbooks
+replace the descriptions omitted by sparse cards.
+Two consequences follow. First, because elim-
+inated retrieval errors partly reappear one stage
+downstream as selection errors, retrieval quality
+alone is an insufficient measure of orchestration
+progress. Recall and coverage capture whether use-
+ful agents are surfaced, not whether the orchestrator
+actually uses them correctly. Therefore, pipeline-
+level error decomposition is needed to interpret
+retrieval gains. Second, the curation at the out-
+come level is too broad. More fine-grained, per-
+agent contribution signals are needed to avoid over-
+inflating the playbooks of generic agents that ap-
+pear frequently.
+4.2.4 Online Adaptation to Agent-Pool
+Changes
+To examine whether the memory system tolerates
+changes in the agent pool, we split training into two
+phases. Phase 1 trains on 114 tasks with the origi-
+nal agent pool. Phase 2 continues with 186 tasks af-
+ter three agents (env_explorer, image_creator,
+28
+
+[[page 8]]
+file_transformer; Appendix B) are added to the
+registry, while file-conversion capabilities are si-
+multaneously removed from excel, word, and pdf.
+Table 5: Phase-wise performance and delegation statis-
+tics in the dynamic agent pool experiment.
+Phase T1 (%) T2 (%) T3 (%) Overall (%) Turns
+Phase 1 56.8 58.3 31.7 48.2 5.24
+Phase 2 64.3 49.2 31.0 46.8 5.92
+Table 5 reports the success rates for both
+phases. The success rate remains consistent, and
+all three new agents are integrated without ex-
+ternal guidance. Adoption rates differ by spe-
+cialization: env_explorer is discovered earliest
+and used broadly, while file_transformer and
+image_creator are adopted more selectively (Fig-
+ure 3). The adoption of env_explorer coincides
+with a shift away from shell as the default first-
+delegation choice. In parallel, as conversion del-
+egations to word and pdf begin to fail, curation
+prunes the corresponding bullets from their play-
+books, while file_transformer accumulates new
+bullets for the same operations (Appendix C, Ta-
+ble 8). The memory system thus tracks capability
+migration across agents without supervision.
+5 Conclusion
+Cross-episode memory can improve orchestration
+in dynamic multi-agent pools without updating
+model parameters. On OfficeBench, the mem-
+ory layer substantially outperforms a stateless or-
+chestrator, matches BL-Upper under rich Agent
+Cards while using fewer orchestrator turns, and
+exceeds it under sparse cards. Reusable delega-
+tion blueprints drive most of the gain, while agent
+playbooks add complementary value mainly when
+card descriptions are weak and can become redun-
+dant when cards are already detailed. Improved
+retrieval alone is not sufficient; under rich cards,
+many eliminated retrieval errors reappear as down-
+stream selection errors. Therefore, agent-discovery
+mechanisms should be judged by end-to-end suc-
+cess and pipeline-level error decomposition rather
+than by retrieval metrics alone. The dynamic-pool
+experiment shows that the memory layer can adapt
+online, integrating new specialists and pruning ob-
+solete evidence without supervision. 3 The main
+open challenge is attribution: outcome-based cura-
+3All code is released at https://github.com/mlukei/adaptive-
+multi-agent-orchestrator-benchmarks.
+tion should reward causal agent contributions rather
+than mere co-occurrence in successful trajectories.
+Limitations
+Several factors limit the generalizability of these
+findings. First, the results rely on a single bench-
+mark, whose highly regular task structure may ex-
+aggerate blueprint effects. These effects may be
+weaker on less workflow-like benchmarks. Sec-
+ond, the orchestrator uses a relatively small back-
+bone model, so the Tier 3 regression might shrink
+with a stronger model. Third, the curation signal
+comes from an LLM judge rather than environment-
+level ground truth. Although a separate analysis
+finds 68–81% agreement between the judge and
+environment-based evaluation, the judge produces
+more false positives than false negatives, allow-
+ing failed trajectories to enter the blueprint store.
+Finally, the setup is controlled: all agents are syn-
+thetic and registered within a benchmark environ-
+ment rather than real, independently provided ser-
+vices. The results thus reflect a controlled pool, not
+an open ecosystem of heterogeneous third-party
+agents.
+Acknowledgments
+Parts of the presented work and this paper have
+been conducted as part of the BMFTR (Germany)
+under grant no. 16IS23068 for the Software Cam-
+pus project OrKA (Orchestrator for Conversational
+Agents in Multi-Agent Systems) at Technische Uni-
+versität Berlin in cooperation with Bosch Digital.
+References
+A2A Project. Agent discovery in a2a. Accessed: 2026-
+05-30.
+Weize Chen, Ziming You, Ran Li, yitong guan, Chen
+Qian, Chenyang Zhao, Cheng Yang, Ruobing Xie,
+Zhiyuan Liu, and Maosong Sun. a. Internet of agents:
+Weaving a web of heterogeneous agents for collab-
+orative intelligence. InThe thirteenth international
+conference on learning representations.
+Yanfei Chen, Jinsung Yoon, Devendra Singh Sachan,
+Qingze Wang, Vincent Cohen-Addad, Mohammad-
+hossein Bateni, Chen-Yu Lee, and Tomas Pfister. b.
+Re-invoke: Tool invocation rewriting for zero-shot
+tool retrieval. InFindings of the association for com-
+putational linguistics: EMNLP 2024, pages 4705–
+4726. Association for Computational Linguistics.
+Jinyuan Fang, Yanwen Peng, Xi Zhang, Yingxu Wang,
+Xinhao Yi, Guibin Zhang, Yi Xu, Bin Wu, Siwei Liu,
+29
+
+[[page 9]]
+Zihao Li, Zhaochun Ren, Nikos Aletras, Xi Wang,
+Han Zhou, and Zaiqiao Meng. A comprehensive
+survey of self-evolving AI agents: A new paradigm
+bridging foundation models and lifelong agentic sys-
+tems.Preprint, arxiv:2508.07407 [cs].
+Adam Fourney, Gagan Bansal, Hussein Mozannar,
+Cheng Tan, Eduardo Salinas, Friederike Niedtner,
+Grace Proebsting, Griffin Bassman, Jack Gerrits, Ja-
+cob Alber, Peter Chang, Ricky Loynd, Robert West,
+Victor Dibia, Ahmed Awadallah, Ece Kamar, Rafah
+Hosn, and Saleema Amershi. Magentic-one: A gen-
+eralist multi-agent system for solving complex tasks.
+Shaolong Guo, Yuntao Wang, Zhou Su, Yanghe Pan,
+Qinnan Hu, and Tom H. Luan. a. Agent discovery in
+internet of agents: Challenges and solutions. pages
+1–9.
+Taicheng Guo, Xiuying Chen, Yaqi Wang, Ruidi Chang,
+Shichao Pei, Nitesh V . Chawla, Olaf Wiest, and Xi-
+angliang Zhang. b. Large language model based
+multi-agents: a survey of progress and challenges. In
+Proceedings of the thirty-third international joint con-
+ference on artificial intelligence, Ijcai ’24. Number
+of pages: 10 tex.articleno: 890.
+Dongge Han, Camille Couturier, Daniel Madrigal Diaz,
+Xuchao Zhang, Victor Rühle, and Saravan Rajmo-
+han. LEGOMem: Modular procedural memory for
+multi-agent LLM systems for workflow automation.
+InProceedings of the 25th International Confer-
+ence on Autonomous Agents and Multiagent Sys-
+tems (AAMAS 2026). International Foundation for
+Autonomous Agents and Multiagent Systems (IFAA-
+MAS).
+Mohd Ariful Haque, Justin Williams, Sunzida Siddique,
+Md. Hujaifa Islam, Hasmot Ali, Kishor Datta Gupta,
+and Roy George. Advanced tool learning and selec-
+tion system (ATLASS): a closed-loop framework us-
+ing LLM. In2025 IEEE international conference on
+service-oriented system engineering (SOSE), pages
+64–73.
+Feng He, Tianqing Zhu, Bo Liu, Dayong Ye, Zhen Fang,
+Huajie Chen, and Wanlei Zhou. ALMC: Adaptive
+LLM-based multi-agent collaboration across diverse
+task domains.
+Sirui Hong, Mingchen Zhuge, Jiaqi Chen, Xiawu Zheng,
+Yuheng Cheng, Ceyao Zhang, Jinlin Wang, Zili
+Wang, Steven Ka Shing Yau, Zijuan Lin, Liyang
+Zhou, Chenyu Ran, Lingfeng Xiao, Chenglin Wu,
+and Jürgen Schmidhuber. MetaGPT: Meta program-
+ming for a multi-agent collaborative framework.
+Siru Ouyang, Jun Yan, I-Hung Hsu, Yanfei Chen,
+Ke Jiang, Zifeng Wang, Rujun Han, Long T Le,
+Samira Daruki, Xiangru Tang, Vishy Tirumalashetty,
+George Lee, Mahsan Rofouei, Hangfei Lin, Jiawei
+Han, Chen-Yu Lee, and Tomas Pfister. Reasoning-
+Bank: Scaling agent self-evolving with reasoning
+memory. InThe fourteenth international conference
+on learning representations.
+Zilong Wang, Yuedong Cui, Li Zhong, Zimin Zhang,
+Da Yin, Bill Yuchen Lin, and Jingbo Shang. Of-
+ficeBench: Benchmarking language agents across
+multiple applications for office automation.Preprint,
+arxiv:2407.19056 [cs].
+Yunzhong Xiao, Yangmin Li, Hewei Wang, Yunlong
+Tang, and Zora Zhiruo Wang. ToolMem: Enhanc-
+ing multimodal agents with learnable tool capability
+memory.Preprint, arxiv:2510.06664 [cs.CL].
+Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak
+Shafran, Karthik Narasimhan, and Yuan Cao. Re-
+Act: Synergizing reasoning and acting in language
+models.
+Qizheng Zhang, Changran Hu, Shubhangi Upasani,
+Boyuan Ma, Fenglu Hong, Vamsidhar Kamanuru,
+Jay Rainton, Chen Wu, Mengmeng Ji, Hanchen Li,
+Urmish Thakker, James Zou, and Kunle Olukotun. a.
+Agentic context engineering: Evolving contexts for
+self-improving language models. InThe fourteenth
+international conference on learning representations.
+Xing Zhang, Yanwei CUI, Guanghui Wang, Qucy Wei
+Qiu, Ziyuan Li, Fangwei Han, Yajing Huang,
+Hengzhi Qiu, Bing Zhu, and Peiyang He. b. Veri-
+fied multi-agent orchestration: a plan-execute-verify-
+replan framework for complex query resolution. In
+Workshop on multi-agent learning and its opportuni-
+ties in the era of generative AI.
+Andrew Zhao, Daniel Huang, Quentin Xu, Matthieu Lin,
+Yong-Jin Liu, and Gao Huang. ExpeL: LLM agents
+are experiential learners. 38(17):19632–19642.
+30
+
+[[page 10]]
+A Agent Cards
+A.1 OfficeBench Agents
+The benchmark includes 8realagents that can execute tasks via Docker-sandboxed tools: calendar,
+email, excel, llm, ocr, pdf, shell, and word. Each agent wraps one OfficeBench application and
+exposes 1–3 skills. Agent Cards exist in two verbosity levels. Figure 2 illustrates both variants for the
+calendaragent.
+Rich Card:calendar
+Description:Calendar specialist: use for managing calendar events. Handles files with .ics extension. Can create
+events, list events, and delete events. Choose this agent when the task involves scheduling meetings or managing
+calendar entries.
+Skills:
+•Create Event– create a new event to a user’s calendar
+•List Events– list all events from a user’s calendar
+•Delete Event– delete an event from a user’s calendar
+Sparse Card:calendar
+Description:Manages calendar events.
+Skills:
+Figure 2: Example agent card in both verbosity conditions.
+A.2 Distractor Agents
+To simulate a realistic pool where the orchestrator must distinguish relevant from irrelevant agents, we
+add 42 distractor agents. These agents have plausible-looking cards (descriptions and skills) generated
+to cover diverse domains (database, translation, archiving, scheduling, etc.) but are not backed by any
+executable tool. If the orchestrator delegates to a distractor, execution returns an error.
+Table 6: Complete list of 42 distractor agents.
+api_tester fitness_tracker recipe_finder
+audio_transcriber form_filler sentiment_analyzer
+backup_manager geolocation_service signature_verifier
+barcode_scanner image_resizer social_media_poster
+bookmark_manager inventory_tracker spell_checker
+chart_builder invoice_processor survey_builder
+code_reviewer log_analyzer task_scheduler
+color_picker meeting_summarizer ticket_manager
+contact_manager notification_sender time_tracker
+contract_manager package_manager translator
+currency_converter password_manager travel_booker
+data_anonymizer unit_converter
+database video_editor
+dns_resolver weather_service
+expense_reporter xml_parser
+file_archiver
+31
+
+[[page 11]]
+B Agents Pool Expansion Details
+file_transformer.We add file_transformer to study capability shift detection. During
+Phase 2, we deliberately remove file-conversion capabilities from excel, word, and pdf agents (e.g.,
+excel.convert_to_pdf is disabled). The orchestrator must detect these failures and learn to redirect
+conversion subtasks to the new file_transformer specialist, which handles all format conversions
+(Excel→PDF, Excel→Word, Word→PDF, PDF→Word, PDF→image). This tests whether the memory
+system can adapt to environmental capability changes.
+env_explorer.We add env_explorer to address observed failure patterns: the generic shell agent
+frequently fails at workspace discovery tasks, and the orchestrator often misunderstands task requirements
+due to incomplete situational awareness. env_explorer is a reconnaissance specialist that systematically
+scans /testbed to enumerate data files, detect email accounts, discover calendar artifacts, and preview
+text-based content. By providing early, structured discovery, it reduces exploration errors and clarifies
+task context before delegating to downstream agents.
+image_creator.We add image_creator to test whether the system learns to shortcut inefficient dele-
+gation chains. In test runs, image-creation tasks require multi-agent sequences, where the adaptive system
+tends to fail (Tier 3). image_creator consolidates this chain into a single delegation step. We observe
+whether the orchestrator’s memory system captures this efficiency gain and prefers image_creator over
+the longer chain in Phase 2.
+C Additional Tables and Figures
+This section collects supplementary plots and tables referenced in the main text.
+Table 7: Playbook inflation analysis.Retrieval: percentage of retrieval calls containing the agent and mean similarity
+score.Delegation: percentage of episodes where the agent is executed despite not being in the gold set.Success:
+task success rate for episodes with vs. without generic-agent (shell/llm) delegations.
+Metric BL-Lower Playbook
+Retrieval frequency (% of calls)
+shell12.7% 63.6%
+llm5.2% 75.1%
+Mean retrieval score
+shell0.800 0.820
+Specialists 0.823 0.837
+Delegation (non-gold tasks)
+shelldelegated 17.2% 42.0%
+Task success by delegation type
+Withshell/llm28.9% 24.3%
+Withoutshell/llm29.1% 41.6%
+32
+
+[[page 12]]
+Figure 3: Adoption of newly introduced agents during Phase 2, measured by delegation frequency over time.
+Table 8: Playbook bullets pruned from established OfficeBench agents during Phase 2 after file-conversion
+capabilities were removed from excel, word, and pdf. Each entry lists the agent, the playbook section (capability/s-
+trategy/limitation), and the specific rule removed because it was contradicted by observed execution failures during
+Phase 2.
+Agent Section Pruned Rule
+pdf capability Can convert PDF files into editable Word documents or image formats.
+strategy When needing structured PDF text, instruct the agent to output content page-by-page
+with explicit page separators.
+word
+capability Can create arbitrary text files at a given path with exact provided content.
+capability Can generate a new PDF at a given path from provided text content.
+capability Can convert existing Word documents to PDF files and confirm output paths.
+strategy For text PDFs, provide the exact final text plus both DOCX and PDF paths; the agent
+writes precise text to DOCX, then converts that DOCX to the specified PDF path
+internally.
+strategy For new documents, provide exact final text and target path so the agent can create and
+populate the .docx in a single step.
+limitation Cannot reliably use write_to_file to modify DOCX contents in this environment.
+strategy Use this agent to create empty .docx shells, then populate content using other tools or
+manual methods.
+ocrcapability Can extract textual content from scanned PDF documents for editing purposes.
+shell strategy For complex DOCX edits, specify a python-docx script outline (inputs, operations,
+output path); the agent can implement and run it via the shell.
+strategy Always pass a single flat shell command string via the top-level command parameter; if
+you see “Missing required parameter ‘command’ ”, retry with this corrected call shape.
+excelstrategy Avoid overwriting data rows and then immediately reading the same workbook in one
+step; split write and read into separate delegations to prevent recursion errors.
+33
+
+[[page 13]]
+D Warm-up Procedure
+Algorithm 1Adaptive Orchestration – Warm-up Phase
+Require: Warm-up tasksTwarm, agent poolA, memoryM= ({P a}a∈A,B) , pruning thresholdτ,
+playbook size limitL, max judge revisionsR
+Ensure:Updated memoryM
+1: foreach newly registered agenta∈Ado
+2: Read Agent Card
+3: GenerateNsynthetic capability queries from the Agent Card
+4: Identify retrieval gaps whereais not retrieved for matching queries
+5: InitializeP a with up toN b unvalidated capability bullets
+6: Index the Agent Card and capability bullets for retrieval
+7: foreach taskt i∈T warm do
+8: Initialize trajectoryσ i←[ ]
+9: Initialize judge verdicts i←FAILURE
+10: Initialize feedbackf i←∅
+11: forr= 0toRdo
+12: Retrieve candidate agentsC i from Agent Cards and playbook capability bullets
+13: Retrieve best matching blueprintβ i from blueprint memoryB
+14: ifβ i̸=∅and all referenced agents are registeredthen
+15: Add agents referenced inβ i toC i
+16: Run the ReAct orchestrator with taskt i, candidatesC i, blueprintβ i, and feedbackf i
+17: Append all delegations, responses, and cited playbook bullets toσ i
+18: (si,f i)←JUDGE(t i,σ i)
+19: ifs i =SUCCESSthen
+20: break
+21: Record raw trajectory(t i,σ i,s i)
+22: ifs i =SUCCESSand¬EPISODEFAMILIAR(t i)then
+23: Distillσ i into a minimal successful delegation chainσ∗
+i
+24: Store(t i,σ∗
+i )in blueprint memoryB
+25: foreach agentathat received at least one delegation inσ i do
+26: ifs i =FAILUREor¬DELEGATIONFAMILIAR(a,σ i)then
+27: UpdateP a by confirming or contradicting cited bullets
+28: Add new capability, limitation, or strategy bullets supported by agent-specific evidence
+29: Prune bullets whose contradiction count exceedsτ
+30: if|P a|>Lthen
+31: Consolidate semantically redundant bullets inP a
+34
+
+[[page 14]]
+E Prompts
+This appendix reproduces all LLM-facing prompts used in the system. Each prompt is presented exactly
+as supplied to the model, with template variables shown as{variable}.
+In this implementation, the effective prompt seen by the model is the concatenation of three sources:
+(i) the system prompt (Sections E.1 and E.3), (ii) the tool-call schema, whose argument descriptions and
+docstrings are automatically extracted from the Python function signatures and included in the model’s
+context by the framework (LangChain/LangGraph), and (iii) the Pydantic output-schema descriptions,
+which are serialised as a JSON Schema and appended when structured output is requested.
+E.1 Orchestrator System Prompt
+Orchestrator (executor) — system prompt
+# Role
+You are an orchestrator coordinating stateless specialist agents to solve a task.
+You discover agents, delegate work, and synthesize a final answer.
+Agents are black boxes: they see only the instruction you send and share no context
+with each other.
+This system is single-turn with no user in the loop.
+You operate in a ReAct loop: reason -> act -> observe -> repeat, until you call
+task_complete.
+# Workflow
+## 1. Discover gather_context
+Your first action must always be gather_context. It returns:
+- Agents: each with a description, skills, and a Playbook holding learned
+capability/limitation/strategy bullets from past episodes.
+- Each bullet has an ID (e.g., agent-1) you can cite in delegations.
+- Workflow blueprint (if found): a step-by-step template from a similar past task
+that succeeded.
+- Use it as your plans starting draft.
+- Adapt instructions to the current task and deviate as needed.
+- Unmatched capabilities: queries where no agents were found.
+Call retrieve_context again with different capabilities if you later discover you need
+a type of agent you haven’t searched for yet.
+## 2. Plan or execute
+After discovery, decide based on what you received:
+- Blueprint retrieved OR multi-phase task:
+- create_plan
+- execute steps with delegate + update_step
+- Simple task (one or two delegations):
+- delegate directly
+## 3. Delegate
+Every delegation must be self-contained:
+- State the operation.
+- Pass input data inline.
+- Specify output format.
+- Include constraints.
+35
+
+[[page 15]]
+Delegation metadata:
+- reasoning: 12 sentences explaining why this agent and this instruction.
+- Stored for learning; not sent to the agent.
+- cited_bullets (optional): comma-separated playbook bullet IDs that motivated this
+delegation.
+## 4. Finish task_complete
+Call task_complete with:
+- final_answer: the concrete answer.
+- justification: map each deliverable to evidence from delegations.
+The judge may reject with structured feedback.
+Address the specific feedback and do not just reword.
+# Recovery
+A STEP_FAILED or inadequate result is not an endpoint. Work through these
+strategies:
+1. Retry the same agent with a sharper, less ambiguous instruction.
+2. Try a different agent for the same sub-task.
+3. Reframe the blocker as a capability-discovery problem and call gather_context
+with that capability description.
+4. Re-orient: view_plan to review progress, or create_plan to restructure.
+Exhaust multiple strategies before concluding a sub-task cannot be done.
+## TASK
+{task}
+E.2 Tool Definitions
+The orchestrator has access to six tools. The model receives each tool’s name, docstring, and typed
+argument descriptions as part of the function-calling schema. The substantive definitions are reproduced
+below.
+retrieve
+Discover available agents and workflow templates.
+Previously discovered agents are filtered out automatically.
+Args:
+goal:
+The task objective; used to search for workflow templates from similar past tasks.
+capabilities:
+What kinds of agents are needed.
+Drives agent search.
+Describe the work to be doneespecially discovery/retrieval capabilities when
+you are blocked on missing information.
+task_analysis:
+REQUIRED on the first call.
+Structured analysis:
+(1) list every concrete requirement from the task
+(2) define the target state: what must be true when done
+(3) identify what capabilities are needed and why
+On subsequent calls this can be empty.
+36
+
+[[page 16]]
+delegate
+Delegate a task to an agent and return its response.
+Args:
+agent:
+Agent name (must have been discovered via gather_context).
+instruction:
+Self-contained instruction for the agent.
+reasoning:
+WHY this agent with this instruction.
+Stored for learning.
+cited_bullets:
+Comma-separated playbook bullet IDs that motivated this delegation
+(e.g., "agent-1,agent-3").
+createplan
+Create an execution plan for complex tasks.
+Args:
+plan:
+The full execution plan (goal, deliverables, steps).
+updatestep
+Update a plan step’s status after reviewing its output.
+Args:
+step_id:
+The step to update.
+status:
+New status: "done", "skipped", or "failed".
+comment:
+Brief description of outcome or reason for skip/fail.
+addstep
+Add a new step to the plan.
+Args:
+instruction:
+What this step should do.
+agent:
+Which agent you plan to use (optional).
+reasoning:
+Why this step is needed and how it helps achieve the goal.
+after_step_id / before_step_id:
+Position in the plan.
+taskcomplete
+Submit the final answer when the task is complete.
+37
+
+[[page 17]]
+Args:
+final_answer:
+The complete answer for the user.
+justification:
+Map deliverables to evidence from agent outputs.
+E.3 Verification Gate (Judge)
+The judge receives a system prompt followed by a user message containing the task, candidate answer,
+and execution trajectory.
+Judge — system prompt
+You are a mentor evaluating whether your student AI orchestrator correctly completed a
+task.
+Your role is to push the orchestrator toward success.
+Be accurate in your judgment; the orchestrator relies on your feedback to learn and
+improve.
+You are given the original TASK, the orchestrator’s execution TRAJECTORY, and the
+CANDIDATE ANSWER.
+## Evaluation Criteria (apply in order)
+1. Give-up check
+- Is the answer a refusal, deferral, or request for help?
+- If yes: reject immediately.
+- Every task IS solvable.
+2. Requirement coverage
+- Extract every concrete requirement from the TASK.
+- For each requirement, check: does the answer address it, backed by trajectory
+evidence?
+- Missing or unaddressed requirements: reject.
+3. Factual consistency
+- Does the answer match the trajectory evidence?
+- Only reject when the answer directly contradicts what the trajectory shows.
+- Do NOT reject for missing trajectory details (agents may return more data than
+fits in the trajectory summary).
+## Rules
+- The TASK is ground truth. Judge the ANSWER against the TASK (not the trajectory’s
+interpretation of it).
+- You are not an execution engine. Trust agent outputs as evidence.
+- Ignore minor formatting quirks, tool messages, or intermediate wording
+inconsistencies. Focus on substance.
+- If the answer satisfies all criteria above, accept it.
+## Orchestrator capabilities (for writing recovery feedback)
+The orchestrator has access to the following actions. Reference these when writing
+actionable recovery feedback on rejection:
+- gather_context(capabilities=[...]) -- discover NEW agents
+- delegate(agent, instruction) -- send work to a discovered agent
+- create_plan / update_step -- create or revise an execution plan
+The orchestrator can retry with different agents, rephrase instructions, split tasks
+into smaller sub-tasks, or search for agents with different capability descriptions.
+38
+
+[[page 18]]
+Return structured output: reasoning, accepted, feedback
+Judge — structured output schema
+reasoning:
+Step-by-step evaluation:
+(1) list every concrete requirement from the TASK
+(2) for each requirement, state whether the trajectory provides evidence it was met
+(3) note any mismatch between claimed and actual file paths, targets, or values
+accepted:
+Whether the proposed answer is supported well enough to send to the user.
+Type: bool
+feedback:
+If accepted: confirm what was satisfied.
+If rejected: state which specific TASK requirement was not met and suggest one
+concrete recovery action.
+E.4 Agent Playbook Curator
+After each training episode, the curator is invoked once per agent that received a delegation. It receives
+a single-message prompt combining agent context, execution evidence, and the current playbook, and
+returns aCuratorOutputwith a structured reflection followed by a playbook delta.
+Agent curator — prompt
+You are a learning engine that maintains a knowledge base about how to interact with
+remote agents.
+You are reviewing all delegations to agent "{agent_name}" in a completed episode.
+## Agent Card (static description)
+{agent_note}
+## How this agent was discovered
+{discovery_note}
+## Task context
+Task summary: {task_summary}
+Task analysis: {task_analysis}
+Capabilities searched for this agent: {capabilities_searched}
+## Current playbook for {agent_name}
+{playbook_bullets}
+## Delegations to {agent_name}
+{step_blocks}
+## Executor’s playbook usage
+{cited_bullets_summary}
+---
+## Your task
+Analyze the delegations and produce a CuratorOutput (reflection + playbook_delta).
+39
+
+[[page 19]]
+### Reflection
+Compare what was EXPECTED (from the card description + existing playbook) vs. what
+ACTUALLY happened.
+Only gaps between expectation and reality are worth recording.
+A successful delegation that does exactly what the card describes is confirmation of
+existing knowledge and not a new discovery.
+### Playbook delta rules
+confirmed_ids:
+Bullets that were actively relevant AND demonstrably helped this execution.
+Do NOT confirm bullets that were merely "not violated".
+contradicted_ids:
+Bullets that this execution disproves or that gave harmful guidance.
+Be strict and actively unlearn incorrect assumptions.
+new_bullets:
+02 per novel step.
+An empty list is the CORRECT output when nothing transferable was learned.
+Most executions confirm existing knowledge rather than creating new bullets.
+Before proposing any new bullet, it must pass ALL THREE quality gates:
+1. Counterfactual gate
+If this bullet had existed BEFORE this episode, would it have changed any
+delegation decision or instruction wording?
+If no: discard.
+2. Discriminative gate
+Could this bullet plausibly match tasks intended for a DIFFERENT agent in the
+system?
+If yes: too generic; discard.
+3. Additive gate
+Does this bullet add information BEYOND what the card description already
+communicates?
+If the card already implies this capability: discard.
+### Section guidelines
+- capability (<= 15 words): "Can <specific action>".
+Describes a narrow, non-obvious skill.
+Write in the vocabulary a future task description would use so embedding similarity
+is HIGH for matching tasks and LOW for non-matching tasks.
+- limitation (<= 15 words): "Cannot <action/scope>".
+A hard boundary that prevents future misrouting.
+Most valuable when discovered through a failure or unexpected refusal.
+- strategy (<= 35 words): an actionable instruction-writing pattern.
+Must reference concrete behaviors observed in this execution.
+Must help someone who has never seen the current task.
+HARD RULE: This system is single-turn and there is NO user in the loop.
+Never reference "the user" in any output.
+Agent curator — structured output schema (CuratorOutput)
+reflection.analysis:
+Before making playbook decisions, analyze the execution:
+40
+
+[[page 20]]
+- What was attempted and what happened? Reference delegation numbers.
+- Compare expected vs. actual output.
+- What was unnecessary? What did the agent figure out alone?
+- What does this reveal about the agent’s capabilities and needs?
+- Was the instruction too vague or too detailed?
+Be specific: name commands, tools, flags, formats, behaviors.
+playbook_delta.confirmed_ids:
+Bullet IDs from the current playbook that were actively relevant in this execution
+and confirmed as helpful.
+Only include bullets the agent demonstrably relied on or matched.
+Do NOT confirm bullets that were merely "not violated".
+playbook_delta.contradicted_ids:
+Bullet IDs from the current playbook that this execution disproves.
+This means the agent behaved differently than the rule predicts, or the advice was
+wrong.
+Consider bullets that could be harmful even if not applied in this execution.
+Be strict to actively unlearn incorrect assumptions about the agent.
+playbook_delta.new_bullets:
+New bullets to add. Max 2.
+Apply the bullet quality test to each: transferable, specific, not redundant with
+existing playbook, no task-specific identifiers.
+If nothing transferable was learned: return an empty list.
+Each new bullet has:
+section:
+One of: capability, strategy, limitation.
+rule:
+A concrete, reusable rule about this agent.
+- capability: "Can <action>" (<= 15 words).
+Think like a search index: write the bullet so cosine similarity is HIGH for
+tasks that need this agent.
+Use the vocabulary a task description would use, not internal tool names.
+- limitation: "Cannot <action/scope>" (<= 15 words).
+The inverse of a capability a hard boundary.
+- strategy: a deep, actionable insight about HOW to work with this agent
+effectively (<= 35 words).
+Must be grounded in observed behavior from this execution (not speculation).
+Quality rules (all sections):
+Must help someone who has NEVER seen the current task.
+Must reference a concrete command/tool/format/behavior.
+Must NOT mention task-specific names, paths, or entities.
+Must NOT be replaceable by "give clear instructions".
+E.5 Episode Curator (Blueprint Extraction)
+The episode curator is invoked once per successful training episode to extract a delegation blueprint.
+41
+
+[[page 21]]
+Episode curator — prompt (successful episodes)
+You are the memory curator for a multi-agent orchestration system.
+You analyze completed episodes to extract reusable coordination knowledge.
+This episode SUCCEEDED.
+Your job: describe the IDEAL delegation chain:
+- correct order
+- explicit data flow between steps
+- no redundant retries
+This is the clean version: what the executor SHOULD do next time.
+## Episode summary
+Task: {task}
+Goal: {goal}
+Deliverables: {deliverables}
+Outcome: {outcome}
+Total delegations: {total_delegations}
+## Available agents
+{available_agents}
+## Retrieved blueprint
+{retrieved_blueprint}
+## Execution timeline
+{execution_timeline}
+## Judge rejections
+Total rejections before acceptance: {judge_rejections}
+## Existing task types
+{existing_task_types}
+---
+## Understanding the timeline
+The Execution Timeline shows every action in chronological order:
+- tool(...) -- internal orchestrator tool calls
+(gather_context, create_plan, update_step, view_plan, task_complete,
+judge_review)
+These show HOW the executor organized its work.
+- [N] agent=... | instruction -- delegations to specialist agents
+These show WHAT work was done.
+- Judge Feedback -- every judge verdict (ACCEPTED/REJECTED) with feedback and full
+requirement analysis.
+Use both tool calls AND delegations to understand the executor’s decision-making
+process (not just final outcomes).
+## How to analyze
+Blueprint analysis:
+If a Retrieved Blueprint was shown to the executor, compare it against the Execution
+Timeline:
+42
+
+[[page 22]]
+- Where did execution follow the blueprint? Was it efficient?
+- Where did execution deviate? Was each deviation beneficial or wasteful?
+- What would the IDEAL execution look like: fewer steps, clearer handoffs, no
+retries?
+If no blueprint was retrieved, analyze the execution on its own merits.
+HARD RULE: This system is single-turn and there is NO user in the loop.
+Never mention "the user", "ask the user", "prompt the user", or
+"clarify with the user" in blueprints or anywhere else.
+The executor receives a task and must solve it autonomously.
+Episode curator — structured output schema (SuccessCuratorOutput)
+task:
+One-sentence summary of the task.
+Write it as a reusable, retrieval-friendly description that would match similar
+future tasks.
+ideal_steps:
+The MINIMAL, ORDERED agent chain that achieves the task.
+Constraints:
+- Only use agents from the Available Agents list.
+- Only include agents whose output was actually consumed.
+- Describe data flow between steps via receives/produces.
+Each step has:
+agent:
+Agent name (MUST be one of the Available Agents).
+does:
+What this agent should do (1 sentence).
+receives:
+What input this agent needs and from whom.
+produces:
+What output this agent produces and for whom.
+rationale:
+Why this sequence is optimal (12 sentences).
+E.6 Capability Profiler
+Two prompts are used sequentially during agent registration: one to generate test queries, one to generate
+capability bullets for retrieval gaps.
+Query generation prompt
+You are analysing a registered agent to test whether an embedding-based search would
+find it for every task it can handle.
+## Agent card
+- Name: {agent_name}
+- Description: {agent_description}
+- Skills: {agent_skills}
+## Your task
+43
+
+[[page 23]]
+Generate exactly {n_queries} realistic user queries.
+These are requests that a user might submit to an orchestrator when they NEED this
+agent but do NOT know its name.
+## Approach (systematic coverage)
+1. Read the description and skills carefully.
+Identify every distinct capability, action, domain, and object type mentioned.
+2. For EACH identified aspect, write at least one query.
+Do not over-represent any single aspect at the expense of others.
+3. After covering explicit aspects, think about implicit capabilities:
+What tasks would logically require this agent that are NOT directly stated in the
+card?
+Generate queries for those too.
+## Rules
+1. Each query is a natural user request (12 sentences).
+2. Use diverse wording: vary verbs, nouns, domains, and phrasing styles.
+Rephrase capabilities using synonyms the card does NOT use.
+3. Include edge-case / niche tasks the agent could handle.
+4. Mix specificity levels:
+- some broad ("manage my schedule")
+- some narrow ("move the 3 PM meeting to Thursday")
+5. Do NOT use the agent’s name in any query.
+6. Do NOT generate multiple queries that test the same capability with only minor
+rephrasing.
+Each query should test a DIFFERENT aspect or phrasing angle.
+Capability bullet prompt
+You are improving an agent’s discoverability by writing capability bullets.
+## Agent card
+- Name: {agent_name}
+- Description: {agent_description}
+- Skills: {agent_skills}
+## User queries that SHOULD find this agent but currently DON’T
+{gap_queries}
+## Your task
+Write exactly {n_bullets} capability bullets.
+Each bullet describes a DIFFERENT capability of this agent, phrased so it matches a
+distinct subset of the failing queries.
+## Rules
+1. Each bullet starts with "Can " and is <= 15 words.
+2. Each bullet covers a DIFFERENT aspect.
+Do NOT overlap or repeat.
+3. Only rephrase capabilities the agent ALREADY has according to its card and
+skills.
+Do NOT invent capabilities not supported by the card.
+4. Use synonyms and phrasing from the failing queries to maximize semantic overlap.
+5. Be specific: mention concrete actions, formats, or domains.
+44
+
+[[page 24]]
+E.7 Playbook Consolidation
+Triggered when an agent’s playbook exceeds the consolidation threshold (Table 10). Semantically similar
+bullets are clustered and each cluster is merged by the following prompt.
+Playbook merge prompt
+You are consolidating similar playbook bullets for the "{agent}" agent.
+These bullets are in the "{section}" section and were identified as semantically
+overlapping.
+Merge them into ONE comprehensive bullet that:
+1. captures ALL actionable information from every source bullet
+2. removes redundancy and repetition
+3. preserves specific details (commands, flags, formats, tools)
+4. follows the section format convention and word limit
+## Source bullets to merge
+{bullets_text}
+Produce ONE merged rule.
+Do NOT add information that is not present in the sources.
+F Parameters
+Models.Table 9 lists all LLMs used across system components.
+Table 9: Models used by component.
+Component Model Provider
+Orchestratorgpt-5.4-nanoAzureOpenAI
+Judge / Curatorgpt-5.1AzureOpenAI
+Specialist agentsgpt-5.1AzureOpenAI
+Embeddingstext-embedding-ada-002AzureOpenAI
+Hyperparameters.Table 10 lists all tunable parameters. Values were set once and held constant.
+Table 10: System hyperparameters.
+Group Parameter Value Description
+Retrieval Min. retrieval score 0.75 Threshold for card & bullet matching
+Top-kper capability 3 Max agents returned per query
+Playbook
+Harm thresholdτ2 Contradictions before pruning
+Consolidation threshold 10 Bullets per agent triggering merge
+Merge similarity 0.9 Cosine threshold for clustering
+Profiling Synthetic queriesN20 Test queries per agent
+Max bulletsN b 3 Capability bullets per agent
+Curation Episode familiarity 3 Similar episodes to skip curation
+Step familiarity 2 Similar steps to skip agent curation
+Execution Max judge rejections 1 Force-accept afternrejections
+Blueprint min. similarity 0.75 Threshold for blueprint retrieval
+45

@@ -846,11 +846,20 @@ def main() -> int:
     # silently discards everything found earlier.
     carried = 0
     prior_sources: list[str] = []
+    run_topic = args.topic
     if out_path.exists():
         try:
             existing = load_papers(out_path)
             prior_meta = json.loads(out_path.read_text(encoding="utf-8"))
             prior_sources = list(prior_meta.get("sources") or [])
+            # PRISMA-S requires broadening a search that misses known items, so
+            # the last query run is routinely the narrowest. Relabelling the run
+            # with it would retitle the whole review after a follow-up query;
+            # every query is already recorded per run in search-log.json.
+            prior_topic = (prior_meta.get("topic") or "").strip()
+            if prior_topic and prior_topic != args.topic:
+                run_topic = prior_topic
+                logger.info("Keeping the run's original topic: %r", run_topic)
             carried = len(existing)
             groups.insert(0, existing)
             logger.info("carrying forward %d existing candidates from %s", carried, out_path)
@@ -877,7 +886,7 @@ def main() -> int:
 
     save_papers(
         out_path,
-        args.topic,
+        run_topic,
         ranked,
         sources=sorted(set(prior_sources) | set(requested)),
         ranking_profile=args.ranking_profile,

@@ -1,0 +1,581 @@
+[[page 1]]
+Hierarchical Online Prompt Mutation with Dual-Loop Feedback
+for Guardrailed Evidence Document Generation: A
+Production-Evaluation Case Study
+Nataraj Agaram Sundar
+eBay Inc.
+San Jose, CA, USA
+Tejas Morabia
+eBay Inc.
+San Jose, CA, USA
+Abstract
+High-stakes production document-generation systems require lan-
+guage models to be adaptive, evidence-grounded, and auditable.
+We present HOPM, a hierarchical online prompt mutation frame-
+work evaluated on a real marketplace dispute-evidence workflow.
+HOPM treats prompts as online policies: a family/version router
+selects a prompt, deterministic guardrails attribute failures to mu-
+table prompt-token categories, and dual feedback from human
+review and an automated judge updates both routing and mu-
+tation priorities. The primary evidence is an observed matched
+production-evaluation ablation: seven variants are evaluated on
+the same 600 cases each, enabling component comparisons against
+static prompting, manual iteration, bandit-only routing, mutation-
+only adaptation, human-only feedback, auto-judge-only feedback,
+and full dual-loop HOPM. Full HOPM improves count win rate over
+a static control from 34.7% to 45.7% (+11.0 pp; paired McNemar
+𝑝= 1.31× 10−11) and amount-weighted win rate from 22.3% to
+41.4% (+19.1 pp; 95% paired bootstrap CI [10.3, 28.9] pp). It also
+increases mean Likert quality from 3.18 to 4.40 and reduces issue-
+flag rate from 15.3% to 5.2%. Supporting review artifacts cover 770
+generated-text reviews, 318 labeled reviewer exports, a 10-case/61-
+rating calibration slice, and a 70-case/350-rating OCR benchmark;
+these artifacts calibrate rubric, guardrail, title-risk, and OCR-risk
+interpretation rather than substituting for the production ablation.
+The paper includes control setup, sample sizes, confidence intervals,
+paired tests, prompt-token categories, pseudocode, schema, rubric,
+guardrail taxonomy, and a constructed example so the evaluation
+structure can be reproduced without exposing proprietary evidence.
+CCS Concepts
+•Information systems→ Data analytics;•Computing method-
+ologies→ Natural language generation;Machine learning ap-
+proaches.
+Keywords
+prompt optimization, online learning, human feedback, automated
+evaluation, responsible AI, document generation, marketplace dis-
+putes
+1 Introduction
+Marketplace dispute and compliance workflows increasingly use
+language models to transform heterogeneous evidence—messages,
+OCR text, return records, labels, receipts, and reviewer comments—
+into structured narratives. These workflows are not well served by
+a single static prompt. A useful generator must adapt to recurring
+failure modes such as title drift, role confusion, unsupported sum-
+maries, OCR degradation, and unsafe wording, while preserving
+deterministic guardrails and auditability.
+We study this problem in the context of generated evidence
+documents for marketplace dispute review. The key challenge is
+not merely producing fluent text; the system must select the right
+evidence, align the title with the dispute reason, avoid unsupported
+claims, and preserve buyer/seller roles. Small prompt changes can
+materially affect downstream acceptability, yet proprietary data
+constraints often prevent releasing raw cases or reviewer artifacts.
+We make three contributions. First, we propose HOPM, a hierar-
+chical online prompt mutation architecture that combines prompt-
+family selection, prompt-version routing, guardrail-attributed mu-
+tation, and dual feedback from human reviewers and automated
+judges. Second, we provide a strengthened production-evaluation
+protocol: exact controls, seven ablation variants, matched 600-case
+comparisons, Wilson confidence intervals, paired bootstrap inter-
+vals, and paired McNemar tests. Third, we provide a reproducibility
+layer that is safe for proprietary workflows: schema definitions,
+pseudocode, prompt-token categories, a Likert rubric, a guardrail
+taxonomy, and a constructed anonymized example.
+Data provenance and claims boundary.The evidence package
+was normalized before submission so that export provenance is sep-
+arated from evaluation semantics. Cleaned tables use a provenance-
+tool field for internal export lineage and an evidence-basis field set
+to observed matched production evaluation for the ablation evi-
+dence. We report the ablation as an observed matched production-
+evaluation lift, not as a simulation. We still avoid overclaiming:
+because the ablation is matched by case rather than a randomized
+traffic A/B test, randomized deployment lift remains a separate
+future validation step.
+2 Positioning and Related Work
+HOPM builds on three lines of work. First, online prompt selection
+is naturally related to stochastic and contextual bandits, where a
+policy trades off exploration against exploitation under delayed or
+noisy reward [1, 10, 12]. Unlike a standard bandit over indepen-
+dent arms, HOPM routes across a hierarchy of prompt families
+and prompt versions, while preserving an audit record for each
+mutation. Second, language-model alignment and feedback sys-
+tems have shown that human and automated feedback can reshape
+model behavior [2, 3, 11]. In this workflow, feedback is not used
+to retrain the base model; it updates the prompt policy and local-
+ized instruction patches. Third, evidence-grounded generation and
+retrieval-augmented generation emphasize grounding generated
+claims in supplied context [9]. HOPM adds production guardrails for
+arXiv:2606.01472v1 [cs.DC] 31 May 2026
+
+[[page 2]]
+Nataraj Agaram Sundar and Tejas Morabia
+Table 1: Prompt-token categories exposed to mutation.
+Category Mutation intent
+Title–reason align-
+ment
+Force the title to reflect the dispute reason and
+remedy, not merely a salient event.
+Actor-role binding Preserve buyer/seller roles and avoid reversing
+obligations or actions.
+Evidence-grounding
+selector
+Require each claim to map to a supplied evi-
+dence span.
+Resolution chronol-
+ogy
+Order purchase, complaint, return, refund, and
+remedy events consistently.
+OCR confidence gate Down-weight or suppress claims from noisy
+OCR slices.
+Identifier and amount
+handling
+Preserve IDs, currencies, quantities, and dates
+exactly or omit when uncertain.
+Safety and tone Block inappropriate language and unsupported
+legal/intent claims.
+Schema completeness Enforce required title, summary, evidence, and
+rationale fields.
+Compression and
+grammar
+Improve readability without adding facts.
+role binding, title/reason alignment, OCR risk, and structured issue
+taxonomies. Finally, our evaluation follows the spirit of trustworthy
+online experimentation [8], while explicitly separating matched
+production evaluation from a randomized holdout experiment.
+3 System: Hierarchical Online Prompt Mutation
+3.1 Workflow
+HOPM operates over a document-generation pipeline with four
+stages. First, an evidence normalizer converts raw messages, OCR
+output, reviewer metadata, and case attributes into a typed con-
+text. Second, a hierarchical router selects a prompt family 𝑓 and
+prompt version 𝑣. Families capture broad document strategies (e.g.,
+resolution-focused vs. title-risk-focused prompts); versions encode
+incremental edits. Third, a mutator edits localized prompt-token
+categories when guardrails fail. Fourth, feedback loops compute
+rewards and update both routing and mutation priorities. Figure 1
+summarizes the request-path and off-request-path components.
+The hierarchical design matters because prompt optimization in
+this domain has two different granularities. A family-level change
+can alter the entire narrative strategy, whereas a token-level change
+should target a specific failure type such as role confusion or ti-
+tle/reason mismatch. HOPM therefore separates routing from mu-
+tation: routing learns which family/version should serve a case
+segment, while mutation learns which instruction spans require
+localized correction.
+3.2 Prompt-token categories
+Table 1 lists the mutable instruction categories. These categories
+make the method reproducible even when raw prompts cannot be
+released. Each mutation is tied to a guardrail failure, producing an
+audit trail from failure to instruction patch.
+Figure 2 expands the failure-attribution step: a guardrail violation
+produces a deterministic CTAM lookup, a localized prompt patch,
+Figure 1: Production-evaluation architecture. Request-path
+generation and guardrail validation run synchronously. Hu-
+man review and automated judging feed an off-request-path
+update loop that attributes failures to prompt-token groups
+and registers localized prompt mutations for later routing.
+a candidate version, and a validation gate before the new version is
+eligible for exploration.
+3.3 Dual-loop feedback
+The human loop captures nuanced reviewer judgment: Likert useful-
+ness, binary positive/negative feedback, structured issue flags, and
+free-text rationale. The automated loop captures scalable guardrail
+checks: schema validity, evidence alignment, OCR confidence, role
+consistency, forbidden language, and judge scores. The two loops
+are complementary: observed reviewer artifacts show that narrative
+detail appears in approximately 74.5% of reviews, while structured
+
+[[page 3]]
+Hierarchical Online Prompt Mutation with Dual-Loop Feedback for Guardrailed Evidence Document Generation: A Production-Evaluation Case Study
+Figure 2: Constraint-to-Token Attribution Map (CTAM) life-
+cycle. Guardrail failures are mapped to mutable instruction-
+token categories, patched locally from a validated token li-
+brary, revalidated against schema and policy constraints, and
+then exposed to future bandit exploration.
+issue flags appear in about 10.1%. A flag-only signal would miss
+much of the reviewer rationale, but a human-only signal cannot
+scale to every candidate mutation.
+4 Evaluation Design
+4.1 Evidence sources
+Table 2 lists the evaluation evidence. The ablation pack is the pri-
+mary production-evaluation evidence: it provides matched vari-
+ants over the same cases, enabling component attribution across
+Algorithm 1HOPM serving and update loop
+Require:case context𝑥, prompt families𝐹, versions𝑉 𝑓 , guardrails𝐺
+1: normalize evidence, OCR slice, amount, dispute reason, and reviewer
+context
+2:select(𝑓,𝑣)←𝜋 𝜃(𝑥)using family/version bandit state
+3:generate document𝑦←LLM(𝑥,𝑃 𝑓,𝑣)
+4:run validators and automated judge:𝑎←𝐺(𝑥,𝑦)
+5:route flagged or sampled cases to human review; collectℎ
+6:compute reward𝑟=𝜆 ℎ𝑅ℎ(ℎ)+𝜆 𝑎𝑅𝑎(𝑎)
+7:attribute failures to token categories𝑐∈𝐶
+8:ifmutation criterion is metthen
+9:propose localized patchΔ𝑃 𝑐, create version𝑣+1
+10:bind patch to evidence category, guardrail, and reviewer rationale
+11:end if
+12:update router parameters𝜃and mutation priority scores
+13:persist audit record(𝑥,𝑓,𝑣,𝑎,ℎ,𝑟,𝑐,Δ𝑃 𝑐)
+a static prompt, manual prompt iteration, bandit-only, mutation-
+only, single-loop, and full dual-loop configurations. The text and
+OCR review artifacts are used as supporting calibration evidence
+for rubrics, guardrails, title-risk interpretation, reviewer drift, and
+OCR-slice risk. Figure 3 makes this claim boundary explicit.
+4.2 Control setup and baselines
+The production ablation uses 600 matched cases shared across all
+variants. Each case preserves the same hashed case identifier and
+disputed amount across variants, so pairwise amount-difference
+bootstraps compare like with like. The static control disables rout-
+ing, mutation, human feedback, and automated judging. The manual
+iteration baseline uses human feedback without online bandit rout-
+ing or automated judging. The bandit-only baseline enables online
+family/version routing with automated-judge reward but no prompt
+mutation or human loop. The mutation-only baseline enables mu-
+tation with human feedback but no bandit or automated judge.
+Two single-loop variants enable the online router and mutator
+with exactly one feedback channel: human-only or auto-judge-only.
+The full HOPM variant enables bandit routing, mutation, human
+feedback, and automated judging.
+4.3 Metrics and tests
+We report four outcome families.Count win rateis the fraction of
+cases with a downstream win. Each count rate uses a 95% Wilson
+interval [13]. Because variants are matched at case level, pairwise
+count tests use exact McNemar tests over discordant cases, with
+paired bootstrap intervals for count lift.Amount-weighted win rateis
+total disputed amount won divided by total disputed amount; inter-
+vals use a nonparametric case-level bootstrap with 1,000 draws [6].
+Reviewer qualityuses mean 1–5 Likert score, positive feedback
+rate, issue-flag rate, and guardrail-pass rate. Agreement metrics use
+weighted Cohen’s 𝜅 for ordinal pairwise OCR ratings [5], Cohen’s
+𝜅 for pass/fail agreement [4], and Fleiss’ 𝜅 for multi-rater OCR-slice
+agreement [7].
+
+[[page 4]]
+Nataraj Agaram Sundar and Tejas Morabia
+Figure 3: Evidence stack and claim boundary. The production ablation is the primary source for lift claims, while the text-review
+and OCR artifacts calibrate rubrics, guardrails, and risk interpretation.
+Table 2: Evaluation evidence and how it is used. The cleaned evidence package separates export provenance from evaluation-
+basis labels and uses anonymized proprietary-safe fields.
+Source Sample Key fields Use in paper
+Generated-text review artifact 770 unique reviews; 318 labeled ex-
+ports; 5 reviewers
+1–5 rating, positive feedback, dis-
+pute reason, 22 issue flags, re-
+viewer details, title, summary, ev-
+idence excerpt
+Human-review calibration, issue taxonomy,
+title-template risk, dispute mix, narrative-
+detail prevalence.
+OCR review artifact 70 cases; 5 analysts; 350 ratings Text accuracy, word/line in-
+tegrity, noise vs. non-text
+confusion, overall OCR, evidence
+utility, pass/fail
+OCR slice calibration, pass/fail rule, pair-
+wise weighted𝜅, Fleiss’𝜅, OCR risk cate-
+gories.
+Production ablation pack 4,200 rows: 7 variants× 600 matched
+cases; 1,000 amount bootstraps per
+variant; 1,000 paired bootstraps per
+comparison
+Downstream win, amount-
+weighted win, Likert score,
+guardrail pass, issue flags,
+prompt family/version, mutation
+count
+Component ablations, confidence intervals,
+pairwise tests, reproducibility schema, and
+production lift estimates.
+5 Supporting Review Calibration
+5.1 Text-review calibration
+The generated-text review deck covers 770 unique reviews, with
+318 labeled exports available for estimation. Projected to the 770-
+review corpus, ratings are concentrated at 3/5: 574 reviews are rated
+3, 133 are rated 4, 24 are rated 5, 27 are rated 2, and 12 are rated 1.
+Thus, 157 reviews (20.4%) fall in the 4–5 range and 39 reviews (5.1%)
+fall in the 1–2 range. Reviewer severity is modest but material:
+anonymized reviewer means span 2.78–3.37 against a corpus mean
+of 3.17.
+Structured issues are sparse but concentrated. The most frequent
+projected issue flags are title-not-aligned (29 reviews; 3.8%) and
+title-inaccurate (27 reviews; 3.5%). Summary inaccurate, buyer-ID
+inaccurate, evidence-not-aligned, inappropriate language, seller-
+as-buyer, and summary grammar each remain below 1% at corpus
+
+[[page 5]]
+Hierarchical Online Prompt Mutation with Dual-Loop Feedback for Guardrailed Evidence Document Generation: A Production-Evaluation Case Study
+scale. Narrative reviewer detail appears in about 574 reviews (74.5%),
+compared with 77 reviews (10.1%) with any structured issue flag,
+motivating the dual-loop design.
+The corpus is dominated by significantly-not-as-described (SNAD)
+disputes: approximately 753 of 770 reviews are SNAD, 12 are fraud,
+and 5 are item-not-received. This concentration justifies specialized
+title/reason guardrails while also limiting claims about rare dispute
+categories.
+5.2 OCR calibration
+The OCR benchmark contains 70 cases scored by five analysts,
+producing 350 ratings. The pass/fail rule is explicit: a case passes
+when overall OCR is at least 4 and evidence utility is at least 3.
+Pairwise agreement is moderate-to-strong for ordinal Overall OCR
+scores, ranging from weighted 𝜅= 0.646to 0.753, and stronger
+for pass/fail agreement, ranging from 𝜅= 0.72to 0.85. Fleiss’ 𝜅
+declines with noisier OCR slices: 0.68 for clean chat screenshots,
+0.65 for email/page captures, 0.63 for mixed-UI screenshots, 0.59
+for label/receipt photos, and 0.54 for handwritten/blurry captures.
+Pass rates follow the same risk order: 95%, 85%, 78%, 60%, and 45%,
+respectively.
+6 Observed Production-Evaluation Ablation
+Results
+6.1 Variant-level outcomes
+Table 3 reports the matched production ablation. The full dual-loop
+configuration has the highest count win rate (45.7%, 95% Wilson CI
+[41.7, 49.7]%) and amount-weighted win rate (41.4%, 95% bootstrap
+CI [31.8, 50.8]%). The static control is lowest on both primary end-
+points: 34.7% count win rate and 22.3% amount-weighted win rate.
+The mean Likert score increases from 3.18 under static control to
+4.40 under full dual-loop HOPM, while the issue-flag rate falls from
+15.3% to 5.2%.
+6.2 Pairwise lift and statistical tests
+Table 4 reports pairwise lifts using the matched case structure.
+Full dual-loop HOPM outperforms static control by +11.0 pp in
+count win rate (paired 95% bootstrap CI [8.0, 14.2] pp; McNemar
+𝑝= 1.31× 10−11) and +19.1 pp in amount-weighted win rate (95%
+paired bootstrap CI [10.3, 28.9] pp). Full dual-loop HOPM also
+improves count lift over both single-loop variants: +3.5 pp over
+human-only (McNemar 𝑝= 0.0257) and +4.3 pp over auto-judge-
+only (McNemar 𝑝= 0.00156). Amount-weighted lift over auto-
+judge-only is positive (+6.7 pp; 95% CI [1.1, 14.1] pp), suggesting
+that human feedback adds value even when the automated judge is
+active.
+7 Reproducibility Without Proprietary Data
+The reproducibility package uses structure rather than raw content.
+It contains four artifacts. First, a schema defines case-level records
+with stable hashed IDs, variant IDs, prompt family/version, OCR
+slice, amount bucket, flags, and outcomes. Second, the prompt-
+token taxonomy in Table 1 defines the mutation surface. Third,
+the Likert rubric in Table 6 defines reviewer judgment. Fourth, the
+guardrail taxonomy in Table 7 maps observed errors to executable
+checks.
+Constructed anonymized example.A reproducible public case can
+be represented as follows without exposing proprietary evidence.
+The input contains a SNAD dispute, two masked messages (Buyer:
+“item powers on but does not synchronize”; Seller: “please return it
+for inspection”), a clean-chat OCR slice with expected quality 4.7,
+and a $50–$99 amount bucket. A title-risk-focused prompt version
+generates: “Buyer states the item failed to synchronize and seller
+offered return inspection. ” Guardrails check that the title mentions
+the SNAD-specific defect rather than generic receipt, roles are
+preserved, each claim links to a message span, and no unsupported
+legal intent is asserted. The resulting record contains only hashed
+case IDs, masked spans, structured flags, and outcome fields.
+8 Limitations
+The production ablation is a matched production-evaluation analy-
+sis, not a randomized traffic A/B test. It substantially strengthens
+component attribution because all variants are evaluated on the
+same 600 cases, but it cannot by itself prove live deployment lift
+under future traffic shifts. The observed text-review artifacts do
+not preserve stable shared case IDs across reviewers, so direct
+inter-rater kappa for the text-generation review corpus is not re-
+producible from those artifacts alone. The dispute mix is heavily
+skewed toward SNAD, so generalization to fraud and item-not-
+received disputes should be tested separately. Finally, proprietary
+data constraints prevent raw evidence release; this is mitigated by
+a public schema, pseudocode, rubrics, aggregate statistics, and a
+constructed example, but not eliminated.
+9 Conclusion
+HOPM addresses a practical problem in guardrailed LLM docu-
+ment generation: adapting prompts online while preserving au-
+ditability and evidence grounding. The strengthened evaluation
+reports observed production-evaluation lift, exact baseline defini-
+tions, matched 600-case sample sizes, confidence intervals, paired
+tests, and reproducibility artifacts. In the production ablation, the
+full dual-loop configuration is the strongest variant by count win
+rate, amount-weighted win rate, Likert quality, and issue reduction.
+The next validation step is a live randomized holdout or staggered
+rollout that compares the full dual-loop policy against a frozen
+static or single-loop control under the same reviewer and case
+distribution.
+A Complete Metric Ledger for Public Preprint
+This appendix preserves the non-proprietary metrics used to cal-
+ibrate the production evaluation while keeping raw evidence, re-
+viewer identities, and customer data out of the public artifact.
+A.1 Generated-text corpus metrics
+The generated-text review artifact contains 770 unique reviews and
+318 labeled exports with full fields. The projected corpus mix is
+approximately 726 core reviews and 44 pilot spot-checks. Narrative
+detail appears in 574 of 770 projected reviews (74.5%), while any
+structured issue flag appears in 77 of 770 projected reviews (10.1%).
+
+[[page 6]]
+Nataraj Agaram Sundar and Tejas Morabia
+Table 3: Observed production-evaluation ablation results. CI = 95% interval; count intervals use Wilson intervals and amount
+intervals use 1,000 nonparametric bootstrap draws.
+Variant𝑛Count win [CI] Amount win [CI] Likert Positive Issue Guardrail Enabled modules
+Static control 600 34.7% [31.0, 38.6] 22.3% [16.7, 29.0] 3.18 32.3% 15.3% 68.7% none
+Manual prompt iteration 600 37.2% [33.4, 41.1] 27.8% [20.8, 36.1] 3.42 48.8% 14.2% 70.7% human feedback only; no bandit, no automated
+judge
+Bandit-only 600 39.2% [35.3, 43.1] 30.7% [23.4, 38.7] 3.54 54.5% 9.3% 75.7% bandit + automated judge; no mutation, no hu-
+man feedback
+Mutation-only 600 40.5% [36.6, 44.5] 33.2% [24.9, 41.6] 3.68 64.8% 6.8% 79.7% mutation + human feedback; no bandit, no au-
+tomated judge
+Human-only single loop 600 42.2% [38.3, 46.2] 35.9% [27.2, 46.1] 3.97 81.0% 5.5% 79.0% bandit + mutation + human feedback
+Auto-judge-only single loop 600 41.3% [37.5, 45.3] 34.7% [26.4, 44.5] 3.82 73.2% 9.2% 76.5% bandit + mutation + automated judge
+Full dual-loop HOPM 600 45.7% [41.7, 49.7] 41.4% [31.8, 50.8] 4.40 96.7% 5.2% 78.8% bandit + mutation + human + automated judge
+Table 4: Selected paired ablation tests. Count lift uses case-
+paired bootstrap intervals and exact McNemar tests over
+discordant cases; amount lift uses paired bootstrap intervals.
+Comparison Count lift [CI] McNemar𝑝Amount lift [CI]
+Manual vs. static +2.5 [0.0, 5.0] 0.0769 +5.5 [-1.2, 13.4]
+Bandit-only vs.
+static
++4.5 [1.5, 7.5] 0.00451 +8.4 [1.6, 16.8]
+Mutation-only
+vs. static
++5.8 [2.7, 9.0] 0.000366 +10.9 [2.1, 21.3]
+Human-only vs.
+static
++7.5 [4.2, 11.0]1.60×10 −5 +13.6 [4.1, 24.4]
+Auto-only vs.
+static
++6.7 [3.5, 9.8]5.46×10 −5 +12.4 [3.0, 22.0]
+Full HOPM vs.
+static
++11.0 [8.0, 14.2]1.31×10 −11 +19.1 [10.3, 28.9]
+Full HOPM vs.
+human-only
++3.5 [0.5, 6.5] 0.0257 +5.5 [-3.0, 14.2]
+Full HOPM vs.
+auto-only
++4.3 [1.8, 7.0] 0.00156 +6.7 [1.1, 14.1]
+Table 5: Proprietary-safe case schema for reproducing the
+evaluation design.
+Group Fields released or reconstructable
+Case identitycase_id_hash , case_index, dispute_reason,
+amount_bucket,disputed_amount_usd.
+Evidence inputs Normalized message spans, OCR slice, OCR ex-
+pected quality, evidence-span IDs, masked actor
+roles, dates, and amounts.
+Prompt statevariant_id , prompt family, prompt version,
+bandit/mutation/human/auto-judge flags,
+selected-by-bandit flag, mutation-token count.
+Feedback Reviewer or judge source, Likert score, positive
+feedback, narrative-detail flag, structured issue
+flags.
+Outcomes Guardrail pass, downstream win, amount-
+weighted win numerator, and audit timestamp.
+The projected dispute mix is 753 SNAD reviews, 12 fraud reviews,
+and 5 item-not-received reviews. The main title-risk pattern is
+generic receipt emphasis: one recurring template projects to 85
+reviews and roughly 22 title-issue cases, while a smaller return-
+instruction template projects to 15 reviews.
+Table 6: Reviewer Likert rubric used for generated evidence
+quality.
+Score Interpretation
+1 Unusable: materially wrong, unsafe, or unsupported by sup-
+plied evidence.
+2 Poor: contains a major title, role, evidence, or summary defect
+requiring rewrite.
+3 Usable with caution: mostly grounded but incomplete,
+generic, or missing important nuance.
+4 Strong: grounded and useful, with only minor wording or
+completeness issues.
+5 Audit-ready: directly supports the dispute decision, preserves
+roles and remedy, and needs no substantive edit.
+Table 7: Guardrail taxonomy derived from observed review
+flags and OCR evaluation.
+Guardrail Failure detected
+Title not aligned Title emphasizes a generic event instead of the
+dispute reason or remedy.
+Title inaccurate Title states a fact not supported by evidence.
+Summary inaccurate Summary changes, omits, or overstates mate-
+rial evidence.
+Buyer ID inaccurate Identifier or actor metadata is copied incor-
+rectly.
+Evidence not aligned The cited evidence span does not support the
+generated claim.
+Inappropriate lan-
+guage
+Output includes unsafe, accusatory, or policy-
+inappropriate phrasing.
+Seller as buyer Buyer/seller roles are reversed.
+Summary grammar Output is hard to read, malformed, or gram-
+matically defective.
+OCR risk OCR slice or quality score is below the
+evidence-utility threshold.
+A.2 Small-overlap human calibration slice
+A separate human-evaluation review slice contains 10 cases, 7 an-
+alysts, and 61 ratings. It is useful for calibration but is not the
+primary production-lift evidence. Global multi-rater agreement
+is near zero in this tiny slice (Overall Fleiss’ 𝜅= 0.030; pass/fail
+Fleiss’ 𝜅=− 0.007), which is consistent with small overlaps and
+imbalanced labels. The global weighted median of per-case Overall
+means is 3.571. Anonymized top pairwise weighted-𝜅 alignments
+
+[[page 7]]
+Hierarchical Online Prompt Mutation with Dual-Loop Feedback for Guardrailed Evidence Document Generation: A Production-Evaluation Case Study
+Table 8: Projected generated-text corpus distribution.
+Metric Value
+Unique reviews represented 770
+Labeled reviewer exports 318
+Reviewers 5
+Projected rating 1 / 2 / 3 / 4 / 5 12 / 27 / 574 / 133 / 24
+Projected 4–5 ratings 157 (20.4%)
+Projected 1–2 ratings 39 (5.1%)
+Projected narrative-detail reviews 574 (74.5%)
+Projected issue-flagged reviews 77 (10.1%)
+Title-not-aligned projected count 29 (3.8%)
+Title-inaccurate projected count 27 (3.5%)
+Projected SNAD / fraud / INR mix 753 / 12 / 5
+Projected corpus mean 3.17
+Anonymized reviewer mean range 2.78–3.37
+Core projected positives / issues 593 / 63
+Pilot projected positives / issues 22 / 15
+are 0.727 (𝑛= 10), 0.647 (𝑛= 9), and 0.571 (𝑛= 9). Two case fact-
+sheet examples have Overall means 4.33± 0.52 with pass rate 1.00
+and 3.00±1.26 with pass rate 0.50.
+A.3 OCR benchmark metrics
+The OCR review artifact contains 70 cases, 5 analysts, and 350
+ratings across clean chat, email/page, mixed-UI, label/receipt, and
+handwritten/blurry slices. The global weighted median per-case
+Overall OCR score is 3.2. Pairwise weighted- 𝜅 for Overall OCR
+ranges from 0.646 to 0.753 in the supplied benchmark, with top
+anonymized alignments 0.753, 0.741, and 0.722. Reviewer disagree-
+ment concentrates in blur drop-out (mean case SD 0.91), cropped
+text loss (0.90), and UI bleed/initial capture (0.78). A passing clean-
+chat example scores 4.40± 0.55 with pass rate 1.00; a failing analyzer-
+error label/receipt example scores 1.00±0.00 with pass rate 0.00.
+A.4 Production claim boundary
+The primary causal-strength claim is component attribution under
+a matched production-evaluation design. Each ablation variant is
+evaluated on the same 600 cases, and pairwise tests exploit this
+matching. The design supports the statement that full dual-loop
+HOPM performs best among the evaluated configurations on the
+matched production-evaluation set. It does not by itself establish
+future randomized traffic lift under all traffic distributions; that
+requires a live holdout or staggered rollout.
+References
+[1] Peter Auer, Nicolò Cesa-Bianchi, and Paul Fischer. 2002. Finite-time analysis of
+the multiarmed bandit problem.Machine Learning47, 2–3 (2002), 235–256.
+[2] Yuntao Bai, Saurav Kadavath, Sandipan Kundu, Amanda Askell, Jackson Kernion,
+Andy Jones, Anna Chen, Anna Goldie, Azalia Mirhoseini, Cameron McKinnon,
+et al. 2022. Constitutional AI: Harmlessness from AI feedback.arXiv preprint
+arXiv:2212.08073(2022).
+[3] Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan,
+Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda
+Askell, et al. 2020. Language models are few-shot learners. InAdvances in Neural
+Information Processing Systems, Vol. 33. 1877–1901.
+[4] Jacob Cohen. 1960. A coefficient of agreement for nominal scales.Educational
+and Psychological Measurement20, 1 (1960), 37–46.
+[5] Jacob Cohen. 1968. Weighted kappa: nominal scale agreement provision for
+scaled disagreement or partial credit.Psychological Bulletin70, 4 (1968), 213–220.
+[6] Bradley Efron and Robert J. Tibshirani. 1993.An Introduction to the Bootstrap.
+Chapman and Hall/CRC.
+[7] Joseph L. Fleiss. 1971. Measuring nominal scale agreement among many raters.
+Psychological Bulletin76, 5 (1971), 378–382.
+[8] Ron Kohavi, Diane Tang, and Ya Xu. 2020.Trustworthy Online Controlled Experi-
+ments: A Practical Guide to A/B Testing. Cambridge University Press.
+[9] Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir
+Karpukhin, Naman Goyal, Heinrich Küttler, Mike Lewis, Wen-tau Yih, Tim Rock-
+täschel, et al. 2020. Retrieval-augmented generation for knowledge-intensive NLP
+tasks. InAdvances in Neural Information Processing Systems, Vol. 33. 9459–9474.
+[10] Lihong Li, Wei Chu, John Langford, and Robert E. Schapire. 2010. A contextual-
+bandit approach to personalized news article recommendation. InProceedings of
+the 19th International Conference on World Wide Web. 661–670.
+[11] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela
+Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al .
+2022. Training language models to follow instructions with human feedback. In
+Advances in Neural Information Processing Systems, Vol. 35. 27730–27744.
+[12] William R. Thompson. 1933. On the likelihood that one unknown probability
+exceeds another in view of the evidence of two samples.Biometrika25, 3/4
+(1933), 285–294.
+[13] Edwin B. Wilson. 1927. Probable inference, the law of succession, and statistical
+inference.J. Amer. Statist. Assoc.22, 158 (1927), 209–212.

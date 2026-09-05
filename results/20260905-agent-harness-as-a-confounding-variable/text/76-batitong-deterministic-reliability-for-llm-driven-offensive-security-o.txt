@@ -1,0 +1,950 @@
+[[page 1]]
+BATITONG: Deterministic Reliability for
+LLM-Driven Offensive-Security Orchestration
+Abd Rahman Wahid
+Computer Club Oriented Network, Utility & Technology (COCONUT), Indonesia
+abdrahman.wahid@coconut.or.id
+Abstract.State-of-the-art LLM-driven offensive-security systems are evaluated on frontier,paidlanguage models,
+which conflates two questions: how much reliability comes from the model, and how much can be supplied by
+architecture? We presentBatitong, an open, single-container orchestration framework that runs an end-to-end
+security assessment onzero-cost(free-tier) large language models (LLMs) and compensates for their weakness with
+a deterministic reliability scaffold: an executor-independent evidence gate, a coverage oracle that blocks premature
+finalisation, a Mixture-of-Agents (MoA) adjudication panel, adaptive per-plane model routing, a resilience watchdog
+with model fallback, and an evidence-gated closed-loop self-improvement store, all behind a Model Context Protocol
+(MCP) execution boundary. We formalise each mechanism, give its algorithm, and audit its presence in code
+(46/46 checks). We then analyse a real deployment of 66 assessment campaigns over 20 de-identified targets (598
+findings, 416 carrying both the pre-gate claim and post-gate result). Because both are stored, disabling the verifier
+is measurable as acounterfactualwithout re-execution: the gate corrects 28/416 (6.7%) over-claimed findings (every
+one a confirmed→suspected correction for missing reproducible evidence), while leaving the proof-of-concept
+(PoC) count unchanged (90 in both views). Across exploitation targets, 27/68 (39.7%) reached a reproducible
+PoC. We release the harness, a pre-registered ablation protocol, and an authorized benchmark. The contribution is
+architectural and methodological: a reproducible composition that makes free-model offensive-security output more
+trustworthy, measured rather than asserted.
+Keywords:orchestrated offensive security; LLM agents; mixture-of-agents; evidence-gated verification; repro-
+ducibility; zero-cost LLMs.
+1 Introduction
+Manual penetration testing is bounded by time, cost,
+coverage consistency, and the supply of skilled testers.
+LLM-driven agents promise to relax these bounds, and a
+line of systems now performs reconnaissance, exploitation,
+and reporting with limited human intervention [1, 2, 3,
+5]. A property unites the strongest published results:
+they run on frontier,paidmodels. Reliable LLM-driven
+offensive security, to date, carries an API bill.
+This paper asks a different question:if the model is
+weak and free, how much reliability can architecture re-
+cover?The question is practical (cost and reproducibility
+for resource-constrained teams and educators) and scien-
+tific (separating model strength from architectural scaf-
+folding tells us where the reliability of an LLM security
+assessment actually comes from). It also extends the au-
+thor’s line ofdefensivedetection frameworks [33, 34, 35]
+to theoffensiveside of the same threat landscape.
+We presentBatitong, an open orchestration frame-
+work that runs an end-to-end assessment on free-tier
+LLMs. Its premise: a probabilistic executor (the LLM)
+must be wrapped indeterministiccontrols that neither
+trust the model’s self-assessment nor let it exceed its
+authorization. The model never touches a tool directly;
+every action passes an MCP boundary. Findings the
+model claims are re-checked by an executor-independent,
+deterministic gate before they enter a report. Borderline
+decisions may be escalated to a panel of independent free
+models. A coverage oracle refuses to close a campaign
+while exploitation targets remain undriven. A watchdog
+fails a dead or hung model over to the next. Verified out-
+comes are distilled into an evidence-gated, self-pruning
+knowledge store recalled on later runs.
+We do not claim free models match frontier models.
+We claim, and give initial evidence for, a narrower propo-
+sition: a deterministic reliability scaffold measurably re-
+duces over-claimed findings and preserves demonstrated
+exploitation, delivered at zero API cost in one repro-
+ducible container.
+Key results at a glance (from a real deployment).66
+campaigns, 20 targets, 598 findings; 416 carry pre/post-gate
+records.(i)The deterministic verifier corrected6.7% (28/416)
+of over-claimed findings (all confirmed→suspected), while
+preserving every PoC(90 pre = 90 post).(ii)27/68 (39.7%)
+exploitation targets reached a reproducible PoC.(iii)All runs
+used a free model pool at$0inference cost.(iv)A static audit
+finds46/46mechanism checks present in code.
+Contributions.
+1. Azero-cost hybrid orchestration architecture
+(§3) composing six reliability mechanisms behind an
+MCP boundary, formalised in §4 with their algorithms
+in §5.
+2. Acounterfactual measurement of the verifier
+(§8) from a real deployment: because each finding
+stores the pre-gate claim and post-gate result, dis-
+abling the gate is measured directly (28/416=6.7%)
+with no re-execution, and is shown to preserve the
+PoC count.
+3. Anopen, reproducible harness and pre-
+registered ablation protocol(§7, Appendix A)
+instrumenting each mechanism, with an authorized
+ground-truth benchmark.
+1
+
+[[page 2]]
+We are explicit about claim strength: the verifier result
+is observational (a single-deployment counterfactual); the
+controlled multi-arm ablation for the other five mecha-
+nisms, detection precision/recall, and paid-model base-
+lines are specified but not yet executed.
+2 Related Work
+LLM-driven penetration testing.PentestGPT intro-
+duced a task-tree formulation, evaluated with a human
+in the loop [1]. Fanget al.reported agents autonomously
+compromising web applications and exploiting one-day
+vulnerabilities, and a hierarchical multi-agent variant
+(HPTSA) [2, 3, 4]. Open frameworks such as CAI pack-
+age agentic tooling [5].Batitongshares the end-to-end
+goal but is designed forfreemodels and foregrounds an
+executor-independent verification layer.
+Multi-model adjudication.Mixture-of-Agents
+shows open models used as proposers with an aggrega-
+tor can rival a stronger single model [9]. We apply this
+narrowly, to adjudicate borderline security decisions on a
+tool-free panel that cannot alter the campaign.
+Self-improving agents.Voyager grows a skill li-
+brary from experience [12]; Reflexion adds verbal self-
+critique [13]. Our self-improvement isevidence-gated(a
+lesson must trace to a confirmed/exploited finding), the
+write path is deterministic (no model call), and stale
+knowledge is rotated out.
+Cost-aware inference.FrugalGPT studies cheap-
+first cascades for general tasks [22]; we generalise the cost
+framing to a full offensive pipeline on a free pool with
+evidence-graded per-plane routing.
+Foundations.The framework builds on established
+LLM reasoning and agent techniques, including chain-of-
+thought and tree-of-thought prompting, self-refinement,
+and retrieval-augmented generation, with alignment from
+AI feedback [18, 17, 14, 20, 21], and on the frontier models
+that current autonomous systems rely on [29]. Prior LLM
+penetration-testing studies and surveys inform its threat
+framing [7, 6, 8], and its methodology and scoring follow
+standard practice [30, 31, 32].
+Table 1 positionsBatitong. The distinguishing point
+is not any single mechanism (most have antecedents) but
+theircomposition under a zero-cost constraintwith an
+executor-independent deterministic verifier.
+3 System Architecture
+Batitongseparatesreasoningfromaction. The LLM
+orchestrator plans and decides but never invokes a tool;
+every action is issued through an MCP server that medi-
+ates and constrains execution inside an isolated container
+image bundling standard offensive tooling (Fig. 1). This
+boundary is the structural precondition for the reliability
+scaffold: because all effects pass one mediated interface,
+they can be logged, constrained by rules of engagement
+(RoE), and re-examined.
+Functional-role pipeline.Technology expertise is
+swappable knowledge; the functional roles are constant
+(Fig. 2). A read-onlyplannerbuilds an attack tree with
+a coverage stop-condition; a mode-selectedorchestrator
+routes sub-tasks under an RoE ceiling;specialistsengineer
+payloads and run tools via MCP; an independentverifier
+re-examines each claimed finding; acuratordistils lessons;
+a tool-freeoraclepowers the MoA panel. No agent grades
+its own work.
+Scale.The deployed system comprises31agents (3
+mode orchestrators, 4 functional-role agents, 24 technol-
+ogy specialists),101on-demand skill modules,39MCP
+tools,10workflow templates, and25technology “planes”
+(Table 2). Three engagement modes (pentest, bugbounty,
+redteam) select the RoE ceiling rather than a separate
+code path.
+Data model and the MCP mediation invariant.
+Runtime state is a typed graph: aprojectcontainstargets;
+each target accumulatescampaigns; a campaign owns
+findingsF, infrastructure nodes (the discovered planes
+Pd), evidence artifacts, and a compromise-state storeA,
+while two stores persist across campaigns: a lessons base
+L and a per-plane model-quality table qual(·,· ). The
+system graph spans71nodes and123typed edges over
+ten layers (client, frontend, api, agent, specialist, mcp,
+toolbox, engine, storage, llm). LetT be the tools the
+toolbox can run,AL⊆T a fixed allow-list, andAllm the
+actions the model can emit. The MCP boundary is a
+total mediationµ:A llm→AL∪{⊥}with the invariant
+effect(a)̸=∅=⇒µ(a)∈AL,(1)
+so any model output that is not a well-formed allow-
+listed call has no side effect. Reasoning is unconstrained;
+action is total-function mediated [28, 16, 19]. This is the
+precondition for every control in §6.
+Cross-run memory.Before a campaign runs, an ag-
+gregator seeds it with prior target intelligenceI(h) =⨆
+c∈camp(h)
+(
+Pd(c),ver (c),{f :ρ(σg(f))≥ 1}
+)
+, so a nar-
+row run never re-guesses a plane or version already es-
+tablished on hosth; the per-target lessons and routing
+tables (§4) compound expertise over runs [15].
+4 Formal Model
+We formalise the finding lifecycle and each scaffold mech-
+anism using the exact constants in the released code.
+Finding lifecycle and status rank.Let the status
+set be
+S={suspected,confirmed,exploited,
+post_exploited,cleaned_up},
+totally ordered by the rankρ:S→{0,1,2,3,4},
+ρ(suspected) = 0, ρ(confirmed) = 1, ρ(exploited) = 2,
+ρ(post_exploited) = 3, ρ(cleaned_up) = 4.
+Figure 3 shows the chain and the per-mode ceilings.
+2
+
+[[page 3]]
+Table 1: Positioning against representative systems. “Tier” is the model tier the reported results rely on. Qualitative;
+see the released related-work matrix.
+System Tier Det. verifier Multi-model Self-impr. Coverage gate Zero-cost 1-container
+Batitong(this work) FreeY es Y es Y es(evidence-gated)Y es Y es Y es
+PentestGPT [1] Paid No No No Task-tree No Partial
+Fanget al.[2, 3, 4] Paid No Planner only No No No n/a
+CAI [5] Paid Partial No No No No Yes
+Voyager [12] (non-security) Paid No No Yes No No n/a
+Engagement mode⇒RoE ceiling
+pentest
+exploited
+redteam
+cleaned_up
+bugbounty
+post_exploited
+User
+>_
+CLI Web
+AI Orchestrator (OpenCode / LLM)
+reasons and decides, never acts
+Planner
+read-only
+Specialists
+×24
+Mode
+orchestrator
+Verifier
+evidence gate
+Curator
+lessons
+Oracle
+MoA panel
+MCP execution boundary
+mediates & constrains every tool call
+T oolbox container·50+ offensive tools
+(nuclei, sqlmap, netexec, ffuf, ...)
+Storage
+campaigns· findings·
+infra· compromise-
+state· lessons·
+routing
+web-api(FastAPI,
+read-only)
+→web-ui
+coverage gate blocks finalize whileGxp̸=∅
+watchdog
++ model fallback
+adaptive
+per-plane routing
+set--agent MODE
+issue action
+execute / results
+findings+infra
+lessons+routing
+report
+read-only console (Web UI)
+Figure 1: Architecture ofBatitong. Reasoning and action are separated: the orchestrator, an LLM running
+functional roles (a read-only planner, the mode orchestrator, 24 technology specialists, an independent verifier,
+a curator, and a tool-free Mixture-of-Agents oracle), reasons and decides but never touches a target. Every
+offensive action crosses the single redMCP execution boundary, which mediates and constrains all tool calls
+into the toolbox container. The engagement mode selects the rules-of-engagement ceiling (pentest→exploited,
+bugbounty→post_exploited, redteam→cleaned_up) rather than a separate code path. A resilience watchdog fails a
+dead free model over and adaptive per-plane routing selects the model; verified outcomes persist to storage and feed
+lessons and routing priors back into planning (self-improvement), while the coverage gate refuses finalisation while
+any exploitation gap remains. The Web console and API are read-only. The per-campaign control flow and the
+MCP message sequence appear in Figs. 2 and 4.
+Table 2: System scale (from the codebase).
+Component Count
+Agents (orchestrators/roles/specialists) 31
+On-demand skill modules (SKILL.md) 101
+MCP tools (execution-boundary API) 39
+Workflow templates 10
+Bundled offensive tools (container) 50+
+Technology planes (routing/coverage) 25
+Engagement modes (RoE ceilings) 3
+Engagement-mode ceiling.Each mode M authorises
+a maximum statusc(M): c(pentest) = 2, c(bugbounty) =
+3, c(redteam) = 4. Every reported finding must satisfy
+ρ(final)≤c(M).
+The verifier as a monotone projection.OrderS by
+ρ;( S,≤ )is a finite chain, hence a lattice. The gate is a
+composition V =gr◦···◦g 1 of rule operators (Table 3),
+each an evidence-conditionedprojectionthat fixes a find-
+ing or lowers its status. Hence, for the claimed status
+σc(f)and the post-gate status σg(f) = σ(V (f)), V is
+status-monotone non-increasing:
+ρ
+(
+σg(f)
+)
+≤ρ
+(
+σc(f)
+)
+∀f.(2)
+Because a status drops only when its evidence predicate
+fails, and a drop cannot make a passing predicate fail,V
+isidempotent(V◦V=V): its output is the fixpoint
+σg(f) = max{s∈S:s≤σ c(f)∧Φ s(f)},(3)
+the greatest status every evidence predicateΦs admits
+(Φconfirmed: a reproducible request/response;Φ exploited:
+an objective artifact; auth findings need a post-
+authentication proof; the CVSS score is recomputed from
+its vector; andρ(s)≤c (M)). Each rule can only lower
+3
+
+[[page 4]]
+Plan
+attack tree
+Recon
+→Pd
+Dispatch
+specialists
+Engineer
+& test
+GateV
+Eq. 3
+Verify Coverage
+Gxp =∅?
+Report
+& learn
+MCP→Toolbox Watchdog /
+fallback Oracle (MoA)
+verified outcomes→lessons+routing (advisory priors)
+Figure 2: Per-campaign control flow (temporal view). The eight-stage pipeline runs left to right; the two red boxes
+are the deterministic controls, the verifier gateV (Eq. 3) and the MCP execution boundary through which every
+tool call reaches the toolbox. Beneath their stages, the tool-free Mixture-of-Agents oracle adjudicates borderline
+verifications and a resilience watchdog fails a dead or hung free model over. Verified outcomes feed lessons and
+adaptive routing priors back into planning; coverage refuses finalisation whileGxp̸=∅.
+suspected
+ρ=0
+confirmed
+ρ=1
+exploited
+ρ=2
+post_expl.
+ρ=3
+cleaned_up
+ρ=4
+pentest ceiling
+bugbounty
+redteam
+Figure 3: The five-tier finding lifecycle and the exploita-
+tion ceilingc(mode)per engagement mode.
+Table 3: The deterministic verifier rule set (excerpt).
+Each rule lowers status or caps severity; none can raise a
+claim.
+Rule Effect
+CVSS integrity score←CVSS(vector)
+Crash̸=exploit 5xx/DoS w/o artifact→confirmed
+Evidence gateconfirmed + needs request+response
+(else→suspected)
+Objective gateexploited + needs an objective artifact
+(else→confirmed)
+Reachability target unreachable→capsuspected
+Prior-run import not re-exploited this run→confirmed
+Auth proof login not authenticated→suspected
+Mode ceilingρ(final)≤c(M)
+Proof-gated critical critical w/o PoC→high
+a status or cap severity, never raise a claim, and every
+change is recorded onf (claim vs. final). Over quali-
+fied findingsQ (those routed throughV) we define the
+over-claim correction rate
+D= 1
+|Q|
+∑
+f∈Q
+1[ρ(σc(f))>ρ(σ g(f))],(4)
+so D > 0exactly when a self-assessment exceeded its
+evidence.
+Coverage oracle and the finalisation guard.Let
+Pd be the discovered planes andPe⊆P d those examined;
+coverage is
+cov= 100· |Pe∩Pd|
+|Pd| (100ifP d =∅).(5)
+LetE ⊆ Fbe findings whose category is exploitable
+or that name a CVE. The oracle emits four gap sets:
+breadth Gbr = Pd\P e; depth Gdp = {f∈ E :
+σg(f)=confirmed∧c (M)>1}; chain Gch (two or more
+uncomposed exploitable findings whenc(M)≥ 3); and
+exploitation Gxp ={f∈E : ρ(σg(f))<2∧vrd (f) /∈N},
+whereN is the not-exploitable verdict set. A campaign is
+completeiff Gbr∪Gdp∪Gch∪Gxp = ∅. Finalisation is a
+hard guard:finaliseis refused wheneverGxp̸= ∅ unless
+a justified-close flag is set, turning “do not stop early”
+into a default-deny invariant. Everyf∈E must thus be
+driven toρ(σg(f))≥ 2or carry a reasoned not-exploitable
+verdict: theexploitation mandate.
+Mixture-of-Agents: a variance-reducing adjudica-
+tor.The panel draws n∈{ 2, 3} distinctfree proposers
+m1,...,m n (duplicate padding is forbidden: a real one-
+model panel beats a fake two-model one). Each returns
+a verdictvi∈{yes,no,uncertain} with a rationale; the
+strongest available modelm⋆ (Eq. 8) reconciles them.
+If proposer errors are independent Bernoulli with mean
+¯p< 1
+2, majority reconciliation lowers the error probability
+(a Condorcet-style bound), so an ensemble of weak free
+models can out-decide any single one [9, 10, 11]. Panel
+agreement is
+A= maxv|{i:v i=v}|
+|{i:v i defined}| ∈(0,1],(6)
+and reported confidence is a function ofA and evidence
+strength. The panel runs on atool-freeoracle: its capa-
+bility set is empty, soµ(a) =⊥ for every panel action: a
+consult reasons but can neither run a tool nor mutate the
+campaign, bounding a prompt injection inq to biasing
+free text [26, 27].
+Adaptive routing: a per-plane bandit.Model
+choice is a contextual multi-armed bandit whose arms
+are free models and whose context is the target plane
+setS. A finalised campaign credits its modelm on each
+4
+
+[[page 5]]
+examined planeswith a status-graded reward
+Q= min
+(∑
+fq(σg(f)),12.0
+)
+,(7)
+with q(suspected)=0.3, q(confirmed)=2.0,
+q(exploited)=3.0, q(post_exploited)=q(cleaned_up)=3.5;
+the cap bounds any single campaign’s influence. With
+cumulative qual(m,s )and runs(m,s ), the value estimate
+is ˆV (m,S ) =∑
+s∈S qual(m,s )
+/∑
+s∈S runs(m,s )and the
+router commits greedily
+m⋆ = arg max
+m:
+∑
+s∈S runs(m,s)≥2
+ˆV(m,S),(8)
+returning ∅ below the two-run threshold, an explore-then-
+commit gate that avoids converging on a lucky single
+run [23, 24]. Degraded (mid-fallback) runs are excluded,
+so a mixed-model run never poisonsˆV.
+Resilience: a failover semi-Markov process.A
+launch moves over {running,degraded,superseded,done} un-
+der four detectors on the log stream (startt0, nowt, sizeb,
+last growthtg):φ fail :b≤4500∧failRe(provider error),
+φdud : exit∧b< 400(silent dud), φstall :t−t0≥60∧b< 500
+(early hang), andφhang :t−tg≥900(mid-run hang), where
+failRematches provider signatures (“no provider avail-
+able”,429, quota/balance/auth). On anyφ, the worker
+is killed, the campaign retired (thesingle-live invariant),
+and the launch fails over along a best-first chain (Eq. 8) of
+at most1+3models. With K=3attempts and per-model
+live probabilityp, completion probability is1−(1−p)K+1,
+a geometric lift over one flaky model [25]. A mid-run hang
+additionally attemptssession resumeon mi+1, preserving
+the accumulated ledger.
+Self-improvement: evidence-weighted knowledge
+dynamics.The write path is deterministic and model-
+free (no hallucination surface). Each verified finding
+(ρ(σg(f)) ≥ 1) is mined into a lesson ℓ keyed by
+k(ℓ) = ( scope∥ \technique), createdcandidate; on recur-
+rence its count increments and atocc(ℓ)≥ 2it is pro-
+moted tovalidated. Validated lessons are synthesised
+into skill knowledge by a deterministic idempotent map
+Σ : Lval→SKILL (delimited region, forbidden-term-
+guarded, regenerated in place). Freshness is a sliding
+window: ℓ isstalewhen age(ℓ) > 120days, which de-
+prioritises but never deletes it. Recall for a focus ϕ
+intersects scopes and vuln categories,R(ϕ) ={ℓ∈L val :
+¬stale(ℓ)∧ (scope(ℓ)∈Σϕ∨cat (ℓ)∈Cϕ)}, closing the loop
+mine→promote→synthesise→recall. Recalled knowledge
+isadvisory: a precedence live evidence≻ℓ ensures a
+current observation overrides a stored lesson [12, 13, 15].
+Compromise-state and kill-chain composition.
+Obtained footholds are written to a per-campaign store
+A = {(kind,value,usable_for,... )} (kinds: credential,
+token, session, shell, host, key, ...), deduplicated by
+(kind∥ [value). A kill chain is a sequencef1→···→f k
+in which each transition iswitnessedby an a∈A pro-
+duced byfi and consumed byfi+1. When c(M)≥ 3
+the coverage oracle flags two or more uncomposed ex-
+ploitable findings asGch, driving composition ofA into
+an end-to-end objective rather than isolated primitives.
+Theoretical properties.The scaffold’s guarantees are
+deterministic; we state the four that matter and sketch
+their proofs (full proofs follow from the definitions above).
+Proposition 1(Verifier idempotency and evidential op-
+timality). V is idempotent,V◦V = V, and its output
+σg(f)is the greatest status below the claim that satisfies
+every evidence predicate, i.e., the fixpoint of Eq.(3).
+Sketch. Each rulegi lowersσ only when a predicateΦs
+fails and is the identity otherwise. The predicates are
+monotone in rank (Φs′⇒ Φs for s≤s ′), so lowering a
+status cannot make a lower-rank predicate fail; after one
+pass no rule fires again, henceV (V (f)) = V (f). The
+surviving status is by construction the maximals≤σ c(f)
+withΦ s(f), i.e. Eq. (3).
+Proposition 2(Soundness of the finalisation guard).
+If a campaign is finalised without the justified-close flag,
+then Gxp = ∅: every exploitation target was driven to a
+PoC or carries a reasoned not-exploitable verdict.
+Sketch. Finalisation is refused wheneverGxp̸= ∅; the
+only bypass is the explicit flag. The contrapositive gives
+the claim.
+Proposition 3(Majority reconciliation reduces error).
+If n proposers answer a binary borderline query with i.i.d.
+error probabilityp< 1
+2, the probability that a strict major-
+ity errs isεn =∑
+k>n/2
+(n
+k
+)
+pk(1−p )n−k, which satisfies
+εn <pforn≥3andε n→0asn→∞.
+Sketch.ε n is the upper tail of aBinomial(n,p )beyond
+n/2; forp < 1
+2 it is monotonically decreasing inn and
+below p once n≥ 3(Condorcet jury theorem). The
+aggregator additionally weighs rationale, so the bound is
+conservative [9, 11].
+Proposition 4(Failover availability and single-live in-
+variant).With independent per-model live probabilityp
+and at mostK fallbacks, a launch yields a live worker
+with probability1−(1−p)K+1; and at most one campaign
+per launch is ever in thelivestate.
+Sketch. The chain triesK+1models; total failure needs
+all non-live, probability(1−p)K+1 by independence. The
+supersede step retires the outgoing campaignbeforethe
+respawn creates its successor, so the live count is invariant
+at one [25].
+Lemma 1(Bounded active knowledge).Mining is mono-
+tone (lessons are never deleted), yet the active set{ℓ :
+¬stale(ℓ)} recalled byR(ϕ)is bounded by the number of
+distinct dedup keys seen in the trailing120-day window.
+Sketch. A lesson is active only if seen within the window,
+and distinct active lessons carry distinct keysk(ℓ); the
+active set therefore injects into the finite key set observed
+in the window.
+5
+
+[[page 6]]
+5 Algorithms
+Algorithm 1.Assessment lifecycle (per campaign).
+1. Initialise campaign; seed cross-run memory (planes, versions,
+prior findings).
+2. Plan:planner builds an attack tree with a coverage stop-
+condition.
+3.Recon:enumerate ports/services/stack; push planes toP d.
+4.Dispatch:map fingerprints to specialists; run in parallel.
+5. Engineer/test:specialists run tools via MCP; push findings.
+6.Gate:applyV(Algorithm 2) to every finding (Eq. 2).
+7. Verify:independent verifier upholds/downgrades/rejects; bor-
+derline→MoA (Algorithm 3).
+8. Coverage:refuse finalise while the exploitation gap set is
+non-empty.
+9. Report & learn:emit mode-adaptive report; curator distils
+lessons; credit routing (Eq. 8).
+Algorithm 2.Deterministic verifier gateV(f).
+1.s←σ c(f); recompute CVSS from vector.
+2.ifcrash without objective artifactthens←confirmed.
+3.ifρ(s)≥1and no request+responsethens←suspected.
+4.ifρ(s)≥2and no objective artifactthens←confirmed.
+5. apply reachability, prior-import, auth-proof rules (Table 3).
+6.s←status withρ(s)≤c(M)(mode ceiling).
+7. cap severity if unproven; record claim vs. final onf;return f.
+Algorithm 3.MoA consult (tool-free oracle).
+1. pickn∈{ 2, 3} distinctfree models; ask each queryq in parallel.
+2. collect verdictsv i; discard failures.
+3.if≤1okthen returnthat answer (single/none).
+4. aggregator (strongest model) reconciles; compute agreement
+A;returnverdict,A, confidence.
+Algorithm 4.Adaptive routing: credit & select.
+1. on finalise(m):foreach examined plane s: qual(m,s ) +=Q;
+runs(m,s) += 1(skip if degraded).
+2. on launch(S):return arg maxmˆV (m,S )over models with
+≥2plays, else∅(default).
+Algorithm 5.Resilience watchdog (per running launch).
+1.ifφ fail∨φ dud (on exit)orφ stall∨φ hang (running)then
+2. kill worker; retire current campaign (single-live);i←i+1.
+3. if i≤ 3thenrespawn on mi (resume session if hang); flag
+degraded.
+Algorithm 6.Self-improvement loop (deterministic write
+path).
+1. mine: foreach f with ρ(σg(f))≥ 1: upsert lesson by key
+k(ℓ);occ+= 1.
+2.promote: ifocc(ℓ)≥2thenconf(ℓ)←validated.
+3. synthesise:Σ(Lval)writes/updates learned-∗ skills (idempo-
+tent).
+4. recall:next launch loadsR(ϕ)as advisory priors (live evidence
+wins).
+6 Threat Model and Security-by-
+Design
+Batitongis offensive tooling whoseownattack surface
+matters. The MCP boundary is the key control (Fig. 4):
+since the LLM cannot act except through a mediated,
+LLM MCPµ Toolbox Store+V
+actiona
+run iffa∈AL
+raw output
+result
+push claimσc
+gateV
+verdictσg
+Figure 4: Message sequence for one tool use and one
+finding. The actiona has an effect only if the boundary
+µ maps it into the allow-list; a claimed findingσc enters
+the report only after the deterministic gateV (Prop. 1)
+reduces it toσg.
+allow-listed interface, a prompt injection in tool output
+or target content can bias the model’s text but cannot
+directly execute an arbitrary command. The MoA panel
+runs tool-free, so a borderline-adjudication injection has
+no capability to abuse. RoE ceilings (c(M)) bound ex-
+ploitation per mode; the self-improvement write path is
+deterministic and forbidden-term-guarded, removing a
+model-in-the-loop poisoning surface. The web console is
+read-only and loopback-bound by default. These proper-
+ties make the scaffold not only a reliability layer but a
+containment layer.
+7 Experimental Methodology
+Deployment corpus (observational).66 campaigns
+over 20 de-identified targets, 598 findings; 416 (69.6%)
+carry bothσc and σg. To respect responsible-disclosure
+norms we analyse only aggregate findingmetadata(status,
+severity, category, CVSS, qualification record), not target
+identities or exploit specifics.
+Verifier counterfactual.Because each qualified find-
+ing stores both the pre-gate claim and the post-gate result,
+the report producedwith the gate disabledequals the dis-
+tribution ofσc, and the report actually produced equals
+the distribution ofσg. Their comparison yieldsD (Eq. 4)
+with no re-execution and no fabrication.
+Measures.Pre/post-gate status distributions; D and
+its transitions; PoC-rate=|{f∈E :ρ(σg(f))≥ 2}|/|E|;
+final severity; CVSS distribution; duration. Percent-
+ages are reported with counts. Detection precision/recall
+against ground truth are markedinsufficient information
+for the deployment (its targets are not enumerated in a
+ground-truth set) and are defined only for the controlled
+corpus.
+Pre-registered controlled ablation.A repeated-
+measures, within-target design over authorized self-hosted
+vulnerable apps (Juice Shop, DVWA, WebGoat, Node-
+Goat) with documented ground truth. Arms disable
+one mechanism at a time (verifier, coverage_gate, moa,
+selfimprove, routing, fallback) plus ano-scaffold con-
+trol; full is the reference. Each (target, arm) is re-
+6
+
+[[page 7]]
+peated with≥ 5seeds; the free-model pool is pinned and
+timestamped. Primary comparisons are pairedfull vs.
+each arm across targets (Wilcoxon signed-rank), Holm–
+Bonferroni corrected, with an effect-size estimate. The
+present paper reports theverifier arm via the counter-
+factual and leaves the rest as the immediate next step.
+8 Results
+Mechanism presence.A static audit evaluates 46
+predicates across the six mechanisms and the single-
+container packaging; all pass (7/7 groups), establishing
+that the scaffold is present in code. This establishes
+construct presence, not contribution.
+Verifier counterfactual (RQ1).Across 416 quali-
+fied findings, pre-gate claims were 301 confirmed, 90
+exploited, 24 suspected, 1 cleaned_up; post-gate re-
+sults were 273 confirmed, 90 exploited, 52 suspected,
+1 cleaned_up (Fig. 5). The gate lowered 28 findings
+(D = 28/416 = 6.7%), all confirmed→suspected (Fig. 6),
+each for a missing reproducible request/response pair.
+The number ofexploited (PoC) findings is identical pre-
+and post-gate (90), so the gate reduced over-claimed con-
+firmationswithout discarding a single demonstrated exploit
+(Fig. 7). Disabling the verifier would reintroduce 6.7%
+over-claimed findings at no observed gain in exploitation,
+evidence consistent with H1.
+Exploitation depth (RQ2, descriptive).Of 68 ex-
+ploitation targets, 63 (92.6%) reached≥confirmed and 27
+(39.7%) a reproducible PoC. This is descriptive; the cover-
+age oracle’s contribution is a hypothesis for the controlled
+study.
+Finding profile.The 598 findings were 76 informa-
+tional, 121 low, 193 medium, 151 high, 57 critical by final
+severity (Fig. 10); CVSS was available for 523 findings,
+median 5.3, mean 6.03 (Fig. 12); the top categories were
+information disclosure (271), security misconfiguration
+(32), misconfiguration (23), CORS misconfiguration (21),
+broken access control (20) (Fig. 11). The predominance of
+information-disclosure findings is consistent with breadth-
+first coverage and contextualises the PoC-rate: many
+findings are not exploitation targets.
+Lifecycle outcome.Aggregated over the full corpus,
+the assessment lifecycle drove 539/598 findings (90.1%)
+to at least confirmed and 103/598 (17.2%) to a repro-
+ducible PoC (exploited+); the post-exploitation tiers are
+near-empty because the deployment is overwhelmingly
+pentest-mode, whose ceiling isexploited (Fig. 9). This
+is a metrics view of how far the lifecycle carries findings,
+a corpus-level complement to the per-target PoC-rate
+reported above.
+Temporal trend (descriptive, non-causal).An
+OLS fit to exploited-per-campaign over chronological
+order gives a slope of+0.063per campaign over 66 cam-
+paigns (Fig. 8). We report this as a descriptive association
+Figure 5: Pre-gate (executor claim) vs. post-gate (verifier)
+status over 416 qualified findings. Disabling the verifier
+corresponds to the grey bars.
+Figure 6: Status transitions where the gate lowered a
+finding: 28confirmed→suspected.
+only; the deployment does not control for target mix, op-
+erator, or model availability over time, so we donot
+attribute it to self-improvement. A causal test is exactly
+theablate-selfimprovearm.
+Cost.Every campaign ran on the free pool; attributable
+inference cost was $0. We report cost as a design property,
+not a measured cross-system comparison (future work).
+9 Discussion
+The clearest supported statement concerns the veri-
+fier: on real deployment data, a deterministic, executor-
+independent gate corrected 6.7% (28/416) of over-claimed
+findings and removed no demonstrated exploit. This is
+the mechanism central to the thesis (that trustworthiness
+can come from architecture) and the one for which a clean
+counterfactual exists, because both the pre-gate claim
+and post-gate result are stored. The correction is mod-
+est and specific: it withholds unsupported confirmations,
+precisely the behaviour a security report needs.
+Weak models over-claim and stall more often than
+strong ones; the scaffold addresses both structurally (gate
+and coverage oracle constrain over-claiming and prema-
+ture closure; watchdog and routing address instability;
+the panel supplies a second opinion where a single weak
+model is least reliable). None of this requires a stronger
+model, which is what makes zero-cost operation feasible.
+Our mechanisms have antecedents; the contribution is
+their composition under a zero-cost constraint with a
+deterministic verifier at the centre, and an open harness
+that lets the composition be measured. For resource-
+constrained teams and education, a free single-container
+7
+
+[[page 8]]
+Figure 7: Ablation over qualified findings: full vs.
+counterfactual verifier-ablation. Over-claim rate rises
+0→ 0.067when the gate is removed; PoC-rate is un-
+changed (0.500 on this subset).
+Figure 8: exploited findings per campaign over time with
+an OLS trend (descriptive, non-causal).
+pipeline explicit about claimed-versus-demonstrated find-
+ings has immediate value, provided its output is read as
+candidate findings for analyst triage.
+10 Limitations
+(i) Observational, single-deployment evidence; the verifier
+magnitude across independent settings is unestablished.
+(ii) No controlled ablation yet for the five non-verifier
+mechanisms. (iii) No ground-truth precision/recall on
+the deployment corpus. (iv) No like-for-like paid-model
+baseline. (v) The temporal trend is confounded and non-
+causal. (vi)Plannedrecalliscategory-level(adocumented
+proxy). (vii) The free-model pool drifts; the controlled
+study pins and timestamps it.
+11 Implications and Future Work
+The immediate next step is the controlled ablation of
+§7: stand up the authorized corpus, pin the pool, run
+each arm with replicate seeds, and report paired com-
+parisons with effect sizes for the coverage oracle, MoA,
+self-improvement, routing, and fallback. A like-for-like
+baseline against a paid-model system on the same corpus
+would quantify the capability-for-cost trade. Generalisa-
+tion to an authorized real target and a longitudinal test
+of self-improvement across repeated same-stack targets
+would move the learning claim from descriptive to con-
+trolled. A further direction is tamper-evident, multi-party
+Figure 9: Realised outcome of the assessment lifecycle
+across the deployment: the cumulative share of findings
+driven to each status tier. Of 598 findings, 539 (90.1%)
+reached at leastconfirmed and 103 (17.2%) a reproducible
+PoC (exploited+); the post-exploitation tiers are near-
+empty under the predominant pentest-mode ceiling. A
+metrics view of how far the lifecycle carries findings (not
+a flow chart).
+Figure 10: Final severity distribution (n=598).
+logging of assessment evidence so that reproducibility sur-
+vives an untrusted operator; fairness-aware decentralised
+consensus [36] is one candidate substrate for such an at-
+tested audit trail. The released harness is built to carry
+out each step.
+12 Conclusion
+A substantial part of the machinery for a trustworthy
+LLM-driven offensive-security assessment can be supplied
+by architecture rather than by an expensive model. On a
+real deployment, an executor-independent deterministic
+verifier corrected 6.7% of over-claimed findings while pre-
+serving every demonstrated exploit, at zero inference cost,
+in a single reproducible container. We present this as an
+architectural and methodological contribution with an
+honest observational evidence base and a pre-registered
+path to controlled results. The reframing we advocate
+is modest but useful: the interesting question for LLM-
+driven offensive security on commodity models is not
+whether the model is strong, but whether the system
+around it is disciplined.
+8
+
+[[page 9]]
+Figure 11: Top vulnerability categories.
+Figure 12: CVSS base-score distribution (n=523, median
+5.3).
+Ethics and Responsible Use
+Batitongis intended only for authorized security test-
+ing. The observational analysis uses aggregate, de-
+identified metadata and discloses no target identities
+or exploit specifics. The controlled protocol uses self-
+hosted, intentionally-vulnerable applications and explic-
+itly authorized targets in an isolated network, with ca-
+nary/marker data and mode-based ceilings. The control
+plane is loopback-bound by default. No human-subjects
+data is involved. The author discourages use against
+systems without explicit authorization.
+Data and Code Availability
+The evaluation harness (static audit, metrics recom-
+putation, figure generation, ablation matrix), the pre-
+registered protocol, the related-work matrix, and the
+benchmark specification are released with the project.
+Every quantitative result is recomputable from stored
+records (Appendix A).
+Conflict of Interest
+The author declares no competing financial interest.
+A Reproducibility
+The evaluation has two independent parts.Part Arepro-
+duces the numbers reported in this paperand is read-only:
+it recomputes every statistic and figure from the released
+stored records, without launching the platform or touch-
+ing any target.Part Bruns the controlled ablationof
+§7; itgenerates new databy launching assessments and
+isnotrequired to reproduce this paper.
+Part A: reproduce reported numbers (read-only):
+python3 Research/audit_novelty.py # 46/46
+mechanism checks
+python3 Research/metrics.py # status
+mix,D, PoC-rate
+python3 Research/analyze.py --show-slope # Figs.
++ OLS slope
+Part B: run the controlled ablation (optional,
+writes new campaigns):
+bash Research/run_matrix.sh # dry-run:
+prints the plan
+RUN=1 bash Research/run_matrix.sh # target×
+arm×seed
+Part A yields, deterministically, the results of §8: 7/7
+mechanism groups present; the pre/post-gate status distri-
+butions, the over-claim correction rateD = 28/416, and
+the PoC-rate27/68; and Figs. 5–12. Part B is stochastic
+(it launches free-model assessments) and produces the
+multi-arm data left as future work; it is the only part
+that requires a running stack and an authorized target.
+References
+[1] G. Deng, Y. Liu, V. Mayoral-Vilches,et al.“PentestGPT:
+An LLM-empowered Automatic Penetration Testing Tool.”
+USENIX Security, 2024. arXiv:2308.06782.
+[2] R. Fang, R. Bindu, A. Gupta,et al.“LLM Agents can Au-
+tonomously Hack Websites.” 2024. arXiv:2402.06664.
+[3] R. Fang, R. Bindu, A. Gupta, D. Kang. “LLM Agents
+can Autonomously Exploit One-day Vulnerabilities.” 2024.
+arXiv:2404.08144.
+[4] R. Fang,et al.“Teams of LLM Agents can Exploit Zero-Day
+Vulnerabilities.” 2024. arXiv:2406.01637.
+[5] V. Mayoral-Vilches,et al.“CAI: An Open, Bug-Bounty-Ready
+Cybersecurity AI.” 2025. arXiv:2504.06017. [verify]
+[6] H. Huang, Q. Zhu. “PenHeal: A Two-Stage LLM Framework
+for Automated Pentesting and Optimal Remediation.” 2024.
+arXiv:2407.17788. [verify]
+[7] A. Happe, J. Cito. “Getting pwn’d by AI: Penetration
+Testing with Large Language Models.” ESEC/FSE, 2023.
+arXiv:2308.00121.
+[8] J. Zhang,et al.“When LLMs Meet Cybersecurity: A System-
+atic Literature Review.” 2024. arXiv:2405.03644. [verify]
+[9] J. Wang,et al.“Mixture-of-Agents Enhances Large Language
+Model Capabilities.” 2024. arXiv:2406.04692.
+[10] X. Wang,et al.“Self-Consistency Improves Chain-of-
+Thought Reasoning in Language Models.” ICLR, 2023.
+arXiv:2203.11171.
+[11] T. G. Dietterich. “Ensemble Methods in Machine Learning.”
+Multiple Classifier Systems, LNCS 1857, 2000.
+9
+
+[[page 10]]
+[12] G. Wang, Y. Xie, Y. Jiang,et al.“Voyager: An Open-
+Ended Embodied Agent with Large Language Models.” 2023.
+arXiv:2305.16291.
+[13] N. Shinn, F. Cassano, E. Berman,et al.“Reflexion: Language
+Agents with Verbal Reinforcement Learning.” NeurIPS, 2023.
+arXiv:2303.11366.
+[14] A. Madaan,et al.“Self-Refine: Iterative Refinement with
+Self-Feedback.” NeurIPS, 2023. arXiv:2303.17651.
+[15] J. S. Park,et al.“Generative Agents: Interactive Simulacra
+of Human Behavior.” UIST, 2023. arXiv:2304.03442.
+[16] S. Yao, J. Zhao, D. Yu,et al.“ReAct: Synergizing
+Reasoning and Acting in Language Models.” ICLR, 2023.
+arXiv:2210.03629.
+[17] S. Yao,et al.“Tree of Thoughts: Deliberate Problem
+Solving with Large Language Models.” NeurIPS, 2023.
+arXiv:2305.10601.
+[18] J. Wei,et al.“Chain-of-Thought Prompting Elicits Reasoning
+in Large Language Models.” NeurIPS, 2022. arXiv:2201.11903.
+[19] T. Schick,et al.“Toolformer: Language Models Can Teach
+Themselves to Use Tools.” NeurIPS, 2023. arXiv:2302.04761.
+[20] P. Lewis,et al.“Retrieval-Augmented Generation
+for Knowledge-Intensive NLP Tasks.” NeurIPS, 2020.
+arXiv:2005.11401.
+[21] Y. Bai,et al.“Constitutional AI: Harmlessness from AI Feed-
+back.” 2022. arXiv:2212.08073.
+[22] L. Chen, M. Zaharia, J. Zou. “FrugalGPT: How to Use Large
+Language Models While Reducing Cost and Improving Per-
+formance.” 2023. arXiv:2305.05176.
+[23] P. Auer, N. Cesa-Bianchi, P. Fischer. “Finite-time Analysis of
+the Multiarmed Bandit Problem.” Machine Learning 47(2–3),
+2002.
+[24] T. Lattimore, C. Szepesvári.Bandit Algorithms.Cambridge
+University Press, 2020.
+[25] M. T. Nygard.Release It! Design and Deploy Production-
+Ready Software.2nd ed., Pragmatic Bookshelf, 2018.
+[26] K. Greshake,et al.“Not What You’ve Signed Up For: Compro-
+mising Real-World LLM-Integrated Applications with Indirect
+Prompt Injection.” AISec, 2023. arXiv:2302.12173.
+[27] OWASP Foundation. “OWASP Top 10 for Large Language
+Model Applications.” 2023–2025. [verify version]
+[28] Anthropic. “Introducing the Model Context Protocol (MCP).”
+Technical documentation, 2024. [verify URL]
+[29] OpenAI. “GPT-4 Technical Report.” 2023. arXiv:2303.08774.
+[30] NIST. “Technical Guide to Information Security Testing and
+Assessment.” SP 800-115, 2008.
+[31] FIRST. “Common Vulnerability Scoring System (CVSS) v3.1
+Specification Document.” [verify URL]
+[32] MITRE. “ATT&CK: Adversarial Tactics, Techniques, and
+Common Knowledge.” [verify version]
+[33] A. R. Wahid. “HI-XDR: Hybrid Intelligent Framework for
+Adversarial-Resilient Anomaly Detection and Adaptive Cyber
+Response.” Journal of Cyber Security, 7:589–614, 2025.
+[34] M. D. A. Nuzul, D. Anggreani, M. Faisal, A. R. Wahid,
+and T. K. Abd Rahman. “T4EDR: Hybrid Threat Detection
+Framework for EDR Based on Semantic Rule Embedding
+and Contextual Network Flow Analysis.” Jurnal Nasional
+Pendidikan Teknik Informatika (JANAPATI), 15(1), 2026.
+[35] A. R. Wahid, D. Anggreani, M. A. M. Hayat, A. Abd Rahman,
+and M. Faisal. “Stacking Architecture-Endpoint Detection:
+A Hybrid Multi-Layered Architecture for Endpoint Threat
+Detection.” Int. J. Advanced and Applied Sciences, 14(4):1263–
+1280, 2025.
+[36] S. Mujaddiq. “FairWave: A Fairness-Aware Asynchronous
+DAG-BFT Consensus.” 2026. arXiv:2606.10982.
+10

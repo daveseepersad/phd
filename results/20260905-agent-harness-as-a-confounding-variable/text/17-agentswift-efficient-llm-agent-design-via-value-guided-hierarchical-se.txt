@@ -1,0 +1,971 @@
+[[page 1]]
+AgentSwift: Efficient LLM Agent Design via Value-Guided Hierarchical Search
+Yu Li1, Lehui Li3, Zhihao Wu2, Qingmin Liao1, Jianye Hao2, Kun Shao2, Fengli Xu1*
+1Tsinghua University
+2Huawei Noah’s Ark Lab
+3Shandong University
+liyu24@mails.tsinghua.edu.cn,{fenglixu, liaoqm}@tsinghua.edu.cn,{shaokun2, haojianye}@huawei.com,
+202200300096@mail.sdu.edu.cn
+Abstract
+Large language model (LLM) agents have demonstrated
+strong capabilities across diverse domains, yet automated
+agent design remains a significant challenge. Current auto-
+mated agent design approaches are often constrained by lim-
+ited search spaces that primarily optimize workflows but fail
+to integrate crucial human-designed components like mem-
+ory, planning, and tool use. Furthermore, these methods are
+hampered by high evaluation costs, as evaluating even a sin-
+gle new agent on a benchmark can require tens of dollars. The
+difficulty of this exploration is further exacerbated by ineffi-
+cient search strategies that struggle to navigate the large de-
+sign space effectively, making the discovery of novel agents
+a slow and resource-intensive process. To address these chal-
+lenges, we propose AgentSwift, a novel framework for auto-
+mated agent design. We formalize a hierarchical search space
+that jointly models agentic workflow and composable func-
+tional components. This structure moves beyond optimizing
+workflows alone by co-optimizing functional components,
+which enables the discovery of more complex and effective
+agent architectures. To make exploration within this expan-
+sive space feasible, we mitigate high evaluation costs by train-
+ing a value model on a high-quality dataset, generated via
+a novel strategy combining combinatorial coverage and bal-
+anced Bayesian sampling for low-cost evaluation. Guiding
+the entire process is a hierarchical Monte Carlo Tree Search
+(MCTS) strategy, which is informed by uncertainty to effi-
+ciently navigate the search space. Evaluated across a compre-
+hensive set of seven benchmarks spanning embodied, math,
+web, tool, and game domains, AgentSwift discovers agents
+that achieve an average performance gain of 8.34% over both
+existing automated agent search methods and manually de-
+signed agents. Moreover, our framework exhibits steeper and
+more stable search trajectories. By enabling the efficient, au-
+tomated composition of workflow with functional compo-
+nents, AgentSwift provides a scalable methodology to ex-
+plore complex agent designs. Our framework serves as a
+launchpad for researchers to rapidly prototype and discover
+powerful agent architectures without the impediment of pro-
+hibitive evaluation costs.
+Code — https://github.com/Ericccc02/AgentSwift
+*Corresponding author.
+Copyright © 2026, Association for the Advancement of Artificial
+Intelligence (www.aaai.org). All rights reserved.
+Introduction
+The rise of LLM (Brown et al. 2020; Radford et al. 2018,
+2019) has accelerated interest in agentic systems, ranging
+from reasoning workflows like Chain-of-Thought (Wei et al.
+2022) and Tree-of-Thought (Yao et al. 2023; Du et al. 2023;
+Madaan et al. 2023) to advanced systems integrating plan-
+ning, tools, and memory (Wang et al. 2024; Qiao et al.
+2024). While these designs enhance capabilities in domains
+like mathematics (Romera-Paredes et al. 2024; Shang et al.
+2024a) and web interaction (Nakano et al. 2021; Xie et al.
+2024), manual engineering remains labor-intensive, motivat-
+ing the need for automated agent search.
+Despite progress, agent design remains largely man-
+ual. Early efforts optimized isolated subsystems like
+prompts (Yang et al. 2024b; Khattab et al. 2023), pro-
+files (Yuan et al. 2024), or topology (Zhuge et al. 2024;
+Zhang et al. 2024a). Recent works like AFlow (Zhang
+et al. 2024b), ADAS (Hu, Lu, and Clune 2024), and
+AgentSquare (Shang et al. 2024b) attempt end-to-end work-
+flow search, but the process remains inefficient.
+This inefficiency stems from three challenges. First, ex-
+isting methods under-exploit human designs by restricting
+search to isolated parts (e.g., prompts), overlooking critical
+components like planning, tools, and memory. Second, eval-
+uation costs are prohibitive; for instance, evaluating a sin-
+gle CoT agent in ALFWorld costs $60 (Shang et al. 2024b;
+Shridhar et al. 2021). Fully evaluating every candidate re-
+sults in significant waste on poor performers. Third, search
+efficiency is low, as methods like AFlow and ADAS often
+struggle to explore the vast design space effectively. Ad-
+dressing these limitations is crucial for unlocking the poten-
+tial of agentic system search.
+In this work, we propose a comprehensive framework that
+addresses these inefficiencies through three key innovations.
+First, we construct a hierarchical search space that includes
+both the agentic workflow and three functional compo-
+nents—memory, tool use, and planning—that can be mod-
+ularly attached to the agentic workflow. This search space
+extends the formulation of AFlow, enabling richer design
+possibilities beyond fixed workflow structures. This struc-
+tured design space not only broadens the range of agent de-
+signs but also facilitates more meaningful performance mod-
+eling, making it well-suited for learning a predictive model.
+Second, we develop a value model that predicts the per-
+The Fortieth AAAI Conference on Artificial Intelligence (AAAI-26)
+31843
+
+[[page 2]]
+formance of a candidate agent given its design and a task
+description. To support effective learning, we construct a
+high-quality training dataset by combining pairwise cover-
+ing arrays, which ensure comprehensive coverage of inter-
+actions between workflows and components, with balanced
+Bayesian sampling, which selects agent candidates from
+both high- and low-performing regions of the search space.
+This enables the model to generalize across a broad design
+space and provide accurate, low-cost predictions, effectively
+guiding the search process while avoiding unnecessary real-
+world evaluations. Third, we design an uncertainty-guided
+hierarchical expansion strategy based on MCTS. During the
+MCTS expansion phase, the agent is iteratively improved
+through three operations—recombination, mutation, and re-
+finement—applied hierarchically to both the agentic work-
+flow and functional components. In the recombination step,
+new candidates are sampled from a library of possible work-
+flow structures or component implementations to replace
+existing ones. Mutation explores new candidates based on
+existing components and workflows, guided by the perfor-
+mance of previously evaluated agents. Refinement adjusts
+the agentic workflow and components based on feedback
+from failure cases. These modifications are guided by the
+value model’s predicted performance, ensuring the search
+explores promising directions efficiently. By comparing pre-
+dicted and actual performance, we obtain a natural measure
+of uncertainty, which is integrated into the MCTS selection
+strategy to guide which to expand during the search. This
+integration of predictive modeling and uncertainty allows us
+to prioritize promising agent candidates, avoid unproductive
+regions, and conduct more targeted, efficient exploration of
+the design space. The overview of this work is illustrated in
+Figure 1.
+We validate our framework across seven widely-used
+benchmark datasets spanning domains such as math, web,
+tool, and game. Experimental results show that our method
+achieves an average performance improvement of 8.34%
+over state-of-the-art baselines. The discovered agents gen-
+eralize well across LLM backbones, demonstrating strong
+model-agnosticity. Additionally, our approach exhibits a
+steeper search trajectory, discovering high-performing agent
+designs with significantly fewer agent evaluations. Beyond
+final performance, our value model demonstrates high pre-
+dictive accuracy and strong transferability to unseen tasks
+with minimal fine-tuning.
+The key contributions of this work are as follows:
+• We formalize the agentic system optimization as a hierar-
+chical search over agentic workflow and functional com-
+ponents, establishing a general framework that extends
+prior approaches.
+• We train a value model that predicts agent performance
+from agentic system and task description, enabling low-
+cost, model-driven evaluation during the search process.
+• We propose an uncertainty-guided hierarchical expansion
+strategy based on MCTS, incorporating recombination,
+mutation, and refinement steps over both workflow and
+components.
+• We empirically demonstrate the effectiveness of our
+method on seven diverse benchmarks, showing consistent
+improvements over state-of-the-art baselines.
+Related Work
+LLM Agent
+Recent LLM agents employ reasoning workflows (Wei et al.
+2022; Madaan et al. 2023; Du et al. 2023) enhanced by func-
+tional components like memory (Wang et al. 2024; Wen
+et al. 2024; Park et al. 2023), tool use (Schick et al. 2023;
+Qin et al. 2023; Du, Wei, and Zhang 2024), and planning (Ge
+et al. 2024; Wang et al. 2024; Shen et al. 2023). How-
+ever, most agents remain manually designed, lacking a uni-
+fied framework to systematically search and optimize across
+these workflow and component choices.
+Automated Agentic Workflow Design
+Early work optimized specific subsystems like
+prompts (Yang et al. 2024b; Fernando et al. 2023),
+profiles (Chen et al. 2023a,b), and topologies (Zhuge
+et al. 2024; Qian et al. 2024; Niu et al. 2025) rather than
+holistic workflows. Recent approaches attempt end-to-end
+search (Zhang et al. 2024b; Hu, Lu, and Clune 2024; Shang
+et al. 2024b; Zhang et al. 2025a), with MaAS (Zhang
+et al. 2025b) further enabling adaptive deployment via
+query-conditioned distributions. However, these methods
+remain constrained by predefined primitives and overlook
+functional components, limiting broader adaptability and
+extensibility.
+Performance Predictor in AutoML
+Neural Architecture Search (NAS) has evolved from costly
+optimization (Zoph and Le 2016; Real et al. 2019; Maziarz
+et al. 2018) to efficient search using performance predic-
+tors (Kandasamy et al. 2018; White, Neiswanger, and Sa-
+vani 2021; Qin et al. 2025). Since agentic system design
+shares similar challenges of large search spaces and expen-
+sive evaluation, we adopt this paradigm by incorporating a
+value model to predict performance and guide the search ef-
+ficiently.
+Search Space
+More recent efforts like AFlow (Zhang et al. 2024b) and
+ADAS (Hu, Lu, and Clune 2024) treat the agentic workflow
+as a whole and perform end-to-end search over its structure.
+Despite their broader scope, these methods do not support
+flexible integration of functional components such as mem-
+ory, planning, or tool use. Although AgentSquare (Shang
+et al. 2024b) introduces these components into its design
+space, they are combined under a fixed agentic workflow
+template with rigid interfaces, and its search process remains
+prompt-centric. In contrast, we propose a hierarchical search
+space that jointly explores both the agentic workflow and
+composable functional components.
+Agentic Workflow
+Following AFlow (Zhang et al. 2024b), we define an agentic
+workflow W as a series of LLM-invoking nodes connected
+31844
+
+[[page 3]]
+Tool-Use
+Operator
+ Ensemble
+Review
+Example
+Workflow
+Judge
+Revise
+Agentic Workflow Level
+Memory
+Functional Component Level 
+Planning
+Tool-Use
+Planning
+Memory
+Agentic Workflow
+Hierarchical Search Space
+Evalution
+Label
+Agent 
+Exploring Diverse Agents
+Task 
+Performance
+Extend
+Task
+Value Model Training
+Value Model
+Training
+Selection
+Value
+Model
+Performance Uncertainty
+AgentSwift Search FrameworkSearch Space
+`
+Evaluation
+Selected Agent
+Mutation
+Refinement
+Expanded Agent
+... Next Iteration
+Recombination
+ Hierarchical 
+Expansion
+Agent
+LLM
+ SFT
+Instruction
+Figure 1: Overview of our framework. The framework integrates (a) hierarchical search space (b) uncertainty-guided MCTS
+with hierarchical expansion (c) value model training
+by edges to specify execution order. Formally, an agentic
+workflow W consists of a set of nodesN and a set of edges
+E, written as W = (N,E ). Each node Ni∈ N represents
+a single execution step and is characterized by the following
+parameters:
+Ni = (Mi, Pi, τi, Fi), (1)
+where Mi ∈M is the language model used at this node,
+Pi ∈ Pis the prompt provided to the model, τi ∈ T is
+the decoding temperature, and Fi∈F specifies the output
+format. The edges E⊆ N×N define the control and data
+flow between nodes, specifying the execution order.
+The agentic workflow search space is defined as:
+Sworkflow =
+
+(N,E )
+Ni = (Mi,Pi,τi,Fi),
+Mi∈M, Pi∈P , τi∈T ,
+Fi∈F , E⊆N×N
+ 
+.
+(2)
+Functional Components
+We extend the search space with three plug-and-play
+functional components: memory, tool use, and planning.
+These capabilities integrate directly into the agentic work-
+flow—memory handles context retrieval/storage, tool use
+enables API calls, and planning structures execution steps.
+Memory. The memory component allows agents to re-
+trieve and incorporate information. It is defined as M =
+(m, τ, d ), where m is the prompt used to query or up-
+date memory, τ is the decoding temperature for memory-
+related LLM calls, andd denotes the external memory back-
+end, such as a vector database.
+Tool Use. The tool use component enables the agent to
+interact with external APIs or environments. It is defined as
+T = (t, τ, u), where t is the tool invocation prompt, τ
+is the decoding temperature, andu represents the accessible
+toolset.
+Planning. The planning component supports task decom-
+position and hierarchical control. It is defined as P =
+(p, τ ), where p is the prompt for generating subgoals or
+plans, andτ is the temperature used during plan generation.
+The component search spaces are defined as:
+Smemory ={(m, τ, d)|m∈P , τ∈T , d∈D} ,
+Stool ={(t, τ, u)|t∈P , τ∈T , u∈U} ,
+Splanning ={(p, τ)|p∈P , τ∈T} .
+(3)
+Here,P is the prompt space,T is the temperature space,
+D is the space of memory backends, and U is the space of
+available tools.
+Hierarchical Search Space
+We define an agent A as a combination of an agentic work-
+flow and a set of functional components. Formally, the agent
+is represented as:
+A = (W, M, T, P). (4)
+The full agent search space is given by:
+Sagent =
+
+W, M, T, P
+ W∈S workflow, M∈S memory,
+T∈S tool, P∈S planning
+ 
+.
+(5)
+This formulation defines a hierarchical search space where
+both the structure of the agentic workflow and the configu-
+rations of its functional components are jointly optimized,
+enabling flexible composition, deeper architectural varia-
+tions, and the reuse of classical human-designed modules.
+It subsumes existing methods such as AFlow (Zhang et al.
+2024b) and AgentSquare (Shang et al. 2024b) as special
+cases within a more expressive and extensible design space.
+31845
+
+[[page 4]]
+Tool-Use Pool
+Seed Agent
+Pair-wise Covering Array ,CA(2)
+Agentic Workflow Pool
+Memory Pool Planning Pool
+Balanced-Extreme Bayesian Optimization
+Dataset 
+Construction
+ExtensionInitialization
+ɑLC𝐵(𝐴)
+ɑUC𝐵(𝐴)
+Figure 2: Overview of dataset construction
+AgentSwift Framework
+Overview
+Given a task description d and a performance evaluation
+function Evald(·), our objective is to find the agent design
+A∗ from the joint search space Sagent that maximizes ex-
+pected task performance. The optimization problem is de-
+fined as:
+A∗ = arg max
+A∈Sagent
+Evald(A) = arg max
+(W,P,T,M)
+Evald(W, P, T, M).
+(6)
+To address expensive evaluation and inefficient explo-
+ration in agent design, we propose a unified framework in-
+tegrating a predictive value model with uncertainty-guided
+hierarchical MCTS. The value model acts as a low-cost sur-
+rogate evaluator to estimate performance. To manage the
+vast search space, we employ hierarchical expansion across
+workflow and component levels using recombination, muta-
+tion, and refinement. By leveraging uncertainty estimation,
+the framework prioritizes exploring high-potential regions,
+enabling the scalable, sample-efficient discovery of LLM
+agents.
+Value Model
+To efficiently guide the agent search process and reduce the
+reliance on expensive real-world evaluations, we propose a
+predictive value model that estimates the performance of
+a candidate agent A = (W, M, T, P) on a given task d.
+The model is trained to approximate the evaluation function
+Evald(·) via supervised learning:
+ˆv =fθ(A,d ), (7)
+wherefθ denotes the learned value model and ˆv is the pre-
+dicted performance score.
+Prior works have leveraged powerful LLM like GPT-4o
+as in-context predictors for this task, where historical agent
+performance data is fed directly into the prompt to estimate
+the success of a new agent (Shang et al. 2024b). However,
+such in-context evaluation requires repeated invocation of
+large models during search, resulting in high computational
+overhead. In contrast, our approach distills this predictive
+capability into a lightweight, task-generalized value model,
+enabling fast inference with significantly lower cost.
+Dataset Construction. To construct a high-quality train-
+ing datasetD ={(Ai,di,vi)}N
+i=1, we employ a two-stage
+process designed to ensure both broad coverage and discrim-
+inative diversity(Figure 2):
+1. t-way combinatorial coverage: We begin by generating
+an initial dataset using a t = 2 covering array to ex-
+haustively sample combinations of pairwise interactions
+among the four key elements of the agent design: W,
+M, T, and P. This ensures that all pairwise component
+interactions are represented at least once, promoting cov-
+erage.
+2. Balanced Bayesian sampling: We augment the initial
+dataset using a Balanced-Extreme Bayesian Optimiza-
+tion strategy. We fit a Gaussian Process (GP) surrogate
+over the discrete agent space, using a Hamming kernel.
+The posterior mean µ(A) and standard deviation σ(A)
+are used to define two acquisition functions:
+aUCB(A) = µ(A) +κ·σ(A),
+aLCB(A) =−µ(A) +κ·σ(A). (8)
+where κ is an exploration coefficient. In each sampling
+round, we select a batch ofq new agent designs from the
+candidate poolS:
+qhigh =
+q
+2
+
+, q low =q−qhigh, (9)
+whereqhigh maximizesaUCB to explore high-performing
+regions and qlow maximizes aLCB to explore potentially
+underperforming yet uncertain configurations. This dual
+exploration yields a diverse and discriminative dataset.
+We repeat this process until a total of 220 labeled samples
+are obtained, which are then randomly split into training,
+validation, and test sets with a ratio of 8:1:1.
+Model Architecture and Training. We implement the
+value model using a pre-trained 7B language model aug-
+mented with lightweight adapter modules, enabling robust
+generalization across diverse tasks. The entire model is fine-
+tuned end-to-end on the constructed dataset using mean
+squared error (MSE) loss.
+Uncertainty-Guided MCTS
+Initialization. To warm-start the search and improve
+early-stage efficiency, we initialize a global experience pool
+E ={(W, M, T, P,v )}, where v is the measured perfor-
+mance of an agent. This pool is seeded using well-designed
+baseline agents adapted from the AgentSquare (Shang et al.
+2024b) codebase. The pools {W, M, T, P} are extracted
+from these baselines and standardized.
+31846
+
+[[page 5]]
+Baseline Type Method Embodied Math Web Tool Game
+Alfworld SciWorld MATH WebShop M3Tool Travel PDDL
+Hand-crafted
+Agents
+COT 0.512±0.009 0.398±0.005 0.532±0.004 0.490±0.011 0.427±0.008 0.433±0.003 0.427±0.011
+CoTSC 0.545±0.006 0.412±0.004 0.543±0.002 0.488±0.006 0.451±0.012 0.410±0.001 0.410±0.009
+TOT 0.530±0.008 0.384±0.004 0.547±0.005 0.462±0.009 0.463±0.014 0.407±0.007 0.433±0.007
+FoA 0.587±0.005 0.427±0.008 0.556±0.003 0.509±0.012 0.488±0.009 0.474±0.006 0.472±0.007
+TP 0.373±0.010 0.195±0.009 0.543±0.001 0.343±0.013 0.402±0.007 0.387±0.008 0.440±0.005
+SelfRefine 0.575±0.007 0.375±0.006 0.551±0.004 0.425±0.010 0.463±0.010 0.047±0.015 0.412±0.008
+Dilu 0.451±0.009 0.358±0.008 0.545±0.003 0.492±0.008 0.476±0.011 0.360±0.009 0.417±0.006
+V oyager 0.336±0.011 0.389±0.005 0.517±0.006 0.423±0.012 0.317±0.014 0.517±0.004 0.337±0.010
+DEPS 0.493±0.007 0.435±0.007 0.513±0.005 0.308±0.015 0.329±0.013 0.523±0.003 0.463±0.007
+Stepback 0.470±0.008 0.314±0.009 0.530±0.002 0.459±0.011 0.488±0.009 0.033±0.012 0.403±0.009
+Agent Search
+AgentSquare 0.701±0.07 0.475±0.005 0.556±0.004 0.520±0.009 0.561±0.010 0.553±0.004 0.577±0.008
+AFlow 0.619±0.006 0.452±0.007 0.562±0.003 0.497±0.011 0.524±0.012 0.497±0.006 0.528±0.008
+ADAS 0.567±0.009 0.463±0.006 0.543±0.005 0.436±0.013 0.500±0.011 0.453±0.007 0.509±0.009
+MaAS 0.612±0.007 0.437±0.008 0.597±0.001 0.485±0.010 0.537±0.010 0.403±0.005 0.564±0.007
+AgentSwift 0.806±0.007 0.509±0.006 0.628±0.000 0.562±0.010 0.634±0.013 0.573±0.002 0.614±0.008
+Table 1: Performance comparison of our method against hand-crafted agents and agent search methods across seven diverse
+benchmarks using GPT-4o-mini. The results are averaged over three independent runs. Our method consistently achieves the
+best performance across all benchmarks.
+Selection. We adopt a soft mixed probability selection
+strategy that integrates observed performance and model un-
+certainty, encouraging balanced exploration and exploita-
+tion. Given a set ofn candidate agents, the selection proba-
+bility for agenti is computed as:
+E(sj,uj) = α· ((1−β)·sj +β·uj−smax), (10)
+Pmixed(i) = λ· 1
+n + (1−λ)· exp (E(si,ui))Pn
+j=1 exp (E(sj,uj)). (11)
+wheresi denotes the actual task performance of agent i,ui
+is the uncertainty, andsmax is the maximum composite score
+across all candidates. λ, α, and β control the trade-off be-
+tween uniform exploration, sensitivity to performance dif-
+ferences, and the contribution of uncertainty, respectively.
+This formulation extends AFlow’s (Zhang et al. 2024b) ap-
+proach by incorporating epistemic uncertainty.
+Expansion. Starting from the parent agent returned by se-
+lection, we perform a top-downhierarchical expansioncom-
+posed of three operations—recombination, mutation, and
+refinement. These operations utilize task-agnostic prompts,
+where only the task description varies for new applications.
+Each operation generates a small batch of new agents and
+the value model scores every candidate and the best one ad-
+vances to the next operation.
+1. Recombination An LLM proposer πθ (adapted from
+AgentSquare) replaces one subsystem—agentic work-
+flow, planning, tool use, or memory—with an alter-
+native sampled from the corresponding pool. Given a
+current agent (W0, M0, T0, P0) and experience pool
+E, πθ produces N candidate agents. For example,
+(W0, M0, T
+′
+, P0) denotes a recombination where the
+tool use component is replaced with a new T
+′
+∈ T.
+The value model ranks all candidates, and the top one
+is passed to the next phase.
+2. Mutation An LLM programmer πξ generates a new
+implementation of the selected subsystem by leverag-
+ing task description, existing subsystems, and prior agent
+performance from E. This yields N mutated agents; for
+instance, (W0, M0, T0, P∗) represents a mutated vari-
+ant where a new planning P∗ is synthesized. The value
+model ranks all candidates, and the top one is passed to
+next phase. Newly generated subsystems are appended to
+the global pools so future searches can reuse them.
+3. Refinement An LLM refinerπϕ applies fine-grained ad-
+justments to the selected agent by modifying a single
+subsystem in light of failure cases. These refinements in-
+clude prompt edits, temperature nudges or control-flow
+modifications. For example, (W‘, M0, T0, P0) denotes
+a refined variant with an updated workflow W‘. Among
+the refined candidates, the one with the highest predicted
+performance is inserted into the MCTS tree.
+This three-step pipeline simultaneously broadens explo-
+ration (via recombination), unlocks novel behaviour (via
+mutation), and polishes promising designs (via refinement)
+Evaluation. Inspired by classic works on probabilis-
+tic forecasting and sequential decision-making (Brier
+1950; Auer, Cesa-Bianchi, and Fischer 2002; Kocsis and
+Szepesv´ari 2006), the child agent is evaluated on the target
+task to obtain its actual performance score sreal. To quantify
+the epistemic uncertainty of the value model’s prediction,
+we define the uncertainty as the absolute deviation between
+the predicted score ˆs and the true performance:
+u =
+sreal− ˆs
+. (12)
+This uncertainty metric, rooted in the principles of fore-
+cast calibration (Brier 1950), enables the search algorithm to
+balance exploitation of high-performing configurations with
+exploration of under-evaluated regions.
+31847
+
+[[page 6]]
+0 10 20 30 40 50 60
+Number of Evaluated Agents
+0.45
+0.50
+0.55
+0.60
+0.65
+0.70
+0.75
+0.80
+Success Rate
+AgentSwift Search on Alfworld
+0 10 20 30 40 50 60
+Number of Evaluated Agents
+0.40
+0.45
+0.50
+0.55
+0.60
+0.65
+Success Rate
+AgentSwift Search on M3toolEval
+AgentSwift
+ADAS
+AFlow
+AgentSquare
+MaAS
+Figure 3: AgentSwift search trajectory on Alfworld and M3ToolEval.
+Backpropagation. After evaluation, the node records
+its actual score sreal together with the uncertainty u.
+These statistics are then propagated upward, where each
+ancestor node increments its visit count. Finally, node 
+W, M, T, P,s real
+
+is attached to the global experience
+pool E, enlarging the candidate set for subsequent iterations.
+Experiments
+Experimental Setup
+Task Setup. We evaluate our framework on seven bench-
+mark spanning five representative task domains commonly
+used in LLM evaluation (Ma et al. 2024; Xi et al. 2024).
+More details are presented in Appendix.
+Baselines. We compare our framework against two cate-
+gories of baselines including manually designed agent and
+automated agent search methods. More details are presented
+in Appendix.
+Implementation Details. We conduct experiments us-
+ing closed-source LLMs (gpt-4o (Achiam et al.
+2023), gpt-4o-mini (Achiam et al. 2023))
+and an open-source one (DeepSeek-v3 (Liu et al.
+2024)). For the value model, we adopt two back-
+bone LLMs: Mistral-7B-v0.3 (Jiang et al.
+2024) and Qwen2.5-7B (Yang et al. 2024a).
+To ensure fair comparison across agent search methods,
+the evaluation budget is capped at 60 agents per method,
+by which point all baselines converge. The value model is
+trained on a server equipped with 3 A100 GPUs.
+Experimental Results
+Main Results.
+• Our method consistently discovers the best-
+performing agents. Across all tasks, our framework
+reliably identifies agent designs that outperform both
+manually constructed baselines and agents discovered
+by existing search methods. As shown in Table 1, our
+best-found agents achieve substantial improvements over
+the strongest competing methods. These consistent gains
+highlight the advantage of searching over both agentic
+workflows and composable functional components in
+a unified hierarchical design space. Our formulation
+Method MSE MAE R² Spearman
+AgentSwiftmistral 0.0060 0.0530 0.8068 0.9026
+AgentSwiftqwen 0.0054 0.0547 0.8275 0.8987
+vanilla 0.1572 0.3593 -4.0590 0.2467
+gpt-4o few shot 0.0162 0.0893 0.4793 0.7654
+gpt-4o zero shot 0.0675 0.2067 -1.1708 0.0563
+gpt-4o-mini few shot 0.0307 0.1179 0.0114 0.5410
+gpt-4o-mini zero shot 0.0820 0.2370 -1.6403 -0.0774
+Table 2: Performance comparison of different surro-
+gate models on all benchmarks. Our method consistently
+achieves the best performance across all metrics.
+enables richer architectural compositions beyond fixed or
+manually selected modules, yielding more generalizable
+and effective agent behaviors.
+• Our method enables steeper and more efficient search
+trajectories. Figures 3 present the search trajectories of
+our method and strong baselines. Our method demon-
+strates a noticeably steeper and more stable performance
+curve across tasks, indicating faster discovery of high-
+performing agent. In contrast, methods such as AFlow
+and ADAS either stagnate due to limited agentic work-
+flow variation or require significantly more iterations and
+time to escape local optima. These results validate the
+synergistic effectiveness of predictive modeling and struc-
+tured, uncertainty-aware search in accelerating agent dis-
+covery. For brevity, search trajectories for other tasks,
+alongside detailed analyses of wall-clock time and the
+cost-performance Pareto front, are provided in the Ap-
+pendix.
+Analysis of Value Model. We evaluate the effectiveness
+of our value model by comparing it with several baseline
+predictors trained on the same dataset, including a vanilla su-
+pervised model and in-context learning methods using GPT-
+4o and GPT-4o-mini in both zero-shot and few-shot settings.
+As shown in Table 2, our approach achieves the best perfor-
+mance across all metrics—MSE, MAE, R2, and Spearman
+correlation—demonstrating superior accuracy in both abso-
+lute prediction and ranking quality.
+31848
+
+[[page 7]]
+0 10 20 30 40 50 60
+Number of Evaluated Agents
+0.40
+0.45
+0.50
+0.55
+0.60
+0.65
+0.70
+0.75
+0.80
+0.85
+Success Rate
+AgentSwift
+w/o uncertainty
+w/o MCTS
+0 10 20 30 40 50 60
+Number of Evaluated Agents
+0.40
+0.45
+0.50
+0.55
+0.60
+0.65
+0.70
+0.75
+0.80
+0.85
+Success Rate
+AgentSwift
+Full evaluation
+GPT-4o prediction
+Figure 4: Left: search trajectory of different search strategies on Alfworld: AgentSwift, w/o uncertainty, and w/o MCTS. Right:
+search trajectory of different evaluate method on Alfworld: AgentSwift, gpt-4o prediction, and full evaluation.
+Hyperparameter Alfworld
+α = 2.0 0.784
+α = 3.0 (default) 0.806
+α = 4.0 0.813
+α = 5.0 0.799
+λ = 0.1 0.768
+λ = 0.2 0.795
+λ = 0.3 (default) 0.806
+λ = 0.4 0.784
+β = 0.2 0.793
+β = 0.3 0.785
+β = 0.4 (default) 0.806
+β = 0.5 0.801
+Table 3: Sensitivity analysis of hyperparametersα,λ, andβ
+on Alfworld benchmarks. Performance is robust across dif-
+ferent settings.
+Analysis of Search Strategy. Figure 4 (Left) shows that
+removing MCTS or uncertainty flattens search trajectories
+on AlfWorld; MCTS ensures hierarchical exploration, while
+uncertainty prevents over-exploitation. Comparing evalu-
+ation strategies (Right), our value model accelerates im-
+provement over GPT-4o few-shot and full evaluation, which
+wastes budget on poor agents. These results underscore the
+critical role of accurate value estimation and selective eval-
+uation in efficient agent discovery.
+Model-Agnostic. To assess the transferability of discov-
+ered agents across different LLMs, we perform agent search
+using gpt-4o-mini and then directly evaluate the result-
+ing agent architectures on other models. Our framework
+demonstrates strong cross-model transferability, as detailed
+in the table presented in the Appendix.
+Hyperparameter Sensitivity. We analyze the sensitivity
+of our search strategy’s key hyperparameters: α, λ, and β.
+Our default configuration uses α = 3.0, λ = 0.3, and
+β = 0.4. As shown in Table 3, we varied each parame-
+ter individually while holding the others constant, evaluat-
+ing performance on the Alfworld benchmarks. The results
+demonstrate that AgentSwift is robust to variations in these
+5 10 20 30 50 100 150 220
+Number of Labeled Examples for Adaptation
+0.00
+0.02
+0.04
+0.06
+0.08
+0.10
+0.12Mean Squared Error (MSE)
+Value Model Generalization Performance on M3ToolEval
+AgentSwift
+gpt-4o few shot
+AgentSwift Oracle (Full Dataset)
+Figure 5: Performance comparison on M3ToolEval under
+few-shot adaptation.
+hyperparameters, maintaining strong performance across a
+range of values.
+Generalization Analysis
+We evaluate generalization on the unseen M3ToolEval
+benchmark. Figure 5 shows that with only 30 labeled exam-
+ples, our model approaches oracle performance, demonstrat-
+ing remarkable sample efficiency. This success stems from
+our structured, compositional agent representation, which
+enables effective transfer learning even with minimal super-
+vision.
+Ablation Study
+To assess the contribution of each stage in our hierarchi-
+cal search strategy, we conduct ablations by individually re-
+moving the recombination, mutation, and refinement stages.
+More details are presented in Appendix.
+Conclusion
+We propose a unified framework combining a hierarchical
+search space—spanning workflows and functional compo-
+nents—with a value model and uncertainty-guided MCTS.
+This approach enables low-cost performance prediction and
+efficient, targeted exploration of the vast agent design space.
+31849
+
+[[page 8]]
+Acknowledgments
+This work was supported by the National Natural Sci-
+ence Foundation of China (Grant Nos. 62472241 and
+23IAA02114) and the Tsinghua-Toyota Joint Research In-
+stitute Cross-discipline Program (Toyota-Future City Simu-
+lator).
+References
+Achiam, J.; Adler, S.; Agarwal, S.; Ahmad, L.; Akkaya, I.;
+Aleman, F. L.; Almeida, D.; Altenschmidt, J.; Altman, S.;
+Anadkat, S.; et al. 2023. Gpt-4 technical report. arXiv
+preprint arXiv:2303.08774.
+Auer, P.; Cesa-Bianchi, N.; and Fischer, P. 2002. Finite-time
+analysis of the multiarmed bandit problem. Machine learn-
+ing, 47: 235–256.
+Brier, G. W. 1950. Verification of forecasts expressed in
+terms of probability. Monthly weather review, 78(1): 1–3.
+Brown, T.; Mann, B.; Ryder, N.; Subbiah, M.; Kaplan, J. D.;
+Dhariwal, P.; Neelakantan, A.; Shyam, P.; Sastry, G.; Askell,
+A.; et al. 2020. Language models are few-shot learners. Ad-
+vances in neural information processing systems, 33: 1877–
+1901.
+Chen, G.; Dong, S.; Shu, Y .; Zhang, G.; Sesay, J.; Karls-
+son, B. F.; Fu, J.; and Shi, Y . 2023a. AutoAgents: A
+Framework for Automatic Agent Generation.arXiv preprint
+arXiv:2309.17288.
+Chen, W.; Su, Y .; Zuo, J.; Yang, C.; Yuan, C.; Chan, C.-M.;
+Yu, H.; Lu, Y .; Hung, Y .-H.; Qian, C.; et al. 2023b. Agent-
+verse: Facilitating multi-agent collaboration and exploring
+emergent behaviors. In The Twelfth International Confer-
+ence on Learning Representations.
+Du, Y .; Li, S.; Torralba, A.; Tenenbaum, J. B.; and Mor-
+datch, I. 2023. Improving Factuality and Reasoning in Lan-
+guage Models through Multiagent Debate. arXiv preprint
+arXiv:2305.14325.
+Du, Y .; Wei, F.; and Zhang, H. 2024. Anytool: Self-
+reflective, hierarchical agents for large-scale api calls. arXiv
+preprint arXiv:2402.04253.
+Fernando, C.; Banarse, D.; Michalewski, H.; Osindero, S.;
+and Rockt ¨aschel, T. 2023. Promptbreeder: Self-referential
+self-improvement via prompt evolution. arXiv preprint
+arXiv:2309.16797.
+Ge, Y .; Hua, W.; Mei, K.; Tan, J.; Xu, S.; Li, Z.; Zhang,
+Y .; et al. 2024. Openagi: When llm meets domain experts.
+Advances in Neural Information Processing Systems, 36.
+Hu, S.; Lu, C.; and Clune, J. 2024. Automated design of
+agentic systems. arXiv preprint arXiv:2408.08435.
+Jiang, A.; Sablayrolles, A.; Mensch, A.; Bamford, C.; Chap-
+lot, D.; Casas, D.; Bressand, F.; Lengyel, G.; Lample, G.;
+Saulnier, L.; et al. 2024. Mistral 7B. arXiv 2023. arXiv
+preprint arXiv:2310.06825.
+Kandasamy, K.; Neiswanger, W.; Schneider, J.; Poczos, B.;
+and Xing, E. P. 2018. Neural architecture search with
+bayesian optimisation and optimal transport. Advances in
+neural information processing systems, 31.
+Khattab, O.; Singhvi, A.; Maheshwari, P.; Zhang, Z.; San-
+thanam, K.; Vardhamanan, S.; Haq, S.; Sharma, A.; Joshi,
+T. T.; Moazam, H.; et al. 2023. Dspy: Compiling declarative
+language model calls into self-improving pipelines. arXiv
+preprint arXiv:2310.03714.
+Kocsis, L.; and Szepesv ´ari, C. 2006. Bandit based monte-
+carlo planning. In European conference on machine learn-
+ing, 282–293. Springer.
+Liu, A.; Feng, B.; Xue, B.; Wang, B.; Wu, B.; Lu, C.; Zhao,
+C.; Deng, C.; Zhang, C.; Ruan, C.; et al. 2024. Deepseek-v3
+technical report. arXiv preprint arXiv:2412.19437.
+Ma, C.; Zhang, J.; Zhu, Z.; Yang, C.; Yang, Y .; Jin, Y .; Lan,
+Z.; Kong, L.; and He, J. 2024. AgentBoard: An Analytical
+Evaluation Board of Multi-turn LLM Agents.arXiv preprint
+arXiv:2401.13178.
+Madaan, A.; Tandon, N.; Gupta, P.; Hallinan, S.; Gao, L.;
+Wiegreffe, S.; Alon, U.; Dziri, N.; Prabhumoye, S.; Yang,
+Y .; et al. 2023. Self-refine: Iterative refinement with self-
+feedback. arXiv preprint arXiv:2303.17651.
+Maziarz, K.; Khorlin, A.; de Laroussilhe, Q.; and Ges-
+mundo, A. 2018. Evolutionary-Neural Hybrid Agents for
+Architecture Search. arXiv preprint arXiv:1811.09828.
+Nakano, R.; Hilton, J.; Balaji, S.; Wu, J.; Ouyang, L.; Kim,
+C.; Hesse, C.; Jain, S.; Kosaraju, V .; Saunders, W.; et al.
+2021. Webgpt: Browser-assisted question-answering with
+human feedback. arXiv preprint arXiv:2112.09332.
+Niu, B.; Song, Y .; Lian, K.; Shen, Y .; Yao, Y .; Zhang,
+K.; and Liu, T. 2025. Flow: A Modular Approach to
+Automated Agentic Workflow Generation. arXiv preprint
+arXiv:2501.07834.
+Park, J. S.; O’Brien, J.; Cai, C. J.; Morris, M. R.; Liang, P.;
+and Bernstein, M. S. 2023. Generative agents: Interactive
+simulacra of human behavior. In Proceedings of the 36th
+annual acm symposium on user interface software and tech-
+nology, 1–22.
+Qian, C.; Xie, Z.; Wang, Y .; Liu, W.; Dang, Y .; Du, Z.;
+Chen, W.; Yang, C.; Liu, Z.; and Sun, M. 2024. Scal-
+ing large-language-model-based multi-agent collaboration.
+arXiv preprint arXiv:2406.07155.
+Qiao, S.; Zhang, N.; Fang, R.; Luo, Y .; Zhou, W.; Jiang,
+Y . E.; Lv, C.; and Chen, H. 2024. AutoAct: Automatic
+agent learning from scratch for QA via self-planning. arXiv
+preprint arXiv:2401.05268.
+Qin, S.; Kadlecov ´a, G.; Pil ´at, M.; Cohen, S. B.; Neruda,
+R.; Crowley, E. J.; Lukasik, J.; and Ericsson, L. 2025.
+Transferrable Surrogates in Expressive Neural Architecture
+Search Spaces. arXiv preprint arXiv:2504.12971.
+Qin, Y .; Liang, S.; Ye, Y .; Zhu, K.; Yan, L.; Lu, Y .; Lin, Y .;
+Cong, X.; Tang, X.; Qian, B.; et al. 2023. Toolllm: Facil-
+itating large language models to master 16000+ real-world
+apis. arXiv preprint arXiv:2307.16789.
+Radford, A.; Narasimhan, K.; Salimans, T.; Sutskever, I.;
+et al. 2018. Improving language understanding by gener-
+ative pre-training.
+Radford, A.; Wu, J.; Child, R.; Luan, D.; Amodei, D.;
+Sutskever, I.; et al. 2019. Language models are unsupervised
+multitask learners. OpenAI blog, 1(8): 9.
+31850
+
+[[page 9]]
+Real, E.; Aggarwal, A.; Huang, Y .; and Le, Q. V . 2019. Reg-
+ularized evolution for image classifier architecture search. In
+Proceedings of the aaai conference on artificial intelligence,
+volume 33, 4780–4789.
+Romera-Paredes, B.; Barekatain, M.; Novikov, A.; Balog,
+M.; Kumar, M. P.; Dupont, E.; Ruiz, F. J.; Ellenberg, J. S.;
+Wang, P.; Fawzi, O.; et al. 2024. Mathematical discoveries
+from program search with large language models. Nature,
+625(7995): 468–475.
+Schick, T.; Dwivedi-Yu, J.; Dess`ı, R.; Raileanu, R.; Lomeli,
+M.; Hambro, E.; Zettlemoyer, L.; Cancedda, N.; and
+Scialom, T. 2023. Toolformer: Language models can teach
+themselves to use tools. Advances in Neural Information
+Processing Systems, 36: 68539–68551.
+Shang, Y .; Li, Y .; Xu, F.; and Li, Y . 2024a. DefInt:
+A Default-interventionist Framework for Efficient Reason-
+ing with Hybrid Large Language Models. arXiv preprint
+arXiv:2402.02563.
+Shang, Y .; Li, Y .; Zhao, K.; Ma, L.; Liu, J.; Xu, F.; and Li, Y .
+2024b. Agentsquare: Automatic llm agent search in modular
+design space. arXiv preprint arXiv:2410.06153.
+Shen, Y .; Song, K.; Tan, X.; Li, D.; Lu, W.; and Zhuang,
+Y . 2023. Hugginggpt: Solving ai tasks with chatgpt and its
+friends in hugging face. Advances in Neural Information
+Processing Systems, 36: 38154–38180.
+Shridhar, M.; Yuan, X.; Cote, M.-A.; Bisk, Y .; Trischler, A.;
+and Hausknecht, M. 2021. ALFWorld: Aligning Text and
+Embodied Environments for Interactive Learning. In Inter-
+national Conference on Learning Representations.
+Wang, G.; Xie, Y .; Jiang, Y .; Mandlekar, A.; Xiao, C.;
+Zhu, Y .; Fan, L.; and Anandkumar, A. 2024. V oyager: An
+Open-Ended Embodied Agent with Large Language Mod-
+els. Transactions on Machine Learning Research.
+Wei, J.; Wang, X.; Schuurmans, D.; Bosma, M.; Xia, F.;
+Chi, E.; Le, Q. V .; Zhou, D.; et al. 2022. Chain-of-
+thought prompting elicits reasoning in large language mod-
+els. Advances in Neural Information Processing Systems,
+35: 24824–24837.
+Wen, L.; Fu, D.; Li, X.; Cai, X.; MA, T.; Cai, P.; Dou, M.;
+Shi, B.; He, L.; and Qiao, Y . 2024. DiLu: A Knowledge-
+Driven Approach to Autonomous Driving with Large Lan-
+guage Models. In The Twelfth International Conference on
+Learning Representations.
+White, C.; Neiswanger, W.; and Savani, Y . 2021. Bananas:
+Bayesian optimization with neural architectures for neural
+architecture search. In Proceedings of the AAAI conference
+on artificial intelligence, volume 35, 10293–10301.
+Xi, Z.; Ding, Y .; Chen, W.; Hong, B.; Guo, H.; Wang, J.;
+Yang, D.; Liao, C.; Guo, X.; He, W.; et al. 2024. Agent-
+Gym: Evolving Large Language Model-based Agents across
+Diverse Environments. arXiv preprint arXiv:2406.04151.
+Xie, J.; Zhang, K.; Chen, J.; Zhu, T.; Lou, R.; Tian, Y .; Xiao,
+Y .; and Su, Y . 2024. TravelPlanner: A Benchmark for Real-
+World Planning with Language Agents. In Forty-first Inter-
+national Conference on Machine Learning.
+Yang, A.; Yang, B.; Zhang, B.; Hui, B.; Zheng, B.; Yu, B.;
+Li, C.; Liu, D.; Huang, F.; Wei, H.; et al. 2024a. Qwen2. 5
+technical report. arXiv preprint arXiv:2412.15115.
+Yang, C.; Wang, X.; Lu, Y .; Liu, H.; Le, Q. V .; Zhou, D.;
+and Chen, X. 2024b. Large Language Models as Optimiz-
+ers. In The Twelfth International Conference on Learning
+Representations.
+Yao, S.; Yu, D.; Zhao, J.; Shafran, I.; Griffiths, T. L.; Cao,
+Y .; and Narasimhan, K. 2023. Tree of thoughts: Deliberate
+problem solving with large language models. arXiv preprint
+arXiv:2305.10601.
+Yuan, S.; Song, K.; Chen, J.; Tan, X.; Li, D.; and Yang,
+D. 2024. EvoAgent: Towards Automatic Multi-Agent
+Generation via Evolutionary Algorithms. arXiv preprint
+arXiv:2406.14228.
+Zhang, G.; Chen, K.; Wan, G.; Chang, H.; Cheng, H.;
+Wang, K.; Hu, S.; and Bai, L. 2025a. EvoFlow: Evolv-
+ing Diverse Agentic Workflows On The Fly. arXiv preprint
+arXiv:2502.07373.
+Zhang, G.; Niu, L.; Fang, J.; Wang, K.; Bai, L.; and Wang,
+X. 2025b. Multi-agent Architecture Search via Agentic Su-
+pernet. arXiv preprint arXiv:2502.04180.
+Zhang, G.; Yue, Y .; Sun, X.; Wan, G.; Yu, M.; Fang, J.;
+Wang, K.; Chen, T.; and Cheng, D. 2024a. G-designer: Ar-
+chitecting multi-agent communication topologies via graph
+neural networks. arXiv preprint arXiv:2410.11782.
+Zhang, J.; Xiang, J.; Yu, Z.; Teng, F.; Chen, X.; Chen, J.;
+Zhuge, M.; Cheng, X.; Hong, S.; Wang, J.; et al. 2024b.
+Aflow: Automating agentic workflow generation. arXiv
+preprint arXiv:2410.10762.
+Zhuge, M.; Wang, W.; Kirsch, L.; Faccio, F.; Khizbullin, D.;
+and Schmidhuber, J. 2024. GPTSwarm: Language Agents as
+Optimizable Graphs. In Forty-first International Conference
+on Machine Learning.
+Zoph, B.; and Le, Q. V . 2016. Neural architec-
+ture search with reinforcement learning. arXiv preprint
+arXiv:1611.01578.
+31851

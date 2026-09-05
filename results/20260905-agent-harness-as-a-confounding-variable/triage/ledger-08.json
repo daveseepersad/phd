@@ -1,0 +1,360 @@
+[
+ {
+  "order": 110,
+  "status": "read",
+  "read_order": 99,
+  "concepts": [
+   "model-versus-scaffold",
+   "reflection-planning",
+   "confounding-attribution",
+   "cost-latency",
+   "evaluation-validity",
+   "statistical-method",
+   "failure-attribution"
+  ],
+  "extraction": {
+   "study_type": "empirical-experiment",
+   "framework": null,
+   "agent_count": "single",
+   "topology": "single-agent generator-discriminator framework in which a planning method (re-ranking, iterative correction, or tree search) mediates the two components",
+   "benchmark": "Spider and Bird (text-to-SQL parsing, 400 and 300 sampled dev examples) and GSM8K (500 examples, program-of-thought)",
+   "baseline": "Re-ranking as the simple planning-method baseline, plus greedy generation with no planning, both using the identical CodeLlama-13B-Instruct generator and the identical discriminator",
+   "key_results": "With an oracle discriminator, advanced planning methods only beat re-ranking once discrimination accuracy reaches about 0.9. Adding non-oracle environmental observations (executability check plus execution results) raised discrimination accuracy by up to 25.4 points on Spider, 30.2 on Bird and 8.4 on GSM8K, and improved end-to-end accuracy with no change to the generator or planning method (Spider re-ranking 61.5 to 70.3; Bird iterative correction 13.0 to 26.3). Tree search was 10-20x slower yet on Spider scored 67.5 versus 70.3 for re-ranking and on Bird 21.7 versus 23.7. McNemar's test found no significant difference between re-ranking and the advanced methods with LLM-based discriminators, and none on GSM8K even with the oracle discriminator. Error analysis attributed 50 percent or more of the cases where re-ranking beat an advanced method to discrimination errors rather than to the planning method.",
+   "limitations": "The authors state that they only study instruction-tuned code LLMs and suggest future ablation of instruction tuning; they restrict plans to formal languages (SQL and Python) rather than natural-language plans, which would add an extra semantic-parsing step; and they deliberately exclude the generator's influence (for example generator perplexity) because preliminary experiments gave mixed results, while acknowledging the generator can also actively affect planning methods.",
+   "venue_type": "conference",
+   "harness_controlled": "partial",
+   "varied_factor": "scaffold"
+  },
+  "evidence_notes": {
+   "summary": "This paper is close to a controlled experiment on harness attribution: the generator LLM, sampling budget and prompts are held fixed while the planning method and the discriminator are varied one factor at a time. It shows that the choice of scaffold (re-ranking versus iterative correction versus tree search) is largely dominated by the quality of a different harness component, the discriminator, and that with realistic LLM discriminators the more elaborate scaffolds do not beat the simplest one. Most tellingly, the authors improve end-to-end accuracy substantially by changing only the discriminator's environmental feedback, explicitly without touching the generator or the planning method, which localises a large share of reported performance to the harness rather than the model. The efficiency numbers matter for RQ1 too: tree search costs 10-20x more inference time for negligible or negative accuracy gains. The paper also uses McNemar's test to show several apparent scaffold gains are not statistically distinguishable.",
+   "quotes": [
+    {
+     "text": "After enhancing the discriminators with two en-\nvironmental observations (Section 6.2), we effec-\ntively improve the agents’ performance without any\nmodifications to the generator or the planning meth-\nods.",
+     "page": 7
+    },
+    {
+     "text": "By cal-\nculating the average inference time per example\n(Figure 3), we find that our implementation of tree\nsearch is at least 10–20 times slower than the other\ntwo planning methods",
+     "page": 6
+    },
+    {
+     "text": "For these reasons, iterative correction and tree\nsearch cannot gain decent improvement over re-\nranking with the same LLM-based discriminator.",
+     "page": 9
+    }
+   ]
+  }
+ },
+ {
+  "order": 111,
+  "status": "read",
+  "read_order": 100,
+  "concepts": [
+   "harness-scaffold",
+   "model-versus-scaffold",
+   "topology-comparison",
+   "benchmark-design",
+   "evaluation-validity",
+   "failure-attribution",
+   "environment-coupling",
+   "metric-definition"
+  ],
+  "extraction": {
+   "study_type": "empirical-experiment",
+   "framework": "SeeAct-ATA and PinATA",
+   "agent_count": "multi",
+   "topology": "PinATA uses an orchestrator-actor-assertor decomposition with shared memory; SeeAct-ATA is a single-prompt single-agent adaptation of SeeAct",
+   "benchmark": "A new autonomous test agent benchmark of 113 natural-language end-to-end test cases (62 passing written by four professional testers, 51 derived failing) over three self-hosted WebArena/VisualWebArena applications (Classifieds, Postmill, OneStopShop)",
+   "baseline": "SeeAct-ATA, a deliberately minimal single-prompt adaptation of the SeeAct web agent, plus the verdicts of professional human testers as ground truth",
+   "key_results": "Holding the model fixed at GPT-4o, PinATA reached average true accuracy 0.61 versus 0.40 for SeeAct-ATA (over 50 percent relative improvement), SMER 0.11 versus 0.28, and sensitivity 0.88 versus 0.48, while specificity was comparable (0.57 versus 0.59). Holding the scaffold fixed at PinATA and swapping the LLM, true accuracy was 0.61 (GPT-4o), 0.58 (Sonnet) and 0.62 (Gemini) and SMER 0.11 / 0.12 / 0.10, a roughly 6 percent spread; only sensitivity differed noticeably (Sonnet 0.94 versus Gemini 0.85). 26 of 113 test cases were misaligned with the human verdict regardless of which LLM was used, and the qualitative taxonomy attributed 6 of those 26 to Action Capacity (limits of the browser-interaction framework), 6 to Action Versatility, 5 to user-interface observability, 4 to assertion verifiability and 5 to test case conformity.",
+   "limitations": "The authors report construct-validity risk because an agent and a human can reach the same verdict by chance (type-3 errors), and their compensating step-index metrics cannot be applied to passing tests; internal validity depends on the authors' own manual test execution and on subjective card-sorting of failure categories; external validity is limited by a small number of foundational, non-fine-tuned LLM backbones, by setting temperature to the minimum which may have degraded answer quality without a broader hyperparameter search, and by the small number of applications and tests, and they cannot guarantee the limitation taxonomy is complete.",
+   "venue_type": "journal",
+   "harness_controlled": "yes",
+   "varied_factor": "scaffold, then model with the scaffold held fixed"
+  },
+  "evidence_notes": {
+   "summary": "This is the single most direct RQ1 study in this batch because it runs both halves of the attribution experiment on the same benchmark. With the model pinned to GPT-4o, replacing a thin single-prompt scaffold with an orchestrator-actor-assertor scaffold with retry produced a greater than 50 percent relative gain in true accuracy; with the scaffold pinned to PinATA, swapping across GPT-4o, Sonnet and Gemini moved true accuracy by only about 6 percent. That contrast implies the harness, not the backbone model, explains most of the reported difference in this domain. The qualitative analysis reinforces the point: 26 cases failed under every model, and the largest single failure category is explicitly attributed to limits of the technical action framework (missing tab, print and settings actions) rather than to model reasoning. The paper also shows why harness effects are easy to miss, by introducing type-3-error metrics that reveal correct verdicts reached for the wrong reason.",
+   "quotes": [
+    {
+     "text": "First, we compare the SeeAct-ATA with PinATA, using GPT-4o, given its strong\nperformance. As expected, our results indicate that PinATA outperforms SeeAct-ATA, achieving\na 50% increase in true accuracy.",
+     "page": 13
+    },
+    {
+     "text": "Our results reveal only minor differences across the three LLMs (see Table 4), with no single\nmodel emerging as significantly superior.",
+     "page": 14
+    },
+    {
+     "text": "This category encompasses errors caused by limitations in\nthe technical framework for interacting with the web browser, which restrict the agent’s ability\nto perform certain actions.",
+     "page": 15
+    }
+   ]
+  }
+ },
+ {
+  "order": 112,
+  "status": "read",
+  "read_order": 101,
+  "concepts": [
+   "harness-scaffold",
+   "tool-schema",
+   "retry-recovery",
+   "model-versus-scaffold",
+   "reproducibility",
+   "benchmark-design",
+   "evaluation-validity",
+   "observability-tracing"
+  ],
+  "extraction": {
+   "study_type": "benchmark",
+   "framework": "BrowserGym and AgentLab, with GenericAgent as the default agent and AgentXRay for trace inspection",
+   "agent_count": "single",
+   "topology": "single-agent, a modular dynamic-prompting GenericAgent over a standardised observation and high-level action space",
+   "benchmark": "MiniWoB(++), WebArena, VisualWebArena, WorkArena L1/L2/L3, WebLINX and AssistantBench, unified behind one interface",
+   "baseline": "Cross-model comparison inside the same GenericAgent configuration, plus previously published GenericAgent-style results from Boisvert et al. (2024) that used a very similar implementation with an older GPT-4o checkpoint",
+   "key_results": "Using one fixed agent configuration across six models and eight benchmark settings, Claude-3.5-Sonnet led almost everywhere (WorkArena L2 39.1 +/- 3.2 versus 8.5 +/- 1.8 for GPT-4o and 14.9 for o1-mini; WebArena 36.2 versus 31.4), except VisualWebArena where GPT-4o was better (26.7 versus 21.0). Llama-3.1-405B was competitive with or better than GPT-4o-mini. Against the earlier published numbers with a very similar agent implementation, GPT-4o moved from 23.5 to 31.4 on WebArena and from 3.8 to 8.5 on WorkArena L2, which the authors attribute to the newer checkpoint while also raising benchmark contamination as an alternative explanation. The best agent scored only 6.9 on AssistantBench against a 27 leaderboard high, which the authors attribute to their agent not being specialised for information retrieval. Total spend was 894.80 USD for Claude and 971.12 USD for o1-mini across benchmarks.",
+   "limitations": "The authors state that stochasticity and external factors still limit reproducibility, including localisation, time zone and default language differences, operating system and browser rendering variation, and dynamic elements such as advertisements; they note risks of open-web action, robot detection mechanisms such as CAPTCHA and IP rate limiting, agent collisions on shared databases that force WebArena and VisualWebArena to be run one agent at a time, and a browser sync-loop mechanism that creates performance bottlenecks.",
+   "venue_type": "preprint",
+   "harness_controlled": "yes",
+   "varied_factor": "model"
+  },
+  "evidence_notes": {
+   "summary": "This paper is an explicit RQ2 example: it holds one agent implementation, one observation space and one action space fixed and swaps only the backbone model, and it names that design as one of three intended use cases for the ecosystem. It is also the clearest documentation in this batch of harness components that usually go unreported, including a retry policy that re-prompts the LLM up to four times on parsing errors before scoring the task as failed, a documented high-level action set, dynamic prompt shrinking to a token budget, and a table of prompting flags. The authors themselves confront the attribution problem when comparing their GPT-4o numbers against earlier published numbers obtained with a very similar agent, and they hedge between a model-capability explanation and a benchmark-contamination explanation, which shows how hard attribution is even for the same team. They further argue that single-benchmark evaluation gives only a partial answer to questions such as whether one LLM is a better web agent than another.",
+   "quotes": [
+    {
+     "text": "implements a retry functionality to overcome LLM\nside issues or parsing errors. In the case of a parsing error, the LLM is re-prompted and gets 4 attempts to\nproduce a parsable answer. After 4 consecutive parsing errors, the task is considered a failure.",
+     "page": 15
+    },
+    {
+     "text": "Since they\nwere using a very similar web agent implementation but an older model checkpoint, this suggests that the reasoning\ncapabilities of GPT-4o have greatly increased thanks to the additional training performed for this new checkpoint.",
+     "page": 16
+    },
+    {
+     "text": "the comparison of different models (LLMs / VLMs) in their ability to solve web agent tasks, by switching\nthe backbone model in a state-of-the-art web agent implementation.",
+     "page": 3
+    }
+   ]
+  }
+ },
+ {
+  "order": 113,
+  "status": "read",
+  "read_order": 102,
+  "concepts": [
+   "harness-scaffold",
+   "model-versus-scaffold",
+   "prompt-sensitivity",
+   "tool-schema",
+   "reproducibility",
+   "benchmark-design",
+   "cost-latency",
+   "evaluation-validity"
+  ],
+  "extraction": {
+   "study_type": "benchmark",
+   "framework": "CORE-Agent, a task-specific variant of AutoGPT, evaluated against unmodified AutoGPT inside a per-task virtual-machine evaluation harness",
+   "agent_count": "single",
+   "topology": "single-agent AutoGPT loop with shell, file and vision-language-model tools",
+   "benchmark": "CORE-Bench (270 tasks from 90 CodeOcean capsules, 181 task questions, three difficulty levels: Easy, Medium, Hard)",
+   "baseline": "Largely unmodified general-purpose AutoGPT running the same GPT-4o and GPT-4o-mini backends under the same 4 USD per-task cost limit",
+   "key_results": "Full 2x2 over agent scaffold and model. CORE-Agent scored 60.00 / 57.78 / 21.48 percent on Easy / Medium / Hard with GPT-4o and 44.44 / 32.59 / 16.30 with GPT-4o-mini, while AutoGPT scored 35.56 / 37.78 / 6.67 with GPT-4o and 8.89 / 2.22 / 2.22 with GPT-4o-mini. Holding the model fixed, prompt hints plus a programmatic report.json format check lifted Easy from 35.6 to 60.60 percent with GPT-4o and from 8.9 to 44.44 percent with GPT-4o-mini, so the scaffold delta was far larger for the weaker model. Raising the cost limit from 4 to 10 USD moved GPT-4o from 26 to 31 percent on Hard train tasks and left GPT-4o-mini unchanged. pass@1 22.2 versus pass@3 31.1 and pass^3 8.89 on Hard show large run-to-run instability. The parallel VM harness cut a sequential 20-plus-day evaluation to about two hours.",
+   "limitations": "The authors note that the ten capsule selection criteria mean not all real-world papers would qualify, so the benchmark is a deliberately feasible subset; AutoGPT was run only once per configuration because of cost, unlike CORE-Agent which was run three times; benchmark tasks come only from CodeOcean capsules already known to be reproducible, so irreproducible papers are excluded by construction; and they report that better guardrails are needed because the agent attempted to browse and create an account on CodeOcean, prompting them to restrict that domain in the released harness.",
+   "venue_type": "preprint",
+   "harness_controlled": "yes",
+   "varied_factor": "scaffold (prompt hints and a programmatic output-format check) and model"
+  },
+  "evidence_notes": {
+   "summary": "CORE-Bench provides the cleanest 2x2 attribution table in this batch: for each fixed LLM the authors compare a generalist AutoGPT against a lightly customised CORE-Agent, and for each fixed agent they compare two models. The scaffold effect is very large and asymmetric, taking GPT-4o-mini from 8.89 to 44.44 percent on Easy and GPT-4o from 35.56 to 60.00, meaning that a comparison of these two models under only one of the two scaffolds would yield a wildly different conclusion about the model gap. Crucially the modifications were tiny by the authors' own account, being prompt hints plus a programmatic check that the report file has the right keys, and took only a few days of work, which directly supports the RQ1 premise that unreported harness detail can dominate reported differences. The paper also reports the harness as an object in its own right, describing an isolated per-task VM, environment resets, cost limits and tool-output truncation and shell settings that had to be fixed before the agent could function. The pass@k versus pass^k gap adds a statistical caution: a single run attributes to configuration what is partly stochastic.",
+   "quotes": [
+    {
+     "text": "a few modifications to the prompt and the programmatic check of the output format boosted the performance\non CORE-Bench-Easy performance from 35.6% to 60.60%. The differences were even starker when using\nGPT-4o-mini: performance improved from 8.9% to 44.44%.",
+     "page": 10
+    },
+    {
+     "text": "Our baseline results show that while automating computational reproducibility is hard, simple task-specific\nmodifications to existing general-purpose agents can already help increase accuracy.",
+     "page": 13
+    },
+    {
+     "text": "The results suggests that the underlying stochasticity of the agent caused it to not consistently\nsolve the same tasks.",
+     "page": 21
+    }
+   ]
+  }
+ },
+ {
+  "order": 114,
+  "status": "read",
+  "read_order": 103,
+  "concepts": [
+   "harness-scaffold",
+   "model-versus-scaffold",
+   "reflection-planning",
+   "benchmark-design",
+   "evaluation-validity",
+   "statistical-method",
+   "confounding-attribution",
+   "cost-latency"
+  ],
+  "extraction": {
+   "study_type": "benchmark",
+   "framework": "AblationBench, with LM-PLANNER and AGENT-PLANNER (SWE-agent) planners and LMJUDGE and AGENTJUDGE evaluators",
+   "agent_count": "single",
+   "topology": "a single ReAct-style SWE-agent in a container with file tools, compared against a single chain-of-thought LM call with full context",
+   "benchmark": "AblationBench, comprising AuthorAblation (83 papers, 230 annotated ablations) and ReviewerAblation (350 ICLR submissions and official reviews), plus a JudgeEval set for judge quality",
+   "baseline": "LM-PLANNER chain-of-thought prompting run with the same set of frontier models, and a human baseline of ten machine-learning PhD participants on AuthorAblation",
+   "key_results": "With the model held constant and only the scaffolding changed, LM-PLANNER matched or beat AGENT-PLANNER for every model tested: overall F1 0.35 versus 0.35 for GPT-5.4 but 0.31 versus 0.17 for GPT-OSS-120B, 0.30 versus 0.19 for MiniMax-M2.5 and 0.26 versus 0.23 for Llama 3.1 405B. On AuthorAblation alone, GPT-OSS-120B fell from F1@5 0.37 under the CoT scaffold to 0.11 under the agent scaffold. The same pattern held for the evaluators, where AGENTJUDGE did not outperform LMJUDGE (majority-vote kappa 0.62 versus 0.57). There was no correlation between agent trajectory length and F1 (Spearman 0.07). Humans reached F1@5 0.66 versus 0.43 for GPT-5.4 on the same ten papers, and models recovered removal-type ablations far more often than modification-type ones.",
+   "limitations": "The authors state two key limitations of the evaluation framework: it relies on LM-based judges which, although achieving strong classification performance, still leave room for improvement, and models may produce meaningful and feasible ablations that are absent from the ground truth and therefore scored as wrong.",
+   "venue_type": "workshop",
+   "harness_controlled": "yes",
+   "varied_factor": "scaffold"
+  },
+  "evidence_notes": {
+   "summary": "AblationBench runs the same frontier models under two scaffoldings, a single chain-of-thought call and a ReAct-style SWE-agent, for both the planner role and the judge role, which makes it a direct harness-versus-model experiment. The result is a strong negative for scaffold complexity: the agent harness never wins and for weaker models it is catastrophic, dropping GPT-OSS-120B from 0.37 to 0.11 F1@5 on AuthorAblation. That model-dependent scaffold interaction is exactly the confound RQ1 targets, because a leaderboard built on the agent scaffold would rank these models very differently from one built on the CoT scaffold. The authors also report no correlation between trajectory length and quality, which weakens the assumption that more agentic steps buy more capability. Finally, because the scoring itself is an LM judge whose scaffold was also varied, the paper illustrates that the harness confound extends into the measurement instrument, not just the system under test.",
+   "quotes": [
+    {
+     "text": "Despite the ability of agents to iterate over files and\nperform multi-step reasoning, a single LM call with full\ncontext and one CoT step yields better results, suggesting\nthat current agents are not well aligned with this task.",
+     "page": 8
+    },
+    {
+     "text": "However, we observe no correlation\nbetween agent trajectory length and F1 score (Spearman:\n0.07).",
+     "page": 8
+    },
+    {
+     "text": "CoT prompting\noutperforms agent-based methods in both accuracy and cost.",
+     "page": 8
+    }
+   ]
+  }
+ },
+ {
+  "order": 115,
+  "status": "read",
+  "read_order": 104,
+  "concepts": [
+   "evaluation-validity",
+   "harness-scaffold",
+   "observability-tracing",
+   "failure-attribution",
+   "deployment-production",
+   "metric-definition",
+   "governance-safety",
+   "reproducibility"
+  ],
+  "extraction": {
+   "study_type": "framework-proposal",
+   "framework": "EDDOps, an evaluation-driven development and operations process model plus reference architecture with an Evaluation Backbone and Control Loop",
+   "agent_count": "n/a",
+   "topology": "n/a",
+   "benchmark": null,
+   "baseline": "Test-Driven Development and Behaviour-Driven Development as process baselines, and prior Responsible AI and foundation-model agent reference architectures as architectural baselines",
+   "key_results": "A multivocal literature review of 134 academic and 27 grey sources found academic evaluation concentrated at pre-deployment (125/134, 93.28 percent versus 12/27, 44.44 percent for grey sources), dominated by end-to-end aggregate metrics (124/134, 92.54 percent versus 3/27 grey), focused on the model level rather than the system level (89/134, 66.42 percent model-level, 29/134 system-level, 16/134 integrated, versus 15/27 integrated for grey sources), almost entirely static rather than adaptive (131/134, 97.76 percent), checkpoint-only rather than change-driving (95/134, 70.90 percent versus 5/27 grey), and reliant on AI-only judges (118/134, 88.06 percent). The paper reports no new agent accuracy numbers.",
+   "limitations": "The authors state that transferability to specific domains depends on context, that the MLR serves only as a derivation base with broader multi-domain replication left to future work, and that validation is analytical and instantiation-based rather than experimental because the artefacts are processual and architectural, so quantitative metrics such as task accuracy are not directly applicable; in the tax-assistant caselet the online controls such as shadow and canary rollout were not exercised.",
+   "venue_type": "preprint",
+   "harness_controlled": "n/a",
+   "varied_factor": "none"
+  },
+  "evidence_notes": {
+   "summary": "This paper contributes a measured, corpus-level argument for RQ1 rather than a controlled experiment: across 134 academic sources it finds that two thirds evaluate at the model level and only 12 percent evaluate models and systems jointly, and it argues explicitly that isolating prompts and responses hides orchestration, tool behaviour, dependencies and error propagation, so models that look strong in isolation may underperform once embedded in a workflow. That is a literature-scale statement of the harness confound. It also names the evaluation harness as an engineering lever that can be tuned independently of model weights, through curricula, richer diagnostics and dense per-step signals, which is precisely the kind of variation that goes unreported in configuration comparisons. Because 97.76 percent of academic sources use static suites and 92.54 percent report only end-to-end aggregates, the corpus provides indirect evidence that most published agent comparisons lack the intermediate instrumentation needed to attribute a difference to harness versus model. The paper proposes a process model and reference architecture with per-slice, step-level and trajectory-level reporting as the remedy, but reports no comparative performance numbers of its own.",
+   "quotes": [
+    {
+     "text": "This treats the evaluation harness itself as an engineering lever during\ndevelopment time and sits at the system or pipeline level, because it modifies interfaces, curricula, and guardrails around\nthe model rather than only tuning the weights.",
+     "page": 4
+    },
+    {
+     "text": "Testing prompts and responses in isolation does not capture\norchestration effects, tool behaviour, external dependencies, or error propagation across steps, so models that\nscore well in isolation may still underperform once embedded in workflows.",
+     "page": 10
+    },
+    {
+     "text": "As shown in Fig. 4, academic sources primarily evaluate at the model level (89/134, 66.42%), with fewer at the\nsystem level (29/134, 21.64%) and a smaller share using integrated evaluations (16/134, 11.94%).",
+     "page": 9
+    }
+   ]
+  }
+ },
+ {
+  "order": 116,
+  "status": "read",
+  "read_order": 105,
+  "concepts": [
+   "topology-comparison",
+   "harness-scaffold",
+   "retry-recovery",
+   "model-versus-scaffold",
+   "failure-attribution",
+   "deployment-production",
+   "metric-definition",
+   "evaluation-validity"
+  ],
+  "extraction": {
+   "study_type": "framework-proposal",
+   "framework": "MABC (multi-Agent Blockchain-inspired Collaboration)",
+   "agent_count": "multi",
+   "topology": "seven specialised agents (Alert Receiver, Process Scheduler, Data Detective, Dependency Explorer, Probability Oracle, Fault Mapper, Solution Engineer) on a decentralised Agent Chain, coordinated by a Process Scheduler with blockchain-inspired weighted voting and a 20-step Agent Workflow cap",
+   "benchmark": "The 2020 AIOps international challenge dataset and a newly created Train-Ticket dataset with faults injected by ChaosBlade",
+   "baseline": "Decision Tree, TraceAnomaly and MEPFL as unsupervised baselines, plus ReAct implemented in LangChain with GPT-3.5-Turbo and GPT-4-Turbo",
+   "key_results": "Table 4 reports MABC with GPT-4-Turbo at RA 54.4 / PA 48.2 on Train-Ticket and RA 45.5 / PA 39.3 on AIOps for an average of 46.9, against ReAct with GPT-4-Turbo at 38.5 and MEPFL at 30.7. Holding the framework fixed and swapping the backbone gives averages of 46.9 (GPT-4-Turbo), 42.2 (GPT-3.5-Turbo) and 42.5 (Llama-3-8B-Instruct). Decision efficiency: pass rate 73.0 / 68.8 and average path length 10.4 / 11.7 for MABC with GPT-4-Turbo versus 47.1 / 44.2 and 13.9 / 14.3 for ReAct. The ablation with GPT-4-Turbo held fixed gives full MABC 54.4/48.2 on Train-Ticket, 46.2/38.7 without Agent Workflow, 38.4/33.0 without multi-agent, and 44.8/39.9 without voting. Human R-Useful was 4.2 / 3.6 for MABC versus 2.4 / 2.3 for ReAct. Note that the running text of Section 3.5 claims an average score of 64.9 and baselines ranging from 16.0 to 26.7, which does not match Table 4.",
+   "limitations": "The authors state that MABC faces complexity and scalability challenges as the number of agents and alert events grows, producing higher computational overhead and longer processing times; that its effectiveness depends heavily on the accuracy and reliability of the data and models used and requires regular updates and validation; and that the blockchain-inspired voting mechanism can be cumbersome and time-consuming with frequent alerts and many agents, potentially delaying decision-making, with future work needed to detect and mitigate biases among agents.",
+   "venue_type": "preprint",
+   "harness_controlled": "partial",
+   "varied_factor": "topology"
+  },
+  "evidence_notes": {
+   "summary": "MABC is a topology-comparison paper whose ablation is partially harness-controlled: with the backbone pinned to GPT-4-Turbo the authors remove multi-agent decomposition, the Agent Workflow, and the voting layer in turn, and report that collapsing to a single agent causes the largest drop (54.4 to 38.4 RA on Train-Ticket). That is useful for RQ2 because it isolates topology from the model. However the harness is not held constant against the external baselines: MABC bundles a structured seven-role workflow, a 20-step termination cap, tool access and a re-answer-on-failed-vote retry loop, while the ReAct baseline has none of these, so the reported gap over ReAct conflates topology with several harness components at once. The paper also holds the framework fixed while swapping the base LLM, and the spread there (46.9 versus 42.2 versus 42.5 average) is smaller than the spread produced by the ablations, which points the same way as the other papers in this batch. One reporting caution for the evidence ledger: the Section 3.5 narrative cites an average score of 64.9 and a baseline range of 16.0 to 26.7 that do not correspond to any values in the paper's own results table.",
+   "quotes": [
+    {
+     "text": "However, our proposed MABC significantly out-\nperformed all the baseline models and ReAct with\nGPT-4-Turbo, achieving an impressive average\nscore of 64.9.",
+     "page": 7
+    },
+    {
+     "text": "Removing Agent Workflow significantly reduces\nperformance, indicating its crucial role. Limit-\ning the framework to a Single Agent results in\nthe lowest scores, severely diminishing its capa-\nbility for AIOps tasks.",
+     "page": 8
+    },
+    {
+     "text": "MABC faces challenges in complexity and scal-\nability as the number of agents and alert events\nincrease, leading to higher computational overhead\nand longer processing times",
+     "page": 9
+    }
+   ]
+  }
+ },
+ {
+  "order": 117,
+  "status": "read",
+  "read_order": 106,
+  "concepts": [
+   "harness-scaffold",
+   "model-versus-scaffold",
+   "prompt-sensitivity",
+   "reflection-planning",
+   "cost-latency",
+   "benchmark-design",
+   "confounding-attribution"
+  ],
+  "extraction": {
+   "study_type": "framework-proposal",
+   "framework": "AFLOW",
+   "agent_count": "single",
+   "topology": "a code-represented workflow of LLM-invoking nodes and reusable operators searched by a Monte Carlo Tree Search variant, with a separate optimizer LLM (Claude-3.5-Sonnet) and executor LLM",
+   "benchmark": "HumanEval, MBPP, MATH (617 level-5 problems), GSM8K, HotpotQA and DROP, each split 1:4 into validation and test",
+   "baseline": "IO, Chain-of-Thought, Self-Consistency CoT, MedPrompt, MultiPersona Debate and Self-Refine as manually designed workflows, plus the automated method ADAS, all executed with GPT-4o-mini on the same test split",
+   "key_results": "AFLOW averaged 80.3 across the six benchmarks versus 76.0 for the best manual method (CoT SC) and 67.2 for ADAS, a 5.7 percent gain over manual designs and 19.5 percent over the automated baseline, with the largest gains on MBPP (83.4 versus 53.4 for ADAS) and MATH (56.2 versus 35.4). Because every method was executed with GPT-4o-mini, the entire spread from 67.2 to 80.3 is attributable to workflow structure alone. Transfer experiments on HumanEval showed the workflow found with GPT-4o-mini scoring 94.7 on GPT-4o-mini, 93.9 on DeepSeek-V2.5, 96.2 on GPT-4o and 95.4 on Claude-3.5-Sonnet, while the workflow found with DeepSeek-V2.5 dropped to 90.8 on GPT-4o-mini. An ablation showed AFLOW still reached 93.1 percent on GSM8K without any predefined operators. AFLOW let smaller models beat GPT-4o at 4.55 percent of its inference cost.",
+   "limitations": "The paper has no dedicated limitations section. The authors do state that they simplify the search space by fixing the model, temperature and output format so that the search covers only prompts and code-represented edges, that they cap graph complexity at ten, that they scope the work to reasoning tasks with explicit numerical evaluation functions, and that a workflow searched with one executor model transfers less well to another, implying different models need different workflows.",
+   "venue_type": "conference",
+   "harness_controlled": "partial",
+   "varied_factor": "scaffold"
+  },
+  "evidence_notes": {
+   "summary": "AFLOW is the strongest single quantification of harness effect size in this batch, because every compared method, manual and automated, is executed with the same GPT-4o-mini on the same split, so the full 67.2 to 80.3 average spread is attributable to workflow structure rather than to the model. Notably ADAS, an automated scaffold, scores below plain IO prompting on average (67.2 versus 72.8), showing that harness changes can be strongly negative as well as positive. For RQ2 the most consequential finding is the transfer experiment: a workflow searched against one executor model degrades when moved to another, and the authors conclude that different language models require different workflows for optimal performance, which means harness and model are not separable additive factors but interact. Their own search procedure is an explicit statement of harness control, since they fix the model, temperature and output format and search only prompts and edges. The paper reports cost alongside accuracy, showing scaffold changes can let a weaker model dominate a stronger one on the cost-performance Pareto front.",
+   "quotes": [
+    {
+     "text": "Workflows optimized by AF LOW outperform all manually designed methods by an aver-\nage of 5.7% and surpass contemporary automatic workflow optimization work by 19.5%.",
+     "page": 8
+    },
+    {
+     "text": "This suggests that different language models require different workflows to\nachieve their optimal performance.",
+     "page": 8
+    },
+    {
+     "text": "we simplify the search space by fixing key parameters\nsuch as the model M, temperature τ, and format F . This simplification allows AF LOW to focus\nits search primarily on the code-represented edgesE and prompts.",
+     "page": 6
+    }
+   ]
+  }
+ }
+]

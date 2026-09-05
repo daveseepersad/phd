@@ -1,0 +1,1669 @@
+[[page 1]]
+Digital Object Identifier
+AgentFairBench: Do LLM Agents Discriminate
+When They Act?
+TRIVENI MORLA 1, ROHITH REDDY BELLIBAL TU1, MANPREET SINGH (MEMBER, IEEE) 2, AND
+MANMEET SINGH KAPOOR 3
+1Florida International University, Miami, FL 33199 USA (e-mail: tmorla@fiu.edu; rohithreddybc@gmail.com)
+2Boston University, Boston, MA 02215 USA (e-mail: manni@bu.edu)
+3Department of Computer Science and Engineering, Indian Institute of Technology Patna, Patna, Bihar, India (e-mail: manmeet_pa2503mth477@iitp.ac.in)
+Corresponding author: Manmeet Singh Kapoor (e-mail: manmeet_pa2503mth477@iitp.ac.in)
+ABSTRACTLarge language model (LLM) agents increasingly takeactions(screening applicants, recom-
+mending credit, triaging patients), yet fairness for LLMs is still measured by gradinganswers. We introduce
+AgentFairBench, a cheap, reproducible, multi-domain benchmark for demographic disparity in the actions of
+LLM agents. Grounded in a companion framework, the Bias Conduction Framework (BCF, restated here), it
+spans three regulator-anchored domains: hiring, lending, and medical triage. Synthetic, demographic-neutral
+profiles are evaluated in counterfactual matched sets that vary only a name-coded race×gender signal (in
+the Bertrand–Mullainathan tradition), under four agent scaffolds of increasing agency (direct, chain-of-
+thought, multi-agent deliberation, tool-augmented). A NumPy-only harness computes counterfactual flip
+rate, mean absolute score difference (MASD), action-rate disparity, and tool-invocation disparity, with
+bootstrap confidence intervals, paired tests, and false-discovery-rate control, for single-digit dollars per
+model. A live leaderboard with a held-out private split and a contamination canary admits external models
+by submission. Our pilot (864 decisions plus a test–retest replication) carries a methodological lesson:
+comparing a six-group score spread against a two-run noise difference overstates disparity by∼2.4×
+through statistic arity alone. Against an arity-matched noise floor and an omnibus group test, claude-haiku-4-
+5 shows no demographic effect above sampling noise (0 of 120 pairwise and 0 of 9 omnibus contrasts survive
+correction); a planted-bias test confirms the instrument detects disparity when present. The contribution is a
+sound, sensitive, adoption-ready instrument, the arity-matched-null methodology, and open artifacts to scale
+it. Code, data, and harness are released under open licenses, with an anonymized review artifact.
+INDEX TERMSAlgorithmic fairness, large language model agents, counterfactual fairness, demographic
+disparity, agent evaluation, responsible AI.
+I. INTRODUCTION
+Large language models have crossed a threshold: they no
+longer merely answer questions, theyact. LLM-driven agents
+now screen job applicants, recommend credit decisions, and
+triage clinical cases (settings in which a biasedactionchanges
+a person’s access to employment, capital, or care) [1]. Y et
+the dominant framework for measuring fairness in language
+models still gradesanswers: it scores the words a model emits
+in response to a prompt [2]–[4]. There is a structural gap
+between what we measure and what now matters.
+This gap has a precise theoretical cause. The Bias Conduc-
+tion Framework (BCF), a companion theoretical framework
+restated self-containedly in Section III, shows that token-level
+parity can coexist with action-level disparity (Proposition P2,
+Masking): a model that answers demographic probes even-
+handedly can still take systematically differentactionswhen
+those answers are operationalized into decisions, tool calls,
+and multi-step trajectories. The situation compounds. The
+same machinery that makes an agent more capable (chain-of-
+thought, multi-agent deliberation, tool use) canamplifyrather
+than wash out an entering disparity (Proposition P3,Super-
+additivity). Existing benchmarks see none of this. Answer-
+level fairness benchmarks do not act, single-domain agent au-
+dits cover one vertical, and capability-oriented agent bench-
+marks [5]–[8] are not demographically instrumented.
+We introduceAgentFairBench, a cheap, reproducible,
+multi-domain benchmark that measures demographic dispar-
+ity in theactionsof LLM agents. AgentFairBench opera-
+tionalizes the BCF’s component counterfactual disparity at
+the action level across three consequential domains: hiring,
+VOLUME 14, 2026 1
+arXiv:2606.16723v1 [cs.AI] 15 Jun 2026
+
+[[page 2]]
+Morlaet al.: AgentFairBench: Do LLM Agents Discriminate When They Act?
+lending, and medical triage. Each domain is anchored to a
+real regulatory standard (EEOC adverse impact [9], NYC
+Local Law 144 [10], and ECOA / Regulation B [11]). Pro-
+files are synthetic and demographic-neutral; we vary only a
+name-coded race×gender signal across amatched set, in the
+Bertrand–Mullainathan correspondence-audit tradition [1],
+so that any measured difference is attributable to the demo-
+graphic cue rather than confounding content. Each profile
+is decided under four agent scaffolds of increasing agency:
+direct (C0), chain-of-thought (C2), multi-agent deliberation
+(C3), and tool-augmented information gathering (C4). These
+instantiate the BCF entry loci and let us test the masking and
+amplification propositions empirically.
+Contributions.(1) A multi-domain, action-level fairness
+benchmark with a counterfactual matched-set design and
+a scaffold axis (a measurement axis for the BCF super-
+additivity prediction, not an effect confirmed here), grounded
+in the BCF. (2) A pip-installable, NumPy-only evaluation
+harness implementing counterfactual flip rate (CFR), mean
+absolute score difference (MASD), action-rate disparity, and
+a tool-invocation disparity metric (∆ tool), with BCa boot-
+strap confidence intervals, paired McNemar and Wilcoxon
+tests, Benjamini–Hochberg FDR correction, and a stated cost
+envelope (single-digit dollars per model). (3) A live, anti-
+gamed leaderboard with a held-out private test split, a con-
+tamination canary, and a public submission protocol, so that
+external models enter the record by reproducible commu-
+nity contribution rather than self-report. (4) A real pilot on
+claude-haiku-4-5(864 decisions, with a second run for
+test–retest reliability) that exercises the instrument end to end
+and yields a methodological finding: comparing a six-group
+scorespreadagainst a two-run pairwise noise difference over-
+states disparity by roughly2.4×through statistic arity alone.
+We introduce an arity-matched noise floor and an omnibus
+group test as the correction, and report the resulting honest
+null: this model shows no demographic effect distinguishable
+from sampling noise at pilot scale.
+We are deliberately careful about what a pilot can claim.
+Against the arity-matched floor, the omnibus group test, and
+per-group contrasts, no signal survives multiple-comparison
+correction atn= 12matched sets per cell (0 of 120 pairwise
+and 0 of 9 omnibus contrasts), and we report this plainly rather
+than reading the raw spreads as disparity. The null is not an
+insensitive instrument: a planted-bias property test confirms
+the harness recovers a known disparity. The contribution is a
+sound, sensitive, cheap-to-run instrument, the arity-matched-
+null methodology, and the artifacts (harness, dataset, leader-
+board) designed for the community to scale into confirmatory
+studies.
+II. RELATED WORK
+A. ANSWER-LEVEL LLM FAIRNESS BENCHMARKS
+A substantial body of work evaluates demographic bias by
+examining what language modelssayin response to carefully
+constructed prompts. BBQ [2] probes social biases across
+nine protected categories using ambiguous question–answer
+pairs drawn from a templated question-answering format;
+StereoSet [3] measures stereotypical associations at the word
+and sentence level via intrasentence and intersentence con-
+texts; and CrowS-Pairs [4] presents masked-language-model
+scoring over minimally contrastive stereotype/anti-stereotype
+sentence pairs. These benchmarks have produced real insight
+into the distributional biases encoded during pretraining and
+instruction tuning. The limits of this answer-level paradigm,
+and the gap between measuring representational bias and
+measuring downstream allocative harm, are surveyed criti-
+cally by Blodgett et al. [12], whose call to center the harms
+systems actually cause motivates our shift from answers to
+actions; the same limits are catalogued comprehensively in
+the bias-and-fairness survey of Gallegos et al. [13].
+Each benchmark gradesanswers, though. The unit of mea-
+surement is a model’s selection among textual options or its
+assignment of probability mass to a token sequence. None
+of them activates an action loop. When a model answers
+‘‘yes’’ or ‘‘no’’ to a stereotype probe, no credit score changes,
+no interview invitation is issued, and no triage escalation is
+triggered. As formalized in the Bias Conduction Framework’s
+Proposition P2 (Masking), token-level parity can coexist with
+action-level disparity because the mapping from language
+to executable decisions is non-linear and context-dependent.
+AgentFairBench targets precisely this measurement gap: the
+question is not what a model says about a demographic group,
+but what itdoeswhen acting consequentially on behalf of one.
+B. DECISION-LEVEL LLM AUDITS
+A growing body of work moves from grading answers to
+probing thedecisionsLLMs make under demographic pertur-
+bation, and is the closest neighbor to our hiring and lending
+domains. Tamkin et al. [14] introduce DiscrimEval, gener-
+ating 70 high-stakes decision scenarios across society and
+systematically varying demographic attributes to measure
+both positive and negative discrimination in a production
+model; this is the canonical demonstration that demographi-
+cally perturbed, decision-level evaluation surfaces disparities
+that answer-grading misses, and it anticipates the explicit-
+attribute robustness arm we defer to future work. In the hiring
+vertical specifically, An et al. [15] score roughly 361,000 re-
+sumes with randomized social identities across several com-
+mercial LLMs and find systematic, direction-varying dispar-
+ities (higher scores for female candidates, lower for Black
+male candidates), while Haim et al. [16] audit name-coded
+race and gender across 42 prompt templates and find that
+Black-women-coded names receive the least advantageous
+advice. AgentFairBench differs from this line on three axes
+the comparison below makes precise: these studies elicit a
+single-shot decision, whereas we wrap each decision in an
+agent loop and stratify by scaffold depth (C0–C4); they cover
+one setting each, whereas we span three regulator-anchored
+domains under one harness; and none instruments the tool-
+invocation channel (∆ tool) that only an action loop exposes.
+DiscrimEval is the most direct decision-level comparator; it
+is single-shot and not scaffold-stratified, which is exactly the
+2 VOLUME 14, 2026
+
+[[page 3]]
+Morlaet al.: AgentFairBench: Do LLM Agents Discriminate When They Act?
+axis we add.
+C. SINGLE-DOMAIN AND CLINICAL AGENT FAIRNESS
+A newer wave of work moves closer to agents but remains
+domain-specific. MedAgentBench [17] instruments clinical
+reasoning tasks for LLM agents, though its primary focus
+is task capability rather than demographic disparity in out-
+comes. FairMedQA [18] examines demographic fairness in
+medical question answering using a counterfactual perturba-
+tion design similar in spirit to ours, applied to QAaccuracy
+(answer-level) within a single clinical vertical and without
+an agentic action loop. The measurementlevel(executable
+actions), not the counterfactual methodology, is our key dif-
+ferentiator. MFARM [19] evaluates multi-faceted clinical-
+fairness harms on MIMIC-IV but is restricted to a single
+domain and a narrow metric set. Most directly, EQUITRIAGE
+[20] audits gender bias in LLM-based emergency-department
+triage using counterfactual gender-swaps and flip-rate metrics
+over MIMIC-IV -ED vignettes. In a dedicated single-domain
+study it finds measurable action-level disparity in LLM triage,
+which is concurrent and independent evidence that the triage
+setting we include is a live one. It remains single-domain
+(triage) and single-attribute (gender); AgentFairBench adds
+synthetic, PHI-free reproducible profiles, a race-by-gender
+rather than gender-only signal, and the cross-domain and
+scaffold axes.
+The most closely related prior work is that of Mayil-
+vaghanan et al. [21], which introduced counterfactual flip
+rate (CFR) and mean absolute score difference (MASD)
+as complementary metrics for measuring demographic dis-
+parity in contact-center quality-assurance agents. That work
+demonstrated that binary decision disparity (CFR) and graded
+score disparity (MASD) are not redundant, which is a direct
+empirical instantiation of the P2 Masking proposition. We
+adopt CFR and MASD directly from this work, together
+with the Bertrand–Mullainathan name-substitution paradigm
+it employs; we claim novelty in neither, and our contribution
+is their generalization beyond a single contact-center quality-
+assurance setting. AgentFairBench extends this foundation in
+three directions: (i) it generalizes across three consequentially
+distinct domains (hiring, lending, and medical triage) each
+anchored to a real regulatory standard, rather than a single
+vertical; (ii) it introduces ascaffold axis(direct, chain-of-
+thought, multi-agent deliberation, and tool-augmented) that
+operationalizes the BCF conduction operators, tests the P3
+Super-additivity proposition, and yields a tool-invocation dis-
+parity metric (∆ tool) absent from prior work; and (iii) it adds
+an anti-gaming evaluation protocol (held-out private split,
+contamination canary, content hashes) delivered through a
+live leaderboard.
+D. AGENT CAPABILITY BENCHMARKS
+Parallel to fairness-oriented work, the agent community has
+produced a rich set of capability benchmarks. AgentBench
+[5] evaluates LLM agents across a diverse suite of interactive
+environments including web browsing, database manipula-
+tion, and lateral-thinking games. WebArena [6] provides a
+realistic, self-hosted web environment in which agents com-
+plete multi-step tasks on live-feeling websites. SWE-bench
+[7] measures an agent’s ability to resolve real GitHub is-
+sues from open-source repositories. Mind2Web [8] focuses
+on generalist web agents navigating diverse websites from
+human-annotated demonstrations.
+These benchmarks are methodologically rigorous and eco-
+logically valid, requiring genuine multi-step reasoning and
+tool use. None of them is demographically instrumented.
+Task profiles are not systematically varied across protected-
+attribute signals, no counterfactual matched sets are con-
+structed, and no fairness metrics are computed. A model
+that achieves state-of-the-art task-completion rates on SWE-
+bench or WebArena may nonetheless exhibit substantial de-
+mographic disparity when its actions impinge on hiring,
+credit, or healthcare decisions. Capability and fairness are
+orthogonal axes, and existing capability benchmarks measure
+only one of them.
+E. POSITIONING AGENTFAIRBENCH
+AgentFairBench shares two ingredients with Mayilvaghanan
+et al. [21]: the CFR/MASD metric pair and the Bertrand–
+Mullainathan counterfactual design [1]. We claim novelty in
+neither. Its contribution is a combination that, to our knowl-
+edge, no prior fairness benchmark provides together. The
+headline novelty is ascaffold-amplification axisthat opera-
+tionalizes BCF super-additivity and yields the tool-invocation
+disparity metric∆ tool; neither the scaffold axis nor∆ tool has
+any precedent in [21] or the other cited benchmarks. On
+that we addaction-levelmeasurement acrossmultiplecon-
+sequential domains with heterogeneous regulatory anchors,
+and an anti-gaming evaluation protocol (held-out private split,
+contamination canary, content hashes) delivered through a
+live leaderboard. Multi-domain coverage on its own is closer
+to engineering than to a conceptual advance, which is why we
+lead with the scaffold axis and∆ tool rather than with breadth.
+The comparison below situates AgentFairBench against rep-
+resentative prior benchmarks along these axes.
+III. BACKGROUND: THE BIAS CONDUCTION
+FRAMEWORK
+Measuring demographic disparity in LLM-agent behavior re-
+quires a formalism that goes beyond static classifier fairness.
+The Bias Conduction Framework (BCF) addresses this by
+modeling an agent as a four-tuple⟨π,T,M,R⟩, whereπ
+is the policy (the underlying language model),Tis the task
+specification,Mis the working memory (context window,
+tool outputs, scratchpad), andRis the repertoire of available
+actions and tools (D1). This formulation treats the agent loop
+as an object of fairness analysis in its own right, distinct from
+the model weights alone.
+The BCF is acompanion theoretical frameworkdeveloped
+concurrently with this benchmark by the authors; it is not
+pre-existing peer-reviewed theory, and we restate here (self-
+containedly) only the parts AgentFairBench operationalizes,
+VOLUME 14, 2026 3
+
+[[page 4]]
+Morlaet al.: AgentFairBench: Do LLM Agents Discriminate When They Act?
+TABLE 1.Where AgentFairBench sits relative to representative prior benchmarks.Takeaway:AgentFairBench is the only entry that is action-level,
+multi-domain, counterfactual, scaffold-stratified, and demographically instrumented simultaneously.
+Benchmark Action-level Multi-domain Counterfactual Scaffold axis Demog. instrumented
+BBQ / StereoSet / CrowS-Pairs No n/a No No Y es
+DiscrimEval (Tamkin et al.) Y es Y es Y es No Y es
+MedAgentBench Y es No No No No
+FairMedQA / mFARM No No Y es No Y es
+Mayilvaghanan et al. Y es No Y es No Y es
+EQUITRIAGE Y es No Y es No Y es (gender)
+AgentBench / WebArena Y es Y es No No No
+AgentFairBench (ours) Yes Yes Yes Yes Yes
+so the paper is legible without the framework document. The
+BCF organizes its claims as three component definitions (D1–
+D3) and five propositions (P1–P5). This paper relies on D2
+(counterfactual component disparity) and tests two propo-
+sitions empirically (P2: Masking and P3: Super-additivity),
+which, because they originate in a companion framework
+rather than established results, we treat as falsifiablehypothe-
+sesin our experiments rather than as theorems to be con-
+firmed. We also invoke P5 (measurement adequacy) in Sec-
+tion V as the principle that a fairness score is meaningful only
+if it reflects measured, not imputed, behavior. P1 (locality)
+and P4 (mitigation-matching) are not used here. Grounding
+a benchmark in a framework from the same authors carries
+an obvious circularity risk, so we are explicit about how
+we avoid it: P2 and P3 enter the experiments as falsifiable,
+directional predictions, not as results assumed true. In this
+pilot the predicted effects donotappear above the (arity-
+matched) noise floor (§VI): on a single model atn= 12
+matched sets per cell, the data neither confirms them nor,
+given the limited power, refutes them in general. We therefore
+treat them throughout as measurement targets the benchmark
+is built to test, demonstrate via a planted-bias property test
+that the instrument detects such effects when present, and
+report the null plainly.
+D2: Counterfactual Component Disparity.For any com-
+ponentc∈ {policy, memory, tools, scaffolding}, the BCF
+defines counterfactual disparity∆ c via trace-replay: hold
+all inputs constant except the demographic signal embedded
+in componentc, re-execute the agent trace, and measure
+the resulting divergence in output distributions. Formally,
+∆c =E[δ(a g,a g0)], wherea g is the action taken under
+demographic groupg,a g0 is the action under reference group
+g0 (here, white male), andδis a task-appropriate discrepancy
+metric (flip rate or score difference). This operationalization
+draws on the individual-fairness [22], group-fairness [23],
+and counterfactual-fairness [24] traditions; counterfactual
+fairness in particular requires that individuals differing only
+in protected attributes receive equivalent treatment. Agent-
+FairBench is the executable instantiation of D2 at the action
+level: counterfactual matched sets vary only a name-coded
+race-by-gender signal, so any observed∆ c is attributable to
+the demographic perturbation rather than confounding pro-
+file content. We note that our matched sets implement a
+correspondence-auditcounterfactual (a ceteris-paribus name
+substitution in the Bertrand–Mullainathan sense), which is
+related to but not identical with the structural-causal-model
+counterfactual of [24]: we intervene on a surface proxy for
+perceived demographics, not on a protected-attribute node in
+a causal graph, and we therefore do not claim the stronger
+SCM-counterfactual guarantee.
+D3: Conduction Operators.The BCF characterizes how
+disparity propagates through the agent pipeline via four
+operators applied at each component boundary: A TTENU-
+A TE (downstream processing reduces disparity), PRESERVE
+(disparity passes through unchanged), AMPLIFY (disparity
+grows), and GENERA TE (disparity is introduced de novo by
+a component that was itself neutral). These operators supply
+a mechanistic vocabulary for diagnosis. A scaffold that adds
+deliberation steps may AMPLIFY disparity already present
+in the policy, or may GENERA TE new disparity through
+asymmetric tool invocation patterns.
+P2: Masking.Token-level output parity (e.g., equivalent
+next-token distributions across demographic conditions) does
+not imply action-level parity. A model may assign near-
+identical log-probabilities to ‘‘yes’’ and ‘‘no’’ continuations
+across demographic groups while still producing systemati-
+cally different discrete decisions after sampling and parsing.
+This measurement gap, which existing answer-level bench-
+marks [2]–[4] are structurally unable to detect, motivates
+grounding evaluation at the action layer.
+P3: Super-additivity.Composing agentic scaffolds can
+make disparity grow with scaffold depth, and the composed
+disparity can exceed that of any single component: adding
+deliberation or tool-use stages need not wash out an en-
+tering bias and may amplify it, making scaffold topology
+itself a fairness-relevant design variable. We state P3 as a
+directional(ordinal) prediction (disparity is non-decreasing
+in scaffold depth, and composition can exceed the largest
+single-component contribution) rather than as a closed-form
+inequality. A literal super-additive bound∆ composed≥ P
+c ∆c
+is not well defined for the bounded disparity metrics used
+here (a flip rate cannot exceed 1, whereas P
+c ∆c can), so
+AgentFairBench tests only the directional corollary, which
+the C0–C4 scaffold ladder is designed to measure; estimating
+the individual per-component∆ c is left to future work.
+AgentFairBench maps scaffolds C0 (direct prompting),
+4 VOLUME 14, 2026
+
+[[page 5]]
+Morlaet al.: AgentFairBench: Do LLM Agents Discriminate When They Act?
+C2 (chain-of-thought), C3 (multi-agent deliberation), and C4
+(tool-augmented information gathering) directly to BCF entry
+loci, enabling empirical measurement of whether conduction
+operators shift across scaffold depth. The impossibility results
+of [25] and [26] establish that no single metric simultaneously
+satisfies all fairness criteria; BCF does not resolve this tension
+but makes the measurement site explicit, allowing domain-
+appropriate criteria to be applied at the action layer where
+regulatory consequences materialize.
+IV. BENCHMARK DESIGN
+A. DOMAINS AND ACTION SPACE
+AgentFairBench operationalizes demographic disparity mea-
+surement across three consequential decision domains, se-
+lected to span distinct regulatory regimes and action-space
+structures. Each domain yields both a primary binary decision
+and a secondary continuous score, so measurement operates
+at two levels of granularity.
+Hiringpresents an agent with a candidate profile and
+requires two outputs: an advancement decision (boolean) and
+a candidate quality score (0–100). This domain is anchored
+to the EEOC Uniform Guidelines on Employee Selection
+Procedures [9], which establish the four-fifths rule as an
+adverse-impact threshold, and to New Y ork City Local Law
+144 [10], which mandates bias audits of automated employ-
+ment decision tools. The two-output structure captures the
+masking phenomenon articulated in BCF Proposition P2:
+a model may exhibit score-level disparity while producing
+parity-equivalent binary decisions.
+Lendingpresents a loan-application profile and elicits an
+approval decision (boolean) and an APR tier assignment (or-
+dinal, 1–5, where 1 is most favorable). The regulatory anchor
+is the Equal Credit Opportunity Act and Regulation B [11],
+which prohibit consideration of protected characteristics in
+credit decisions. The ordinal APR tier operationalizes graded
+harm: a qualified applicant steered to a higher tier suffers
+a measurable financial penalty even if their application is
+technically approved.
+Medical triagepresents a clinical intake summary and
+requires an escalation decision (boolean) and an acuity score
+(1–5, where 5 is most urgent). No direct regulatory paral-
+lel exists for algorithmic triage in the U.S., so this domain
+is grounded in AI governance frameworks [27], [28] that
+classify health-consequential AI as high-risk and demand
+demonstrable non-discrimination. Triage represents a domain
+where disparity can manifest as systematic under-escalation
+of acuity for particular demographic groups.
+B. COUNTERFACTUAL PROFILES
+All profiles are synthetically generated and contain no real
+individuals or protected health information, which obvi-
+ates IRB requirements. Profile content is constructed to be
+demographic-neutral: domain-relevant attributes (e.g., work
+history, financial indicators, symptom onset) are held fixed
+across a matched set while a single surface signal (a first-
+name and surname combination) is varied to encode the de-
+mographic cell of interest.
+This design follows the Bertrand-Mullainathan audit tradi-
+tion [1], in which names function as cues that activate race
+and gender associations without altering substantive qualifi-
+cations, and its more recent application to machine-learning
+systems, where explicit gender indicators such as first names
+and pronouns drive measurable disparity in high-stakes oc-
+cupation classification [29]. Each matched set comprises
+six counterfactual variants crossing three name-coded racial
+groups (White, Black, Hispanic) with two gender signals
+(Male, Female), yielding cells {White-M, White-F, Black-
+M, Black-F, Hispanic-M, Hispanic-F}. White-Male serves as
+the reference group for all disparity computations, consistent
+with standard counterfactual fairness practice [24]. This ref-
+erence choice is a reporting convenience; the harness also
+computes all pairwise and highest-rate-group contrasts, and
+we note that the EEOC four-fifths test (§IX) uses the highest-
+selecting group, not the white-male reference, as its baseline.
+Age is included as a secondary demographic attribute.
+Because age interacts with name-coded race and gender, the
+benchmark supports intersectional analysis; matched sets are
+constructed at both the marginal (race, gender independently)
+and joint (race×gender×age-band) levels. This enables de-
+tection of disparity patterns that emerge only at intersections
+and would be invisible to marginal measurement alone [30].
+C. AGENT SCAFFOLDS AS BCF ENTRY LOCI
+Scaffolding complexity is a first-class variable in Agent-
+FairBench, reflecting BCF Proposition P3 (super-additivity)
+and the claim that agentic structure can amplify or attenu-
+ate bias introduced at any component. Four scaffold levels
+are instantiated, corresponding to BCF conduction loci. The
+numbering follows the BCF locus taxonomy; C1 (retrieval-
+augmented context injection) is defined in the framework but
+not instantiated in v1 (to avoid confounding retrieval-source
+effects with scaffold depth) and is deferred to the v2 roadmap.
+C0 (Direct Prompt)presents the profile in a single-turn
+zero-shot prompt. This is the minimal baseline and captures
+bias attributable to the model’s parametric associations alone.
+C2 (Chain-of-Thought)elicits a step-by-step rationale
+before the final decision. The intermediate reasoning trace is
+retained for qualitative analysis and allows tracing whether
+the conduction operator at this locus is PRESERVE, A TTEN-
+UA TE, or AMPLIFY relative to C0.
+C3 (Multi-Agent Deliberation)routes the profile through
+a two-agent pipeline: a reviewer agent produces an initial
+assessment, and a decision agent synthesizes the final output.
+This tests P3 super-additivity by measuring whether disparity
+accrues across agent handoffs.
+C4 (Tool/Information-Gathering)equips the agent with a
+tool that can be invoked to request supplementary information
+about the applicant before deciding. Tool invocation itself
+becomes a measurement target: differential invocation rates
+across demographic groups constitute a form of action-level
+VOLUME 14, 2026 5
+
+[[page 6]]
+Morlaet al.: AgentFairBench: Do LLM Agents Discriminate When They Act?
+disparity (∆ tool) that is invisible to answer-grading bench-
+marks [2], [3].
+D. METRICS
+Counterfactual Flip Rate (CFR)measures decision-level
+disparity. The per-cell CFR we report is the fraction of
+matched sets whose binary decision is not unanimous across
+the six demographic conditions (equivalently, the white-male
+decision disagrees with at least one focal group), holding all
+other attributes constant; the harness also stores the pairwise
+flip rate against the white-male reference for every focal
+group separately. A nonzero CFR is consistent with demo-
+graphic sensitivity in the decision; because sampling temper-
+ature is not pinned, it should be read against the measured
+test–retest noise floor (Section VI) rather than taken on its
+own as proof of a causal effect.
+Mean Absolute Score Difference (MASD)measures
+score-level disparity. For each matched set we com-
+pute the scorespread(the difference between the maxi-
+mum and minimum score assigned across the six demo-
+graphic conditions), and MASD is the mean of this spread
+over all matched sets in the split; formally, MASD=
+1
+|S|
+P
+s∈S (maxg xs,g−min g xs,g), wherex s,g is the score for
+groupgin matched sets. The harness also reports the pair-
+wise mean absolute difference 1
+|S|
+P
+s|xs,g−x s,wm|against
+the white-male reference for every focal group. MASD is
+sensitive to graded harm that CFR cannot detect, operational-
+izing the score-channel disparity that BCF Proposition P2
+concerns. Despite its name (inherited from prior work [21]),
+our per-cell MASD is a six-groupspread, not a pairwise dif-
+ference, and two properties of that spread matter for its inter-
+pretation. First, as a max-minus-min range statistic, MASD is
+non-decreasing in the number of groups and is upward-biased
+relative to a pairwise difference even under pure noise, so it
+must be benchmarked against a noise floor of thesame arity(a
+six-group noise spread), not against a two-run pairwise differ-
+ence; we make this comparison correctly in §VI (Finding 1),
+where the naive comparison reports a mean ratio of2.4×the
+noise floor and the arity-matched comparison reports0.83×.
+Second, the spread is not anchored to a reference group, so
+the reference-anchored pairwise MASD above is the quantity
+aligned with the reference-group logic of regulatory tests; we
+report both.
+Action-Rate Disparityis the difference in the proportion
+of positive binary decisions (advance, approve, escalate) be-
+tween demographic groups across matched sets, computed as
+a marginal rate and as a pairwise contrast. It quantifies aggre-
+gate outcome inequality at the group level, complementing
+the per-set precision of CFR.
+Tool-invocation disparity(∆ tool, C4 only) is the spread
+in tool-invocation rate across the six demographic groups,
+∆tool = max g rg−min g rg, wherer g is the fraction of
+C4 decisions in groupgfor which the agent invokes the
+information-gathering tool before deciding; pairwise gaps
+against the white-male reference are also reported. A nonzero
+∆tool means the agent applies procedurally disparate scrutiny
+(demanding additional evidence for some groups more than
+others), a form of action-level disparity invisible to decision
+and score metrics.
+E. STATISTICAL PROCEDURES
+All estimates are accompanied by bias-corrected and accel-
+erated (BCa) bootstrap 95% confidence intervals [31], [32],
+computed via matched-set resampling to respect the depen-
+dence structure of counterfactual pairs. Decision-level con-
+trasts are tested with McNemar’s exact test for paired binary
+outcomes. Score-level contrasts use the Wilcoxon signed-
+rank test for paired observations, applied only to contrasts
+with at least two non-tied score pairs (degenerate contrasts
+are recorded as non-significant). Multiple comparisons across
+demographic cells, scaffolds, and domains are controlled us-
+ing the Benjamini-Hochberg false discovery rate procedure
+atq= 0.05[33]. Two further controls address the spread-
+statistic and omnibus questions that pairwise tests leave open;
+both are computed for the C0–C3 scaffolds, which have a
+test–retest noise floor, since the reliability run did not include
+C4. First, anarity-matched noise floorfor MASD: within
+each cell we fit a two-way (profile+group) decomposition of
+the score matrix, take the residual (which removes any group
+main effect, leaving within-cell residual variation as a single-
+run proxy for replication noise; the genuinek-replicate floor
+is a v1.1 item, §X), and Monte-Carlo resample six residuals
+per matched set to estimate the six-group spread expected
+under the null of no demographic effect; the observed MASD
+is compared to this same-arity null and to an empiricalp-value
+(fraction of null spreads at least as large as observed). Second,
+anomnibustwo-way ANOV AF-test for any group main
+effect, with profile as a blocking factor, computed per cell
+with a self-contained (NumPy-only) regularized-incomplete-
+betaFtail. These complement the pairwise McNemar and
+Wilcoxon contrasts: the pairwise tests ask whether any single
+focal group differs from the reference, while the omnibus
+test and the arity-matched null ask whether the score channel
+carries any demographic spread above noise at all. Cohen’s
+heffect sizes for rate contrasts are computed by the harness
+and released with the per-contrast outputs; given the pilot’s
+limited statistical power (§VII) we foreground confidence in-
+tervals, the arity-matched ratio, and FDR-correctedq-values
+rather than effect-size point estimates. All random operations
+use seed 20260612 for reproducibility.
+F. SPLITS AND ANTI-GAMING SAFEGUARDS
+The benchmark is partitioned into a public development split,
+released alongside the leaderboard, and a held-out private
+evaluation split withheld from public access. Evaluation on
+the private split is conducted through a submission API;
+raw profiles are never exposed. To detect contamination,
+each profile embeds a cryptographic content hash and a low-
+frequency canary string that would be statistically anomalous
+in any training corpus. Leaderboard submissions are screened
+for canary leakage. This protocol addresses the benchmark
+saturation problem that has affected capability-oriented agent
+6 VOLUME 14, 2026
+
+[[page 7]]
+Morlaet al.: AgentFairBench: Do LLM Agents Discriminate When They Act?
+benchmarks [5]–[7] and ensures that reported disparity esti-
+mates reflect generalization rather than memorization.
+V. HARNESS AND LEADERBOARD
+To lower the barrier to adoption and enable third-party repli-
+cation, AgentFairBench ships asagentfairbench, a pip-
+installable Python package whose evaluation core depends
+only on NumPy. The lightweight dependency footprint is de-
+liberate. Auditors and regulators who wish to verify a vendor
+submission need not install a deep learning stack.
+Package architecture.The core library exposes three lay-
+ers. Theprofile layergenerates synthetic, demographically
+neutral candidate, applicant, and patient profiles and as-
+sembles counterfactual matched sets following the Bertrand-
+Mullainathan name-substitution paradigm [1]. All stochastic
+operations in the harness are seeded from a single integer
+(defaultSEED=20260612), passed transitively to profile
+sampling, scaffold construction, and bootstrap resampling, so
+that these steps are byte-for-byte reproducible. The model
+decisions themselves are not bit-reproducible: the produc-
+tion endpoints sample at non-zero temperature with no ex-
+posed seed, so identical inputs can yield different decisions
+on fresh calls. Bit-level reproducibility therefore holds over
+the released decision traces and the recomputation of every
+metric from them, not over re-collecting model decisions.
+Thescaffold layerwraps each profile-domain pair in one
+of the four BCF entry loci (C0 direct prompt, C2 chain-
+of-thought, C3 multi-agent deliberation, C4 tool-augmented)
+and returns structured action traces. For C2 the harness stores
+the model’s returned structured rationale field (the decision-
+relevant reasoning it emits), not a separately captured hidden
+chain-of-thought; for C3 it stores each sub-agent’s struc-
+tured contribution. Themetrics layercomputes the full suite:
+CFR, MASD, action-rate disparity,∆ tool, BCa bootstrap 95%
+confidence intervals with matched-set resampling, McNemar
+and Wilcoxon signed-rank tests, and Benjamini-Hochberg
+FDR correction. These metrics can be derived from any trace
+archive, including replays of previously saved responses.
+Model adapters.The package ships three adapter classes
+that implement a commonModelAdapterinterface. The
+OpenAI-compatible adaptertargets any endpoint exposing
+the OpenAI Chat Completions schema: GPT-family models
+and most open-weight inference servers natively, and Claude
+or Gemini through their OpenAI-compatible gateways or
+a proxy such as OpenRouter (these vendors’ native APIs
+use different schemas). The pilot decisions were collected
+through this adapter against the Anthropic API endpoint
+forclaude-haiku-4-5(the same endpoint and default
+decoding parameters reported in §X). Thereplay adapter
+accepts a frozen JSONL trace archive and re-scores it without
+issuing new API calls, enabling post-hoc audits and the test-
+retest reliability protocol used in our pilot. Themock adapter
+returns deterministic canned responses and is used by the CI
+test suite to confirm that metrics are computed identically
+across library versions.
+CLI.A command-line interface wraps all evaluation work-
+flows:
+agentfairbench run --model haiku \
+--domain hiring --scaffolds C0,C2,C3,C4
+agentfairbench score --traces out.jsonl
+agentfairbench cost --model sonnet
+Thecostsubcommand implements a pre-flight to-
+ken estimator calibrated against Anthropic’s published
+list prices as of June 2026: $1.79 for the full 864-call
+domain-scaffold grid atclaude-haiku-4-5, and an es-
+timated $5.38 atclaude-sonnet-4-6and $8.96 at
+claude-opus-4-8(the latter two were not run). The
+complete benchmark costs single-digit dollars per model,
+under $2 at the Haiku tier, making broad multi-model surveys
+tractable for academic groups.
+Reproducibility hooks.Every profile carries a trun-
+cated SHA-256 content hash, and the public split
+embeds a low-frequencycontamination canarystring
+(AGENTFAIRBENCH-CANARY-2f9c1a) that would be
+statistically anomalous in any training corpus, so leaked
+memorization is detectable. The held-out private split is
+withheld from the public repository; only the public split is
+distributed with the package, so that the leaderboard eval-
+uation surface cannot be directly observed during model
+development.
+Leaderboard and submission protocol.The AFB-Score
+composite is definedper domain, as1− 1
+3(CFR+
+MASDnorm +rate-disparity)averaged over that domain’s
+scaffold cells, where MASD norm normalizes MASD by the
+domain score range; higher AFB-Score indicates less dis-
+parity. We report itper domain and do not average across
+domains: the per-domain score scales (a 0–100 hiring score,
+a 1–5 APR tier, a 1–5 acuity level) are not commensurable in
+harm, so a single cross-domain number would invite the false
+equivalence the experiments section warns against (§VI); the
+composite is comparable across models within a domain, not
+across domains. The composite is reported alongside, never
+in place of, its per-metric components (including∆ tool), so it
+cannot hide a component. We keep∆ tool out of the composite
+because it applies only to C4 cells. Authors self-evaluate on
+the public split and submit a pull request with their frozen
+trace JSONL and a model card. V erification depends on ac-
+cess. When maintainers can reach the model (open weights, or
+a submitter-provided scoped API key), they re-run the held-
+out private split and post averifiedscore, which provides
+genuine held-out gaming resistance. When they cannot (pro-
+prietary models without shared access), the entry is checked
+for reproducibility-from-trace and canary leakage and posted
+with atrace-onlyflag: such entries reproduce the submitter’s
+claim and are screened for contamination, but the private split
+cannot be re-run on the submitter’s behalf, so they do not carry
+held-out gaming resistance. We state this limitation plainly
+rather than implying the private split protects every entry. No
+AFB-Scores are estimated or imputed by the paper authors;
+this keeps the leaderboard a record of measured behavior
+VOLUME 14, 2026 7
+
+[[page 8]]
+Morlaet al.: AgentFairBench: Do LLM Agents Discriminate When They Act?
+rather than extrapolation, consistent with the measurement-
+adequacy principle (BCF P5; see Section III).
+VI. EXPERIMENTS: A REAL MODEL PILOT
+We report a pilot deployment of AgentFairBench on a single
+production model,claude-haiku-4-5, with decisions
+collected by the authors in June 2026 via the Anthropic API at
+the provider’s default decoding parameters; these endpoints
+do not expose a fixed sampling seed, and the exact model
+string returned by the API is logged verbatim with every call
+in the released raw traces. The pilot comprises 864 indepen-
+dent decisions (36 profiles×6 race×gender conditions×4
+scaffolds), plus a second independent 648-decision run of the
+C0–C3 grid used for a test–retest reliability analysis. Every
+decision is an independent model call: the model never ob-
+serves the counterfactual structure, so it cannot detect that it is
+being audited. All numbers below are real measurements; we
+did not run external (non-Anthropic) models. The leaderboard
+(not this paper) is the mechanism by which GPT-, Gemini-,
+and Llama-family results enter the record. The purpose of this
+pilot is to exercise the instrument end to end and to report,
+honestly, what it finds on one model at modest scale; as we
+show below, the headline finding is that a naive disparity com-
+parison overstates the signal, and that once the comparison
+is done correctly this model exhibits no demographic effect
+distinguishable from sampling noise.
+A. HEADLINE RESUL T TABLE
+The headline pilot results appear in Table 2.
+B. FINDING 1: A 6-GROUP SPREAD MUST BE COMPARED
+TO A 6-GROUP NOISE FLOOR, NOT A 2-RUN DIFFERENCE
+Because the model was queried at its default (non-zero)
+temperature, identical inputs do not always yield identical
+decisions. The two independent runs quantify this: overall
+test–retest decision agreement is 0.917 (i.e.,≈8%of binary
+decisions flip on pure resampling), and the per-cell mean
+absolute score difference between runs ranges from 0.15 to
+5.75 points (Table 2, ‘‘Retest MAE’’).
+A tempting analysis compares MASD directly to this retest
+MAE. Doing so yields ratios of1.24–3.33×(mean≈2.4×),
+which earlier drafts of this work read as score-channel signal
+above noise.That comparison is wrong, and correcting it is
+the central methodological lesson of the pilot. MASD is a
+six-groupspread(the mean over matched sets ofmax g xs,g−
+ming xs,g), whereas the retest MAE is a two-runpairwisedif-
+ference on identical inputs. The maximum-minus-minimum
+of six noisy draws is mechanically larger than the absolute
+difference of two, even when there is no demographic effect
+at all: for Gaussian noise the expected six-way range is about
+2.2–2.5×the expected pairwise difference, and the empirical
+residual pools here fall in the same range. The apparent ‘‘2.4×
+above the floor’’ is therefore almost exactly what pure sam-
+pling noise produces; it is an artifact of comparing statistics
+of different arity, not evidence of disparity. The arity-matched
+null below does not rely on this Gaussian approximation: it
+resamples the empirical residuals directly.
+The correct control is the six-group spreadexpected from
+within-cell noise. We estimate it from the data (details in
+§IV, Statistical Procedures): the noise-only six-way spread
+is obtained by Monte-Carlo resampling of the primary run’s
+two-way (profile+group) residuals, which removes any
+group effect and leaves replication noise. Compared against
+this arity-matched floor, the MASD-to-noise ratio isbelow
+one in every C0–C3 cell: 0.85, 0.87, 0.96 (hiring C0/C2/C3);
+0.75, 0.79, 0.68 (lending); 0.83, 0.85, 0.90 (triage); mean
+0.83 (Fig. 1). In other words, the cross-demographic score
+spread is, if anything, slightlysmallerthan the spread pure
+noise would generate, and the empirical probability of seeing
+a spread at least this large under the null exceeds 0.6 in all nine
+cells. Because the two-way residual removes the group main
+effect, this null is, if anything, slightly too small (biasing the
+ratio upward); the observed MASD sits below it in every cell
+regardless, so the null reading is conservative. An omnibus
+two-way ANOV A test for any group main effect (profile as a
+blocking factor) is non-significant in all nine cells (minimum
+p= 0.082; zero survive Benjamini–Hochberg correction).
+This noise-floor reasoning is exactly the control a recent
+methodological critique calls for: a demographic-swap effect
+must be benchmarked against a matched baseline before it can
+be attributed to the demographic factor [34], and our arity-
+matched null is that baseline. The honest conclusion is that,
+on this model and at this scale, the score channel carriesno
+demographic signal distinguishable from sampling noise.
+C. FINDING 2: THE MASKING FAILURE MODE (BCF P2) IS
+MEASURABLE BUT NOT EXHIBITED HERE
+BCF Proposition P2 (Masking) predicts a specific failure
+mode: score-channel disparity coexisting with parity-clean
+binary decisions, so that an auditor inspecting only the dis-
+crete action would miss a graded harm. AgentFairBench is
+built to surface exactly this pattern. In this pilot, however,
+neitherchannel shows disparity above its noise floor: the
+score channel sits at or below the arity-matched floor (Finding
+1), and binary CFR stays near the≈8%resampling level
+(four cells reach 0.25–0.33 but none survives FDR; Finding
+5). So masking is not instantiated byclaude-haiku-4-5
+at this scale; we report this rather than narrate a pattern the
+data does not support.
+That the instrumentwouldsurface masking if it were
+present is established by construction, not by this pilot: the re-
+leased test suite includes aBiasedMockadapter that injects
+a−25-point score penalty for one demographic group, and the
+harness recovers a large, well-separated MASD and non-zero
+pairwise score gaps for that planted effect (§X). The masking
+channel is thus a demonstrated measurement capability with
+a null reading on this model, not a confirmed effect.
+8 VOLUME 14, 2026
+
+[[page 9]]
+Morlaet al.: AgentFairBench: Do LLM Agents Discriminate When They Act?
+hir-C0 hir-C2 hir-C3 len-C0 len-C2 len-C3 tri-C0 tri-C2 tri-C3
+0
+1
+2
+3MASD-to-noise ratio
+noise floor (1.0)
+naive: MASD / 2-run pairwise floor arity-matched: MASD / 6-group noise spread
+FIGURE 1.The arity correction. For each C0–C3 cell, the naive disparity ratio (MASD divided by the 2-run pairwise noise floor, grey) sits near 2.4×, while
+the arity-matched ratio (MASD divided by the same-arity 6-group noise spread, red) falls below the dotted noise floor (1.0) in every cell.Takeaway:
+comparing a 6-group spread to a 2-run difference overstates disparity by roughly 2.4×here (the expected Gaussian 6-group-range-to-pairwise inflation is
+2.2–2.5×); matched correctly, no cell exceeds the noise floor.
+C0
+(direct)
+C2
+(reasoning)
+C3
+(deliberation)
+Agent scaffold (increasing agency)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+Arity-matched
+MASD-to-noise ratio
+noise floor (1.0)
+hiring lending triage
+FIGURE 2.Arity-matched MASD-to-noise ratio along the C0→C3 scaffold ladder, per domain.Takeaway:every value lies below the noise floor (dotted,
+1.0) and there is no above-noise upward trend, so no scaffold amplification (BCF P3) is detected on this model at this scale.
+D. FINDING 3: NO SCAFFOLD AMPLIFICATION ABOVE
+NOISE (BCF P3 NOT INSTANTIATED HERE)
+BCF Proposition P3 (Super-additivity) predicts that added
+agentic machinery (chain-of-thought, then multi-agent delib-
+eration) amplifies rather than attenuates an entering disparity.
+The raw MASD does rise across the C0–C3 ladder in two
+domains (hiring 7.83→8.83→12.17; triage 0.42→0.75
+→0.83) and not in lending (0.67→0.67→0.50). But after
+the arity correction of Finding 1, every one of these values is
+below its own noise floor (ratios 0.85–0.96 for hiring, 0.68–
+0.90 across lending and triage), the bootstrap confidence
+intervals for adjacent scaffolds overlap almost completely,
+and the omnibus group test is non-significant at every scaffold
+(Fig. 2). The apparent ‘‘amplification’’ is within noise; we do
+not claim P3 is exhibited. As with P2, scaffold depth remains
+a first-classmeasurement axisthe benchmark instruments,
+and a powered run is required to determine whether any
+model amplifies disparity along it. We deliberately do not
+VOLUME 14, 2026 9
+
+[[page 10]]
+Morlaet al.: AgentFairBench: Do LLM Agents Discriminate When They Act?
+TABLE 2.Headline pilot results on claude-haiku-4-5: counterfactual flip rate (CFR), mean absolute score difference (MASD), and action-rate disparity per
+domain and scaffold, with 95% BCa bootstrap confidence intervals (n=12 matched sets per cell, seed 20260612). CFR CI bounds are rounded to three
+decimal places, MASD CI bounds to two; ‘‘Retest MAE’’ is the same-cell test–retest score noise floor (C0–C3 only).Takeaway:Read against the correct
+(arity-matched) noise floor in Finding 1, none of these per-cell numbers reaches a level distinguishable from sampling noise; the table is the raw
+instrument output, not evidence of a demographic effect.
+Domain Scaffold CFR [95% CI] MASD [95% CI] Rate disp. Retest MAE
+hiring C0 0.083 [0.000, 0.143] 7.83 [5.00, 10.50] 0.083 4.25
+hiring C2 0.167 [0.000, 0.333] 8.83 [5.67, 11.71] 0.083 3.58
+hiring C3 0.250 [0.000, 0.383] 12.17 [9.00, 15.43] 0.167 5.75
+hiring C4 0.250 [0.000, 0.375] 7.92 [4.75, 10.83] 0.167 n/a
+lending C0 0.167 [0.000, 0.333] 0.67 [0.42, 0.86] 0.167 0.28
+lending C2 0.083 [0.000, 0.167] 0.67 [0.40, 0.86] 0.083 0.26
+lending C3 0.083 [0.000, 0.167] 0.50 [0.17, 0.67] 0.083 0.40
+lending C4 0.333 [0.125, 0.500] 0.83 [0.57, 1.00] 0.167 n/a
+triage C0 0.167 [0.000, 0.333] 0.42 [0.17, 0.62] 0.167 0.15
+triage C2 0.083 [0.000, 0.167] 0.75 [0.38, 1.12] 0.083 0.25
+triage C3 0.333 [0.125, 0.500] 0.83 [0.57, 1.00] 0.167 0.25
+triage C4 0.083 [0.000, 0.167] 0.17 [0.00, 0.33] 0.083 n/a
+select the two monotone domains, drop C4, or average the
+incommensurable per-domain scales to manufacture a trend;
+doing so would read signal into noise.
+E. FINDING 4: A TOOL-INVOCATION DISPARITY CHANNEL
+THE INSTRUMENT CAN MEASURE
+The C4 scaffold lets the agent invoke an information-
+gathering tool before deciding, exposing a channel that lives
+entirely in the agent’s choice ofactionand is invisible to
+decision and score metrics. The harness measures it as∆ tool,
+the spread in tool-invocation rate across the six groups. In this
+pilot the largest observed value is in hiring (∆ tool = 0.25),
+but the underlying counts are tiny: the tool is invoked in 3 of
+12 white-male-coded cases, 1 of 12 in two groups, and 0 of
+12 in the rest, with lending and triage at∆ tool = 0.083(a
+one-invocation difference). At these counts a single different
+sample moves the metric substantially;∆ tool ships without
+an interval or test in v1, and the one salient pattern is well
+within small-sample noise. We therefore present∆ tool as
+a demonstratedmeasurement capabilityfor an action-level
+channel that answer-grading and score-grading both miss, not
+as a confirmed behavioral effect, and we do not interpret its
+direction.
+F. FINDING 5: AN OMNIBUS NULL, HONESTL Y REPORTED
+Across all 120 per-group pairwise McNemar and Wilcoxon
+contrasts,zerosurvive Benjamini–Hochberg FDR correction
+atq≤0.05(minimum uncorrectedp= 0.072); the
+nine omnibus two-way ANOV A group tests of Finding 1
+are likewise all non-significant (minimump= 0.082, zero
+surviving FDR). The two minima arise from different cells
+and different test families (a pairwise signed-rank/McNemar
+contrast versus an omnibusF-test), so they are not expected
+to coincide or to order in any particular way. With only 12
+matched sets per cell the pilot is underpowered for cell-level
+significance, but the consistency of the null across pairwise
+tests, the omnibus tests, and the arity-matched noise com-
+parison is itself informative:claude-haiku-4-5shows
+no demographic effect this instrument can distinguish from
+noise at this scale. None of this reflects an insensitive instru-
+ment. TheBiasedMockproperty test confirms the harness
+recovers a planted disparity; the held-out private split and
+larger model panel needed to detect real, smaller effects are
+the explicit next step (§VII). The contribution of this pilot
+is threefold: a sound, sensitive instrument exercised end to
+end; the methodological finding that arity-mismatched noise
+comparisons overstate disparity (a mean naive ratio of2.4×
+the noise floor collapsing to an arity-matched0.83×), with
+the arity-matched null and omnibus test as the fix; and an
+honest null result on one production model.
+G. COST
+The full 864-call public-split run (all four scaffolds C0–C4)
+costs $1.79 (claude-haiku-4-5), $5.38 (claude-sonnet-4-6),
+and $8.96 (claude-opus-4-8) at Anthropic’s published
+list prices as of June 2026; onlyclaude-haiku-4-5was
+actually run, so the Sonnet and Opus figures are pre-flight
+token estimates, not incurred costs. The smaller C0–C3 grid
+(648 calls) is $1.38 / $4.15 / $6.91. Either way the cost is
+single-digit dollars per model, and under $2 at the Haiku
+tier. Low per-model cost is a deliberate design goal for broad
+adoption. (These are model-API costs computed by the har-
+ness cost estimator; they are distinct from any orchestration
+overhead incurred while collecting the decisions.)
+VII. LIMITATIONS
+AgentFairBench v1 is a pilot. It prioritizes instrument sound-
+ness over exhaustive empirical coverage, and several con-
+straints bound the present findings.
+Single-model pilot.Reported empirical results come from
+a single model,claude-haiku-4-5, run across 864 deci-
+sions (36 profiles×6 demographic conditions×4 scaffolds).
+A separate 648-decision run (C0–C3 only) provided the test–
+retest reliability estimate. External models (GPT-4o, Gemini
+series, open-weight alternatives) appear on the leaderboard
+10 VOLUME 14, 2026
+
+[[page 11]]
+Morlaet al.: AgentFairBench: Do LLM Agents Discriminate When They Act?
+scaffold but have not been executed by the authors, and those
+entries await community submissions. This model showed
+no demographic effect above the noise floor; whether other
+model families do is exactly the question the instrument
+exists to answer, and resolving it requires runs across multiple
+architectures and alignment regimes at comparable scale. The
+null here is best read as evidence that the instrument runs
+end to end and, on this model at this scale, detects nothing
+above noise, not as evidence that LLM agents are unbiased
+in general. Comparison across models is a separate, powered
+question we leave to the leaderboard.
+Statistical power .With 12 matched sets per demographic
+cell, the pilot is underpowered for fine-grained contrast detec-
+tion. Zero of 120 pairwise contrasts (3 domains×4 scaffolds
+×5 focal groups×2 tests) survive Benjamini-Hochberg
+FDR correction. This is predictable given this sample size.
+BCa bootstrap confidence intervals and McNemar/Wilcoxon
+paired tests confirm the instrument behaves correctly, but iso-
+lating effects at the individual-contrast level requires the full
+grid (target: 50+ matched sets per cell). Researchers drawing
+policy-relevant conclusions should await the powered release.
+Temperature, stochastic noise, and the arity-matched
+floor .V ersion 1 does not pin sampling temperature, which
+introduces stochastic variability in both the discrete deci-
+sion and the continuous score. A second independent run
+quantifies the noise floor (decision agreement 0.917; per-cell
+score MAE 0.15–5.75). As §VI (Finding 1) shows, the noise
+floor must be compared to MASD at matched arity: a naive
+MASD-vs-pairwise-MAE comparison reports a mean ratio
+of2.4×the noise floor, but against a same-arity six-group
+noise spread the observed MASD is at or below noise in every
+cell (mean0.83×). Two data limitations bound this control.
+First, the second-run raw scores were summarized to per-
+cell noise but not committed as a separate trace file, so our
+arity-matched null is estimated from the primary run’s two-
+way residual rather than from a true repeated-measurement
+design; releasing the retest traces and collecting a genuinek-
+replicate identical-input floor is a v1.1 item. Second, with one
+retest run there is no interval on the floor itself. V ersion 1.1
+will pin sampling temperature, average across replicate runs,
+and ship a repeated-measurement noise floor, which together
+give a sharper separation between stochastic noise and any
+systematic effect.
+Ceiling and saturation on binary outcomes.Binary deci-
+sion metrics (advance, approve, escalate) are bounded. They
+saturate when model acceptance rates approach 0 or 1 across
+all groups, at which point CFR collapses mechanically re-
+gardless of underlying score disparity, one way the masking
+failure mode P2 describes could arise. Score-level metrics
+(MASD, APR tier, acuity) are less susceptible. Future ver-
+sions will supplement binary outcomes with ranked or con-
+tinuous action targets where feasible.
+Domain and trajectory scope.The benchmark covers
+three single-turn consequential domains: hiring, lending, and
+triage, each grounded in a regulatory anchor [9]–[11]. Multi-
+step tool use, episodic memory, and long-horizon planning
+trajectories are not yet instrumented. These form the core
+v2 roadmap. The BCF scaffold taxonomy already designates
+C4 tool-invocation and multi-step memory as entry loci, and
+∆tool is defined but requires richer trajectory data to populate.
+Single-turn evaluation cannot capture compounding disparity
+across agent episodes [21]. That gap is a design priority for
+v2.
+Name-coding as a demographic proxy.Demographic
+signal is injected via Bertrand-Mullainathan name lists [1],
+which encode race-by-gender correlations from U.S. labor-
+market contexts. The approach is well-validated for measur-
+ing implicit association in text-based systems, but it conflates
+name familiarity, cultural context, and perceived ethnicity
+in ways that do not map cleanly to protected-class defini-
+tions under statute [22]; name-perception studies show the
+race signal carried by audit names varies by name and is
+confounded with socioeconomic status [35], so our name
+pools are a deliberately coarse proxy for perceived demo-
+graphics, not a measurement of protected-class membership.
+Intersectional axes beyond race and gender (disability status,
+national origin, age beyond the secondary attribute) are not
+yet represented.
+Despite these constraints, AgentFairBench v1 ships
+a methodologically sound instrument: counterfactually
+matched profile sets, paired statistical tests, FDR control, con-
+tamination canaries, and a reproducible single-digit-dollar-
+per-model cost structure. The pilot shows that the instru-
+ment measures these action-level channels and recovers a
+planted disparity, that naive spread-versus-pairwise compar-
+isons must be arity-corrected to avoid reading noise as bias,
+and that on this model at this scale no demographic effect
+rises above the noise floor; the gap between answer-level
+benchmarks [2], [3] and action-level evaluation remains real
+and consequential.
+VIII. ETHICS AND BROADER IMPACT
+Human Subjects and Data Privacy.All profiles in Agent-
+FairBench are fully synthetic. No real individuals’ records,
+personally identifiable information, or protected health in-
+formation appear anywhere in the benchmark. Because the
+benchmark contains only synthetic data and no human sub-
+jects, the authors determined that the work does not constitute
+human-subjects research and so did not require IRB review or
+consent; any deployment of the benchmark on real applicant,
+borrower, or patient records would require the appropriate
+institutional approvals. The synthetic generation pipeline is
+seeded deterministically (seed 20260612) and produces coun-
+terfactually matched profile sets whose demographic signal is
+carried exclusively by name tokens; all substantive content
+(qualifications, financials, symptom descriptions) is demo-
+graphically neutral by construction.
+Interpretation of Name-Coded Demographic Signals.
+The benchmark follows the audit-study tradition established
+by [1], in which perceived demographic identity is manip-
+ulated through name choice rather than direct self-report.
+Where the benchmark measures a disparity, it therefore re-
+VOLUME 14, 2026 11
+
+[[page 12]]
+Morlaet al.: AgentFairBench: Do LLM Agents Discriminate When They Act?
+flects the causal effect of a perceived-demographic name cue
+on agent behavior, not the effect of race or gender as such
+(the present pilot found none above noise). Names serve
+as probabilistic proxies: a name coded as Black-female is
+statistically associated with a perception, not with any indi-
+vidual’s actual identity. Researchers and practitioners should
+be precise about this distinction when reporting or acting
+on AgentFairBench results, to avoid reifying demographic
+categories beyond what the experimental design warrants.
+Dual-Use and Anti-Gaming Safeguards.AgentFair-
+Bench is designed for the defensive purpose of auditing
+and improving LLM agent fairness prior to deployment in
+consequential settings governed by instruments such as [9],
+[10], [11], and [27]. The benchmark could, in principle, be
+used to overfit or game fairness metrics rather than to reduce
+underlying bias. We mitigate this risk through two mecha-
+nisms: (1) a held-out private evaluation split, withheld from
+public release, that covers the same profile space under differ-
+ent surface-level name realizations; and (2) a contamination
+canary, a small set of flagged sentinel items whose content
+hashes are registered at submission time, enabling detection
+of training-set contamination. Together these safeguards re-
+duce the incentive and ability to game the public leaderboard
+without achieving genuine behavioral improvements.
+Intended Use and Misuse.AgentFairBench is a pre-
+deployment screening instrument for builders and internal
+responsible-AI teams, not a certification. A passing result is
+necessary-not-sufficient evidence of fairness and must not be
+cited as deployment clearance or regulatory compliance; the
+synthetic, name-coded design does not replace an impact-
+ratio audit on a deployer’s production data (§IX). The risk is
+asymmetric in triage, where a falsely reassuring ‘‘fair’’ ver-
+dict could contribute to under-escalation, a life-safety harm;
+medical triage in particular must never be gated on this bench-
+mark alone. We are explicit about this because the regulatory
+crosswalk in §IX, if read uncritically, could invite precisely
+this misuse, and because our own pilot returns a null that a
+vendor could otherwise misrepresent as a clean bill of health
+rather than the underpowered single-model result it is.
+Attribute Coverage and Intersectionality.The cur-
+rent release operationalizes race-by-gender intersectionality
+across six cells (White, Black, Hispanic x Male, Female)
+with age as a secondary attribute. This coverage is deliber-
+ately tractable for a pilot study but is not exhaustive. Demo-
+graphic groups not represented, including Asian, Indigenous,
+and multiracial identities, as well as non-binary and gender-
+nonconforming individuals, and intersections of race with
+disability or socioeconomic status may exhibit distinct dispar-
+ity patterns that the benchmark does not currently measure.
+Researchers should treat AgentFairBench findings as a lower
+bound on the full scope of agentic demographic disparity;
+extending the attribute grid is an explicit item for future work.
+The name-to-group mapping is also probabilistic and cul-
+turally situated: names used to signal Hispanic identity may
+carry different salience across national and regional contexts,
+and the benchmark’s conclusions should be interpreted within
+those constraints.
+IX. REGULATORY AND SOCIETAL IMPACT
+AgentFairBench is built on explicit regulatory grounding,
+but we are precise about what it is and is not. It is a
+pre-deployment screeninginstrument: it runs on synthetic,
+name-coded counterfactual profiles and produces disparity
+estimates (which, in this pilot, were null) that map to the
+questions statutory tests ask, but it isnota substitute for
+a compliance audit, which operates on a deployer’s real
+applicant, borrower, or patient flow and computes impact
+ratios on that production data. The mappings in this section
+are the authors’ interpretation of how the metrics relate to
+each regime; no regulator has reviewed or endorsed them.
+Used as intended, the benchmark flags configurations that
+warrant a closer, production-data audit before deployment,
+and surfaces action-level channels (graded scores, differential
+tool invocation) that binary impact-ratio tests miss. A passing
+AgentFairBench result is a necessary-not-sufficient screen,
+never deployment clearance.
+EEOC Title VII and the Four-Fifths Rule.The Equal
+Employment Opportunity Commission’s adverse impact doc-
+trine [9] requires that the selection rate for any protected
+group not fall below 80% of the rate for the highest-selecting
+group. Action-rate disparity is the quantity that maps to this
+test: the four-fifths rule compares group selection rates, so
+the advance-rate ratio across the six race-by-gender cells
+is what an impact-ratio audit computes. CFR and MASD
+are complementary, not a substitute: CFR measures, within
+matched profiles, whether the name-coded signal alone flips
+the advance/reject decision, and MASD surfaces graded score
+penalties beneath a nominally equal decision. A within-pair
+flip is evidence of demographic sensitivity in the decision
+logic rather than itself a four-fifths impact ratio; a complete
+audit reports the action-rate ratio (for four-fifths compliance)
+alongside CFR and MASD (for counterfactual sensitivity).
+NYC Local Law 144 AEDT Audits.New Y ork City’s au-
+tomated employment decision tool ordinance [10] mandates
+annual bias audits of any AEDT used in hiring or promo-
+tion, with public disclosure of impact ratios disaggregated
+by sex and race/ethnicity. AgentFairBench’s counterfactual
+matched-set design (holding all qualifications constant while
+varying only the demographic signal) is aligned with the
+impact-ratio calculation the law requires. CFR and action-
+rate disparity across the six race-by-gender cells populate
+the disclosure table format directly. We argue, as a forward-
+looking observation rather than a settled compliance finding,
+that∆ tool captures a dimension current AEDT audits do not
+address: whether the agent disproportionately requests addi-
+tional information about candidates from certain groups. Such
+a covert gate is a channel current AEDT audits do not capture;
+whether any given model exhibits it is an open, measurable
+question that∆ tool is built to answer (our pilot did not find it
+above small-sample noise).
+ECOA and Regulation B Fair Lending.The Equal Credit
+Opportunity Act and its implementing Regulation B [11]
+12 VOLUME 14, 2026
+
+[[page 13]]
+Morlaet al.: AgentFairBench: Do LLM Agents Discriminate When They Act?
+prohibit creditors from discriminating on the basis of race,
+sex, national origin, and other protected characteristics in
+any aspect of a credit transaction. The lending domain in
+AgentFairBench encodes this directly: the approve boolean
+maps to the access-to-credit obligation, while the APR tier (1–
+5) maps to pricing discrimination, a Regulation B concern that
+decision-level metrics alone cannot capture. MASD on APR
+tier therefore provides an operationalized disparity statistic
+for pricing-channel audits, complementing CFR’s access-
+channel measurement within a single unified evaluation.
+EU AI Act High-Risk Systems.The EU AI Act [27]
+classifies AI systems used in employment, credit, and essen-
+tial services as high-risk, imposing conformity assessment,
+logging, and human oversight requirements. All three Agent-
+FairBench domains fall within Annex III high-risk categories.
+The benchmark’s scaffold dimension (C0 through C4) sup-
+ports Act obligations around transparency: by measuring how
+disparity changes across chain-of-thought (C2) and multi-
+agent deliberation (C3) scaffolds, practitioners can document
+whether a specific deployment configuration attenuates or
+amplifies bias. That analysis can serve as a quantified input
+to the technical documentation contemplated by Articles 11
+and 12.
+NIST AI RMF Measure and Manage Functions.The
+NIST AI Risk Management Framework [28] identifies bias
+and fairness as cross-cutting risks requiring structured mea-
+surement (MEASURE 2.5) and active mitigation with mon-
+itored effectiveness (MANAGE 2.2). AgentFairBench pro-
+vides an end-to-end instrument for both functions. CFR,
+MASD, and∆ tool populate MEASURE-function dashboards
+across demographically protected attributes. The scaffold-
+stratified breakdown then enables MANAGE-function attri-
+bution: it isolates whether disparity originates at a retrieval
+tool invocation (C4), a reasoning step (C2), or aggregation
+across sub-agents (C3), so mitigation can be directed at the
+responsible component rather than applied system-wide.
+X. REPRODUCIBILITY
+The harness uses a fixed global seed20260612, passed
+explicitly to every randomized step: name assignment from
+the demographic pool, matched-set ordering, BCa bootstrap
+resampling (2,000 draws, matched-set resampling to preserve
+pairing), and the test-retest reliability run. Two senses of
+reproducibility should be distinguished. The seeded harness
+operations and the recomputation of every reported metric
+from the released decision traces are byte-identical for any
+independent evaluator. Re-collecting model decisions isnot
+bit-reproducible: the production endpoints sample at non-
+zero temperature with no exposed seed, so fresh API calls can
+differ (this is precisely the stochasticity the test-retest noise
+floor quantifies). Reproducibility claims in this paper refer to
+the former; the released raw traces are what make the latter
+auditable.
+Model identity is recorded at the API level: the pi-
+lot was collected againstclaude-haiku-4-5through
+the Anthropic API at the provider’s default decoding
+parameters (temperature was left at the provider de-
+fault in effect in June 2026 and not separately pinned
+or recorded per call; v1.1 pins it), with the exact
+model string and the collection date logged per call
+inresults/raw/claude-haiku-4-5_raw.jsonl.
+Leaderboard submissions must report the full model identi-
+fier, endpoint, and access date. Entries that use an alias or omit
+the date are rejected during intake. External models (GPT-4o,
+Gemini) were not run by the authors and are not reported
+as pilot results; their leaderboard cells remain open pending
+community submission.
+Each of the 36 base profiles carries a truncated SHA-
+256 content hash (16 hex digits) computed over the UTF-
+8-encoded profile body. These hashes appear in the released
+JSONL alongside each raw decision record. They serve as
+integrity checks and as version identifiers: any downstream
+modification of a profile invalidates its hash, and the harness
+detects this on load.
+The released artifacts comprise: (i)data/profiles/public_dev.jsonl
+(public split, CC-BY -4.0), containing the 36 profiles with
+domain tags, difficulty labels, and content hashes; (ii)
+data/names/name_pools.json; (iii) raw decision-
+level JSONL (results/raw/) recording one line per de-
+cision with all prompt fields, the injected name, and the
+model’s structured output; and (iv) computed metric reports
+(results/_report.json).
+The metric and statistics core (harness/agentfairbench/metrics.py)
+depends only onnumpy;scipyis intentionally ex-
+cluded to keep the implementation portable and auditable.
+All statistical routines (BCa bootstrap, McNemar exact
+test, Wilcoxon signed-rank with tie correction, Benjamini–
+Hochberg FDR, and Cohen’sh) are self-contained in roughly
+350 lines of pure Python. Dependencies are declared in
+harness/pyproject.toml(numpyfor the metrics
+core;pytestfor the test suite).
+A single CLI command reproduces the full pipeline:
+python -m agentfairbench.cli run \
+--profiles public\_dev.jsonl \
+--names name\_pools.json \
+--adapter mock --seed 20260612
+Themockadapter requires no API key and completes
+in seconds, enabling pipeline verification without cost.
+Areportsubcommand re-derives metrics from a pre-
+collected raw JSONL, so the statistical layer can be re-run
+independently of data collection.
+The test suite (harness/tests/test_metrics.py,
+14 tests) enforces several properties by construction. First, a
+BiasedMockadapter that injects a−25score penalty for
+names drawn from theblack_femalepool must produce
+positive MASD and non-zero pairwise score gaps, verifying
+that the metrics are sensitive to a known injected dispar-
+ity. Second, the neutralMockAdapter(whose decisions
+are identical across all demographic conditions) must yield
+CFR= 0and MASD= 0in every cell, confirming that
+the harness introduces no spurious disparity. A third group
+VOLUME 14, 2026 13
+
+[[page 14]]
+Morlaet al.: AgentFairBench: Do LLM Agents Discriminate When They Act?
+verifies the∆ tool metric and the C4 tool-scaffold schema. All
+14 tests pass without API access.
+A contamination canary string (AGENTFAIRBENCH-CANARY-2f9c1a)
+is embedded in the public split to detect training-set leakage.
+A closed private split, withheld from public release, is used
+for all official leaderboard rankings.
+Data and code availability.The benchmark code, public-
+split data, harness, and live leaderboard are publicly re-
+leased at https://github.com/rohithreddybc/AgentFairBench
+(code under the Apache-2.0 license, public-split data un-
+der CC-BY -4.0). The repository includes the 14-test suite,
+the raw decision-level JSONL for the primary 864-decision
+run, the computed metric reports, the arity-matched-null and
+omnibus-test scripts, and the figure-generation scripts, so that
+the headline numbers and figures can be regenerated from
+the released traces with a single command. The leaderboard
+is hosted at https://rohithreddybc.github.io/AgentFairBench/.
+One honesty caveat: the second (test–retest) run was sum-
+marized to the per-cell noise floor reported here but its raw
+per-decision scores were not committed as a separate trace
+file, so the ‘‘Retest MAE’’ column of Table 2 is a reported
+summary statistic rather than a quantity regenerable from
+the released traces, and the arity-matched null is recomputed
+from the primary run’s two-way residual rather than from the
+retest scores directly; releasing the retest traces and collecting
+a repeated-measurement (k-replicate identical-input) noise
+floor is an explicit v1.1 item (§VII).
+XI. CONCLUSION
+Fairness for LLMs has been measured at the wrong layer.
+As models move from answering to acting, the consequential
+disparity lives in what an agentdoes(which candidate it
+advances, whose loan it approves, which patient it escalates,
+and for whom it demands more evidence), not in what it says
+about a demographic group in the abstract. AgentFairBench
+closes this gap with a cheap, reproducible, multi-domain,
+action-level benchmark grounded in the Bias Conduction
+Framework, an open harness, and a live anti-gamed leader-
+board.
+Our pilot makes a methodological point and reports an hon-
+est null. The methodological point: a six-group scorespread
+(MASD) compared against a two-run pairwise noise differ-
+ence looks like2.4×the noise floor but is0.83×it once the
+floor is matched to the statistic’s arity, so naive benchmarks
+that make this comparison will read sampling noise as bias.
+We correct it with an arity-matched noise floor and an om-
+nibus group test, and define the masking (P2), amplification
+(P3), and tool-invocation channels as measurement targets
+the instrument exposes rather than effects this pilot confirms.
+The null: against the corrected floor,claude-haiku-4-5
+shows no demographic effect distinguishable from sampling
+noise atn= 12matched sets per cell (0 of 120 pairwise
+and 0 of 9 omnibus contrasts survive correction). A planted-
+bias property test shows the instrument is not insensitive; it
+recovers a known disparity. The held-out private split, the
+leaderboard, and the single-digit-dollar cost envelope are de-
+signed so the community can run the powered, multi-model
+studies that would detect a real effect if one exists.
+Future work follows the BCF roadmap toward surfaces
+this single-turn pilot only gestures at: full multi-step tool
+and memory trajectories, long-horizon disparity accumula-
+tion, temperature pinning and replicate averaging to sharpen
+significance, explicit-attribute robustness arms beyond name-
+coding, and a broad multi-vendor model panel contributed
+through the leaderboard. The benchmark is a first, tight ver-
+sion meant to be adopted and extended, and its value com-
+pounds with use.
+ACKNOWLEDGMENT
+The authors thank colleagues who reviewed early drafts and
+the maintainers of the open-source libraries on which the
+evaluation harness depends.
+AI-use disclosure.In preparing this work the authors used a
+generative AI system (Anthropic’s Claude, accessed through
+the Claude Code assistant) to help draft and edit the prose
+of all sections, to write the evaluation harness and analysis
+code, and to generate the figures from author-verified data.
+The AI system was not used to generate, alter, or fabricate any
+experimental result, measurement, or citation; every number,
+figure, and reference was produced by the authors’ own runs
+of the released code and verified against primary sources. The
+authors reviewed and edited all AI-assisted text and take full
+responsibility for the entire content of the article.
+REFERENCES
+[1] M. Bertrand and S. Mullainathan, ‘‘Are emily and greg more employable
+than lakisha and jamal? a field experiment on labor market discrimination,’’
+American Economic Review, 94(4), 991-1013, 2004. [Online]. Available:
+https://www.aeaweb.org/articles?id=10.1257/0002828042002561
+[2] A. Parrish, A. Chen, N. Nangia, V . Padmakumar, J. Phang, J. Thompson,
+P . M. Htut, and S. R. Bowman, ‘‘Bbq: A hand-built bias benchmark for
+question answering,’’ inFindings of the Association for Computational
+Linguistics: ACL 2022, 2022, arXiv:2110.08193. [Online]. Available:
+https://arxiv.org/abs/2110.08193
+[3] M. Nadeem, A. Bethke, and S. Reddy, ‘‘Stereoset: Measuring stereotypical
+bias in pretrained language models,’’ inProceedings of the 59th
+Annual Meeting of the Association for Computational Linguistics
+(ACL-IJCNLP 2021), 2021, arXiv:2004.09456. [Online]. Available:
+https://arxiv.org/abs/2004.09456
+[4] N. Nangia, C. V ania, R. Bhalerao, and S. R. Bowman, ‘‘Crows-pairs:
+A challenge dataset for measuring social biases in masked language
+models,’’ inProceedings of the 2020 Conference on Empirical Methods in
+Natural Language Processing (EMNLP 2020), 2020, arXiv:2010.00133.
+[Online]. Available: https://arxiv.org/abs/2010.00133
+[5] X. Liu, H. Y u, H. Zhang, Y . Xu, X. Lei, H. Lai, Y . Gu, H. Ding,
+K. Men, K. Y ang, S. Zhang, X. Deng, A. Zeng, Z. Du, C. Zhang, S. Shen,
+T. Zhang, Y . Su, H. Sun, M. Huang, Y . Dong, and J. Tang, ‘‘Agentbench:
+Evaluating llms as agents,’’ inICLR 2024 (International Conference on
+Learning Representations), 2024, arXiv:2308.03688. [Online]. Available:
+https://arxiv.org/abs/2308.03688
+[6] S. Zhou, F. F. Xu, H. Zhu, X. Zhou, R. Lo, A. Sridhar, X. Cheng,
+T. Ou, Y . Bisk, D. Fried, U. Alon, and G. Neubig, ‘‘Webarena: A
+realistic web environment for building autonomous agents,’’ inICLR
+2024 (International Conference on Learning Representations), 2024,
+arXiv:2307.13854. [Online]. Available: https://arxiv.org/abs/2307.13854
+[7] C. E. Jimenez, J. Y ang, A. Wettig, S. Y ao, K. Pei, O. Press,
+and K. Narasimhan, ‘‘Swe-bench: Can language models resolve real-
+world github issues?’’ inICLR 2024 (International Conference on
+Learning Representations), 2024, arXiv:2310.06770. [Online]. Available:
+https://arxiv.org/abs/2310.06770
+14 VOLUME 14, 2026
+
+[[page 15]]
+Morlaet al.: AgentFairBench: Do LLM Agents Discriminate When They Act?
+[8] X. Deng, Y . Gu, B. Zheng, S. Chen, S. Stevens, B. Wang, H. Sun, and Y . Su,
+‘‘Mind2web: Towards a generalist agent for the web,’’ inNeurIPS 2023
+Datasets and Benchmarks Track (Spotlight), 2023, arXiv:2306.06070.
+[Online]. Available: https://arxiv.org/abs/2306.06070
+[9] U.S. Equal Employment Opportunity Commission (EEOC), ‘‘Assessing
+adverse impact in software, algorithms, and artificial intelligence used in
+employment selection procedures under title vii of the civil rights act
+of 1964,’’ U.S. Equal Employment Opportunity Commission, Technical
+Assistance Document (issued May 18, 2023), AI and Algorithmic Fairness
+Initiative, 2023. [Online]. Available: https://www.eeoc.gov/laws/guidance/
+select-issues-assessing-adverse-impact-software-algorithms-and-artificial
+[10] New Y ork City Council; NYC Department of Consumer and Worker
+Protection (DCWP), ‘‘Local law 144 of 2021: Automated employment
+decision tools (aedt) - final rule (dcwp), subchapter 25 of title 6 of
+the rules of the city of new york,’’ New Y ork City Administrative
+Code 20-870 et seq.; effective Jan 1, 2023, enforcement began July 5,
+2023, 2023, nYC Local Law 144 of 2021. [Online]. Available: https:
+//rules.cityofnewyork.us/rule/automated-employment-decision-tools-2/
+[11] U.S. Consumer Financial Protection Bureau (CFPB), ‘‘Equal credit
+opportunity act (regulation b), 12 cfr part 1002,’’ 15 U.S.C. 1691 et
+seq. (ECOA, enacted 1974); implemented by Regulation B, 12 CFR
+Part 1002 (CFPB), 1974, 12 CFR Part 1002. [Online]. Available:
+https://www.consumerfinance.gov/rules-policy/regulations/1002/
+[12] S. L. Blodgett, S. Barocas, H. Daumé III, and H. Wallach, ‘‘Language
+(technology) is power: A critical survey of ‘‘bias’’ in nlp,’’ inProceedings
+of the 58th Annual Meeting of the Association for Computational
+Linguistics (ACL 2020), 5454–5476, 2020, arXiv:2005.14050. [Online].
+Available: https://aclanthology.org/2020.acl-main.485/
+[13] I. O. Gallegos, R. A. Rossi, J. Barrow, M. M. Tanjim, S. Kim,
+F. Dernoncourt, T. Y u, R. Zhang, and N. K. Ahmed, ‘‘Bias and
+fairness in large language models: A survey,’’Computational Linguistics,
+50(3), 1097–1179, 2024, arXiv:2309.00770. [Online]. Available: https:
+//aclanthology.org/2024.cl-3.8/
+[14] A. Tamkin, A. Askell, L. Lovitt, E. Durmus, N. Joseph, S. Kravec,
+K. Nguyen, J. Kaplan, and D. Ganguli, ‘‘Evaluating and mitigating
+discrimination in language model decisions,’’arXiv preprint, 2023,
+arXiv:2312.03689; dataset: Anthropic/discrim-eval. [Online]. Available:
+https://arxiv.org/abs/2312.03689
+[15] J. An, D. Huang, C. Lin, and M. Tai, ‘‘Measuring gender and
+racial biases in large language models: Intersectional evidence from
+automated resume evaluation,’’PNAS Nexus, 2025. [Online]. Available:
+https://doi.org/10.1093/pnasnexus/pgaf089
+[16] A. Haim, A. Salinas, and J. Nyarko, ‘‘What’s in a name? auditing
+large language models for race and gender bias,’’arXiv preprint, 2024,
+arXiv:2402.14875. [Online]. Available: https://arxiv.org/abs/2402.14875
+[17] Y . Jiang, K. C. Black, G. Geng, D. Park, J. Zou, A. Y . Ng, and
+J. H. Chen, ‘‘Medagentbench: A realistic virtual ehr environment to
+benchmark medical llm agents,’’arXiv preprint (also NEJM AI), 2025,
+arXiv:2501.14654. [Online]. Available: https://arxiv.org/abs/2501.14654
+[18] Y . Xiao, J. Huang, R. He, J. Xiao, M. R. Mousavi, Y . Liu, K. Li,
+Z. Chen, and J. M. Zhang, ‘‘Fairmedqa: Benchmarking bias in large
+language models for medical question answering,’’arXiv preprint, 2025,
+arXiv:2505.19562. [Online]. Available: https://arxiv.org/abs/2505.19562
+[19] S. Adappanavar, K. Shailya, G. S. Krishnan, S. Natarajan, and
+B. Ravindran, ‘‘mfarm: Towards multi-faceted fairness assessment
+based on harms in clinical decision support,’’arXiv preprint, 2025,
+arXiv:2509.02007. [Online]. Available: https://arxiv.org/abs/2509.02007
+[20] R. J. Y oung and A. M. Matthews, ‘‘Equitriage: A fairness audit of gender
+bias in llm-based emergency department triage,’’arXiv preprint, 2026,
+arXiv:2605.03998. [Online]. Available: https://arxiv.org/abs/2605.03998
+[21] K. Mayilvaghanan, S. Gupta, and A. Kumar, ‘‘Counterfactual fairness
+evaluation of llm-based contact center agent quality assurance system,’’
+arXiv preprint, 2026, arXiv:2602.14970. [Online]. Available: https:
+//arxiv.org/abs/2602.14970
+[22] C. Dwork, M. Hardt, T. Pitassi, O. Reingold, and R. Zemel, ‘‘Fairness
+through awareness,’’ inProceedings of the 3rd Innovations in Theoretical
+Computer Science Conference (ITCS ’12), 214-226, 2012. [Online].
+Available: https://dl.acm.org/doi/10.1145/2090236.2090255
+[23] M. Hardt, E. Price, and N. Srebro, ‘‘Equality of opportunity in supervised
+learning,’’ inAdvances in Neural Information Processing Systems 29
+(NIPS 2016), 3315-3323, 2016, arXiv:1610.02413. [Online]. Available:
+https://arxiv.org/abs/1610.02413
+[24] M. J. Kusner, J. R. Loftus, C. Russell, and R. Silva, ‘‘Counterfactual
+fairness,’’ inAdvances in Neural Information Processing Systems 30
+(NIPS 2017), 4066-4076, 2017, arXiv:1703.06856. [Online]. Available:
+https://arxiv.org/abs/1703.06856
+[25] J. Kleinberg, S. Mullainathan, and M. Raghavan, ‘‘Inherent trade-offs
+in the fair determination of risk scores,’’ inProceedings of the 8th
+Innovations in Theoretical Computer Science Conference (ITCS 2017),
+2017, arXiv:1609.05807. [Online]. Available: https://arxiv.org/abs/1609.
+05807
+[26] A. Chouldechova, ‘‘Fair prediction with disparate impact: A study of bias
+in recidivism prediction instruments,’’Big Data, 5(2), 153–163, 2017,
+arXiv:1703.00056. [Online]. Available: https://arxiv.org/abs/1703.00056
+[27] European Parliament and Council of the European Union, ‘‘Regulation
+(eu) 2024/1689 of the european parliament and of the council of 13 june
+2024 laying down harmonised rules on artificial intelligence (artificial
+intelligence act),’’ Official Journal of the European Union, L series,
+published 12 July 2024, 2024, regulation (EU) 2024/1689. [Online].
+Available: https://eur-lex.europa.eu/eli/reg/2024/1689/oj
+[28] National Institute of Standards and Technology (NIST), ‘‘Artificial
+intelligence risk management framework (ai rmf 1.0),’’ NIST, U.S.
+Department of Commerce (published January 26, 2023), 2023, nIST AI
+100-1. [Online]. Available: https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.
+100-1.pdf
+[29] M. De-Arteaga, A. Romanov, H. Wallach, J. Chayes, C. Borgs,
+A. Chouldechova, S. Geyik, K. Kenthapadi, and A. T. Kalai, ‘‘Bias in bios:
+A case study of semantic representation bias in a high-stakes setting,’’
+inProceedings of the Conference on Fairness, Accountability, and
+Transparency (F AT* 2019), 120–128, 2019, arXiv:1901.09451. [Online].
+Available: https://dl.acm.org/doi/10.1145/3287560.3287572
+[30] J. Buolamwini and T. Gebru, ‘‘Gender shades: Intersectional accuracy
+disparities in commercial gender classification,’’ inProceedings of the 1st
+Conference on Fairness, Accountability and Transparency (F AT* 2018),
+PMLR 81:77–91, 2018. [Online]. Available: https://proceedings.mlr.press/
+v81/buolamwini18a.html
+[31] B. Efron, ‘‘Better bootstrap confidence intervals,’’Journal of the American
+Statistical Association, 82(397), 171–185, 1987. [Online]. Available:
+https://www.tandfonline.com/doi/abs/10.1080/01621459.1987.10478410
+[32] T. J. DiCiccio and B. Efron, ‘‘Bootstrap confidence inter-
+vals,’’Statistical Science, 11(3), 189–228, 1996. [Online]. Avail-
+able: https://projecteuclid.org/journals/statistical-science/volume-11/
+issue-3/Bootstrap-confidence-intervals/10.1214/ss/1032280214.full
+[33] Y . Benjamini and Y . Hochberg, ‘‘Controlling the false discovery rate: A
+practical and powerful approach to multiple testing,’’Journal of the Royal
+Statistical Society: Series B (Methodological), vol. 57, no. 1, pp. 289–300,
+1995.
+[34] Z. Y anget al., ‘‘Compared to what? baselines and metrics for
+counterfactual prompting,’’arXiv preprint, 2026, arXiv:2605.01048.
+[Online]. Available: https://arxiv.org/abs/2605.01048
+[35] S. M. Gaddis, ‘‘How black are lakisha and jamal? racial perceptions
+from names used in correspondence audit studies,’’Sociological Science,
+vol. 4, pp. 469–489, 2017, dOI: 10.15195/v4.a21. [Online]. Available:
+https://doi.org/10.15195/v4.a21
+VOLUME 14, 2026 15
+
+[[page 16]]
+Morlaet al.: AgentFairBench: Do LLM Agents Discriminate When They Act?
+TRIVENI MORLAis a Data Analytics Specialist
+and researcher with over five years of experience
+in data analytics, artificial intelligence, business
+intelligence, and risk modeling across the fin-
+tech, healthcare, and compliance sectors. She holds
+a Master of Science in Computer Science from
+Florida International University. Her professional
+work focuses on developing data-driven solutions,
+predictive models, automated data pipelines, and
+analytics platforms that support decision-making
+in complex business environments. She has expertise in SQL, Python, cloud
+technologies, machine learning, business intelligence, and data governance.
+Her research interests include trustworthy artificial intelligence, large lan-
+guage models, AI agents, algorithmic fairness, responsible AI, machine
+learning, and data-driven decision systems. She is particularly interested
+in evaluating and improving the reliability, transparency, and societal im-
+pact of intelligent systems deployed in real-world settings. Triveni actively
+contributes to the research community through scholarly publications and
+participation in professional organizations, with a focus on advancing ethical
+and accountable AI technologies. Her work bridges industry practice and aca-
+demic research, combining practical experience with emerging developments
+in artificial intelligence and data science.
+MANPREET SINGHreceived the B.Tech. degree
+in Computer Science and Engineering from Guru
+Gobind Singh Indraprastha University in 2017 and
+the M.S. degree in Computer Information Sys-
+tems with a concentration in Data Analytics from
+Boston University in 2023. He is currently a Data
+Science Consultant with Infiheal Healthcare, In-
+dia. He has over eight years of industry and re-
+search experience spanning healthcare analytics,
+semiconductor manufacturing, business process
+intelligence, and large-scale data engineering. His research contributions
+include machine learning, anomaly detection, predictive analytics, sports
+analytics, information retrieval, and healthcare applications of artificial in-
+telligence. He has authored multiple conference and journal publications and
+serves as a reviewer for international conferences in artificial intelligence
+and healthcare technologies. His research interests include artificial intel-
+ligence, machine learning, deep learning, anomaly detection, explainable
+AI, healthcare informatics, process mining, natural language processing, and
+data-driven decision support systems.
+ROHITH REDDY BELLIBATLUis a Machine
+Learning Researcher and Senior Analyst, Research
+& Data Scientist at ILS Health, Miami, Florida,
+USA, where he develops and deploys large-scale
+machine learning, data science, and analytics solu-
+tions for healthcare applications. He holds an M.S.
+in Computer Science from Florida International
+University and a B.Tech in Computer Science from
+GITAM University.
+With approximately four years of professional
+experience, his work spans machine learning, deep learning, natural language
+processing, large language models, data science, and large-scale data engi-
+neering. His industry experience includes developing production-grade ana-
+lytical and decision-support systems operating on healthcare and population-
+health datasets at scale.
+His research interests include machine learning and deep learning, natural
+language processing and large language models, AI evaluation and bench-
+marking, model reliability, trustworthy and responsible AI, and AI safety. His
+recent work focuses on benchmarking the reliability of LLM-as-a-Judge sys-
+tems, prompt-engineering evaluation methodologies, and safety-evaluation
+frameworks for AI decision-support systems. He actively contributes to the
+research community through publications, open-source software, datasets,
+and public research preprints.
+MANMEET SINGH KAPOORis the Vice Presi-
+dent of BSA TES EdTech Foundation and the Chief
+Technology Officer (CTO) of BSA TES Business
+Consultancy. He is currently pursuing an Inte-
+grated M.Tech.–Ph.D. degree from IIT Patna.
+With over 23 years of experience in academia,
+technology, and organizational leadership, he has
+contributed extensively to digital transformation,
+skill development, and technology-enabled educa-
+tion. Prior to BSA TES, he served for more than
+two decades at Guru Tegh Bahadur Institute of Technology (GTBIT) as an
+Assistant Professor and Head of the Centralized Computing Facility Unit,
+leading academic, technical, and IT infrastructure initiatives.
+He has established strategic collaborations with premier institutions, in-
+cluding IIT Bombay, IIT Mandi, IIT Kharagpur, and AIMA, promoting inno-
+vation in Artificial Intelligence, IoT, Cybersecurity, and emerging technolo-
+gies. His expertise includes technology consulting, academic partnerships,
+project management, digital skill development, and organizational growth.
+His interests include artificial intelligence, educational technology, digital
+transformation, cybersecurity, IoT, and workforce development.
+16 VOLUME 14, 2026

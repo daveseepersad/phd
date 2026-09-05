@@ -1,0 +1,922 @@
+[[page 1]]
+Agent Brain v3
+Agent Brain: A Biologically Inspired Memory System
+for Autonomous AI Agents — LongMemEval-M
+Evaluation
+Author: Theshoth Sritharan
+Affiliation: Valtis, Sachseln OW, Switzerland
+Date: April 2026 (v3 — corrects cross-system comparisons from v1/v2; see §0 Changelog)
+Type: Technical Report / Pre-Print (Defensive Publication)
+Contact: t.sritharan@valtis.ch
+Repository:github.com/AgentBrainHQ/agentbrain-benchmarks
+ORCID: 0009-0006-4400-3352
+0. Changelog — important
+This is version 3 of this technical report. Previous versions contained cross-system comparisons that were
+not apples-to-apples:
+v1 (14 April 2026): original preprint, no LongMemEval evaluation.
+v2 (21 April 2026): added §15 LongMemEval head-to-head with Zep, Mem0, LangMem, OpenAI
+Memory. Two errors have since been identified and are corrected here:
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 1/37
+
+[[page 2]]
+1. The “Zep 63.8%” figure was the baseline row of Rasmussen et al. 2025 Table 2, not Zep itself.
+Zepʼs reported accuracy on LongMemEval-S with gpt-4o-mini is 71.2%.
+2. Published peer numbers for Zep, Mem0, LangMem, and OpenAI Memory are on LongMemEval-S
+(Small) or from 2024 third-party evaluations, whereas our measurement is on LongMemEval-M
+(specifically weaviate/longmemeval-m-cleaned). These are different dataset variants and numbers
+are not directly comparable. Mem0 v1ʼs own evaluation focus was LoCoMo. Mem0 v2, released ~17
+April 2026 (between our v1 and v2 dates), reports substantially higher LongMemEval accuracy.
+v3 (21 April 2026, this version): removes the “state-of-the-art” claim. Reports our 71.7% on
+LongMemEval-M-cleaned as a single-system self-report on a clearly specified variant. Restates cross-
+system discussion around what is and is not directly comparable, and what future work (re-evaluating
+peers on m-cleaned) would clarify.
+No change to our own measurement. Our reported accuracy on weaviate/longmemeval-m-cleaned remains
+71.7% (Test 0, no consolidation), 69.8% (Test 1, with Dream Cycle), and 72.2 – 73.9% for our pgvector-only
+control. All are reproducible via github.com/AgentBrainHQ/agentbrain-benchmarks.
+Abstract
+This technical report describes Agent Brain, a biologically inspired memory system for autonomous AI agents.
+In contrast to stateless Large Language Model interactions, Agent Brain provides persistent, weighted, and
+self-organizing memory that emulates human cognitive processes: perception, storage, retrieval,
+consolidation, and forgetting.
+The system integrates eleven successive layers: (1) a Perception Gate for multi-dimensional evaluation of
+incoming information, (2) a Deduplication Guard based on Cosine Similarity, (3) typed memory storage
+(episodic, semantic, procedural), (4) Named Entity Recognition using flair/ner-german-large (F1 92.31%), (5) a
+Knowledge Graph for associative retrieval, (6) LLM-based Query Expansion, (7) Hybrid Search via Reciprocal
+Rank Fusion, (8) Cross-Encoder Re-Ranking for precise relevance assessment, (9) an implicit Feedback Loop
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 2/37
+
+[[page 3]]
+based on the Free Spaced Repetition Scheduler (FSRS), (10) a nightly Dream Cycle with five consolidation
+phases, and (11) complete Workspace Isolation with Row-Level Security.
+The central innovation lies in the combination of implicit feedback (without manual user feedback) with
+Spaced Repetition for agent memory, as well as a multi-stage Dream Cycle that unifies consolidation, creative
+association formation, and predictive pattern recognition. The system has been in production use since early
+2026 for Swiss property management (Immobilienbewirtschaftung) with over 5,000 memories, 10,000 entities,
+and eight specialized agents.
+Evaluation on LongMemEval-M. On the public weaviate/longmemeval-m-cleaned benchmark (500 QA pairs
+across 510 multi-turn workspaces, GPT-4o judge), Agent Brain achieves 71.7% accuracy without
+consolidation and 69.8% with the Dream Cycle enabled. Our own pgvector-only control reaches 72.2 –
+73.9%, which we report transparently as a 2.2 pp gap versus our hybrid pipeline on quiz-style questions. To
+our knowledge these are the first published numbers on the m-cleaned variant; peer numbers from Zep, Mem0,
+LangMem, and OpenAI Memory exist only on the LongMemEval-S variant and are therefore not directly
+comparable. §15 discusses what is and is not known about cross-system ranking on this benchmark.
+Keywords: AI Agent Memory, Spaced Repetition, Knowledge Graph, Named Entity Recognition, Hybrid
+Search, Reciprocal Rank Fusion, Dream Cycle, FSRS, LongMemEval, Benchmark, Property Management
+1. Introduction
+1.1 Problem Statement
+Large Language Models (LLMs) such as GPT-4, Claude, and Gemini have demonstrated remarkable
+capabilities in language understanding and generation. However, they fundamentally operate in a stateless
+manner: each interaction begins without memory of previous conversations unless the entire context is
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 3/37
+
+[[page 4]]
+explicitly provided. For autonomous agents that process tasks over weeks and months, this constitutes a
+fundamental limitation.
+In property management (Immobilienbewirtschaftung) — the application domain of this system — timescales
+of months or years are typical: utility cost statements (Nebenkostenabrechnungen) are prepared annually,
+lease agreements run for years, notice periods extend over months. An agent accompanying these processes
+must be able to recall past interactions — and not all equally, but weighted by relevance, recency, and
+frequency of use.
+1.2 Contributions
+This paper presents Agent Brain, a memory system that makes the following novel contributions:
+1. Implicit Feedback Loop: Automatic reinforcement and attenuation of memories based on embedding
+comparisons between retrieval and storage operations — without any manual user feedback.
+2. FSRS for Agent Memory: First-time application of the Free Spaced Repetition Scheduler (Ye, 2024) to
+autonomous agent memories rather than flashcards.
+3. Multi-Stage Dream Cycle: A biologically inspired nightly consolidation process with five phases: decay,
+consolidation, creative association formation, pattern recognition, and predictive warnings.
+4. LLM-Based Query Expansion: Intelligent expansion of colloquial search queries with domain-specific
+technical terminology through a dedicated LLM call.
+5. Cross-Encoder Re-Ranking: Pairwise semantic relevance assessment after Hybrid Search for precise
+top-K results (P@5=0.787 in the production benchmark).
+6. First published evaluation on LongMemEval-M-cleaned: we report 71.7% / 69.8% / 72.2–73.9% across
+three configurations on the weaviate/longmemeval-m-cleaned variant, alongside a transparent discussion
+of a 1.9 pp consolidation-induced regression and a 2.2 pp gap to our own pgvector-only control (§15).
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 4/37
+
+[[page 5]]
+Published peer numbers exist on other variants (LongMemEval-S); we explicitly abstain from claiming
+cross-system ranking without re-evaluating peers on m-cleaned under identical judging.
+1.3 Scope
+The system is currently designed for Swiss property management, though the underlying architecture is
+domain-agnostic and applicable to other fields. In §15 we additionally report a domain-agnostic evaluation on
+LongMemEval-M-cleaned.
+2. Related Work
+2.1 LLM Memory Systems
+Mem0 (Mem0.ai, 2024) provides persistent memory for LLM applications with automatic extraction and
+organization of facts from conversations. It uses graph-based storage but offers neither Spaced Repetition nor
+a consolidation mechanism. Furthermore, it lacks a domain-specific NER component.
+Zep (Getzep, 2024) implements a Memory Server with embedding-based search and Knowledge Graph
+extraction. Zep offers Hybrid Search but has no feedback mechanism that adjusts the weighting of memories
+based on actual usage.
+MemGPT (Packer et al., 2023) proposes a virtual context management approach modeled after hierarchical
+memory systems of operating systems. The approach focuses on context window management within a
+session, not on long-term memory weighting across sessions.
+LangChain Memory (LangChain, 2023) offers various memory types (Buffer, Summary, Entity Memory) as
+part of the LangChain framework. The implementations are functional but lack any mechanism for temporal
+decay or usage-based reinforcement.
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 5/37
+
+[[page 6]]
+2.2 Spaced Repetition
+The Free Spaced Repetition Scheduler (FSRS) (Ye, 2024) is an evidence-based algorithm for optimal
+flashcard management built on the DSR model (Difficulty, Stability, Retrievability). FSRS has so far been used
+exclusively for human learning with flashcards. The present work transfers FSRS for the first time to
+autonomous agent memories.
+2.3 Named Entity Recognition for German
+flair (Akbik et al., 2019) is an NLP framework with pre-trained sequence tagging models. The model ner-
+german-large is based on XLM-RoBERTa-large and achieves an F1 score of 92.31% on the CoNLL-03 German
+Benchmark. This is particularly relevant for the Swiss property domain, as specific company names (e.g.,
+“Immo Treuhand AG”, “Betreibungsamt Luzern” [debt collection office]) must be correctly recognized as
+organizations.
+2.4 Hybrid Search
+Reciprocal Rank Fusion (RRF) (Cormack, Clarke & Büttcher, 2009) combines rankings from different search
+systems into a unified result. The method is robust against different score scales and requires no
+normalization of input rankings.
+2.5 Multi-Memory Systems for Agents
+Wang et al. (2012) present in “A Self-Organizing Multi-Memory System for Autonomous Agents” a system
+with three memory types (episodic, semantic, procedural) based on Fusion Adaptive Resonance Theory (ART).
+The system implements memory consolidation (transfer from episodic to semantic knowledge) and prevents
+catastrophic forgetting through parallel processing across different timescales. Evaluation is conducted in a
+game environment (Unreal Tournament). Agent Brain adopts the same biological tripartition of memory types
+but replaces ART with FSRS-based weighting and adds Hybrid Search, Cross-Encoder Re-Ranking, and a
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 6/37
+
+[[page 7]]
+multi-stage Dream Cycle. Furthermore, Agent Brain operates in production with real-world data rather than a
+game environment.
+2.6 Brain-Inspired Memory Architectures
+Yu et al. (2024) propose in “Brain-inspired AI Agent: The Way Towards AGI” a conceptual framework that
+maps cortical brain regions (Hippocampus, Prefrontal Cortex, Default Mode Network) to functional agent
+modules. The paper provides the theoretical foundation for brain-inspired agents but remains at the
+conceptual level without practical implementation or quantitative evaluation.
+Microsoft Research (Blumenthal et al., 2025) present in “A brain-inspired agentic architecture to improve
+planning with LLMs” the Modular Agentic Planner (MAP), published in Nature Communications. MAP uses
+brain-inspired modules (Conflict Monitoring, State Prediction, Task Decomposition) to improve LLM-based
+planning. The work demonstrates significant improvements on planning tasks (Graph Traversal, Tower of
+Hanoi) but focuses exclusively on planning — without memory management, spaced repetition, or
+consolidation.
+Agent Brain and MAP address complementary aspects of brain-inspired agent architectures: MAP optimizes
+Planning (Prefrontal Cortex), Agent Brain optimizes Memory (Hippocampus + Consolidation). Agent Brain
+represents — to the best of our knowledge — the first complete practical implementation of a brain-inspired
+memory system, with quantitative retrieval benchmark results (P@5=0.787, MRR=0.762).
+2.7 Architecture comparison
+System Hybrid Search
+Spaced
+Repetition
+Knowledge
+Graph
+Dream Cycle
+Implicit
+Feedback
+OpenAI Memory — — — — —
+LangChain Memory — — Partial — —
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 7/37
+
+[[page 8]]
+System Hybrid Search
+Spaced
+Repetition
+Knowledge
+Graph
+Dream Cycle
+Implicit
+Feedback
+Mem0 — — Yes — —
+MemGPT — — — — —
+Zep Yes — Yes — —
+Agent Brain Yes Yes (FSRS) Yes Yes Yes
+Architectural feature comparison only. Performance numbers per system are discussed in §15 with variant-
+specific caveats; earlier versions of this table showed accuracies across mismatched LongMemEval variants (S
+vs. M-cleaned) and have been removed to avoid confusion.
+3. System Architecture
+The architecture of Agent Brain comprises ten layers that cover the entire lifecycle of a piece of information.
+The process is divided into three main flows: Storage (Store), Retrieval (Recall), and nightly Consolidation
+(Dream Cycle).
+3.1 Store Flow
+Agent → /store → Perception Gate v2 (4-dimensional evaluation)
+ → Dedup Guard (Cosine > 0.92 → blocked)
+ → Memory stored (Embedding + Metadata)
+ → Feedback Loop:
+ → Check open Recall Sessions (< 30 min)
+ → Embedding comparison → FSRS Review
+ → NER Extraction (flair, F1 92.31%)
+ → Sentence segmentation → Batch Predict
+ → PER/LOC/ORG/MISC Mapping
+ → Entity + Relationship → Knowledge Graph
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 8/37
+
+[[page 9]]
+3.2 Recall Flow
+Agent → /recall → Query Expansion (colloquial → technical)
+ → Hybrid Search:
+ → Vector (Cosine Similarity, weight 0.7)
+ → Keyword (tsvector german, weight 0.3)
+ → RRF Fusion (k=60)
+ → Score normalization (0.1–1.0)
+ → Weight filter (> 0.05)
+ → Recall Session stored
+ → Reconsolidation (+0.05 weight)
+ → NER on Query → Graph Traversal
+ → Memories returned
+3.3 Dream Cycle (daily at 02:00)
+Phase 1: FSRS Decay → weight = f(stability, elapsed_days)
+Phase 2: Consolidation → Cosine > 0.92 → merge
+Phase 3: Creative Connections → Random Walk in Knowledge Graph
+Phase 4: Pattern Recognition → Identify recurring events
+Phase 5: Predictive Alerts → Seasonal + overdue warnings
+Core Principle: Every memory has a weight (0.0–1.0+) that determines its survival. Memories with a weight
+below 0.05 are filtered out during retrieval.
+4. Layer 1: Perception Gate
+The Perception Gate evaluates incoming information along four dimensions:
+Dimension Range Description
+Emotion Score 0.0–1.0 Emotional intensity (urgency, sentiment)
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 9/37
+
+[[page 10]]
+Dimension Range Description
+Novelty Score 0.0–1.0 Degree of novelty relative to existing
+memories
+Urgency Score 0.0–1.0 Temporal urgency (deadlines, legal terms)
+Source Trust 0.0–1.0 Reliability of the source
+The weighting formula is:
+W = 0.3 × emotion + 0.3 × novelty + 0.2 × urgency + 0.2 × source_trust
+Practical Example: The message “Tenant M. threatens legal action due to mold in apartment 3B” is scored
+with Emotion: 0.85, Novelty: 0.70, Urgency: 0.90, Source Trust: 0.80. The resulting weight of 0.805 leads to
+strong anchoring. By comparison, the routine message “Confirmation: key handover Monday 10:00” receives a
+weight of 0.325 and decays more quickly.
+5. Layer 2: Deduplication Guard
+Before storage, the embedding of the new information is compared with recently stored memories. If the
+Cosine Similarity exceeds 0.92, storage is blocked.
+The threshold of 0.92 was determined empirically:
+Threshold Behavior
+0.85
+Too aggressive — blocks paraphrases containing
+new information
+0.90 Blocks reformulations, allows updates with new
+facts
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 10/37
+
+[[page 11]]
+Threshold Behavior
+0.92 Blocks near-duplicates, allows meaningful
+variations
+0.95 Too permissive — similar memories accumulate
+Example: “Utility statement 2025 (NK-Abrechnung): Total CHF 12,450” followed by “Utility statement 2025:
+Total CHF 12,450, dispatched on Feb 15” → Similarity 0.89 → allowed (new date information).
+6. Layer 3: Memory Storage
+The system distinguishes three memory types with different decay rates:
+Type Purpose Decay Rate
+Episodic Events, conversations, actionsNormal (FSRS-based)
+Semantic Facts, laws, definitions Slow (high stability)
+ProceduralPatterns, rules, reflexes Very slow
+Each memory is vectorized as a 1024-dimensional embedding (Voyage AI, voyage-3) and indexed via an
+HNSW index (m=16, ef_construction=64) for efficient Approximate Nearest Neighbor search. Additionally, a
+German-language tsvector is generated for full-text search.
+Database Schema (Excerpt)
+CREATE TABLE memories (
+ id UUID PRIMARY KEY,
+ workspace_id UUID NOT NULL,
+ content TEXT NOT NULL,
+ embedding VECTOR(1024),
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 11/37
+
+[[page 12]]
+7. Layer 4: Entity Extraction (NER)
+Named Entity Recognition uses the model flair/ner-german-large (Akbik et al., 2019) with an XLM-RoBERTa-
+large backbone (~560M parameters, F1 92.31% on CoNLL-03 German).
+Label Mapping
+flair LabelAgent Brain Type
+PER person
+LOC location
+ORG organization
+MISC concept
+Comparison with Previous Model
+The previous model (spaCy de_core_news_md, F1 ~85%) systematically failed on Swiss entities:
+ type TEXT DEFAULT 'episodic',
+ emotion_score FLOAT DEFAULT 0.5,
+ weight FLOAT DEFAULT 0.5,
+ access_count INT DEFAULT 0,
+ stability FLOAT DEFAULT 1.0, -- FSRS
+ difficulty FLOAT DEFAULT 0.3, -- FSRS
+ reps INT DEFAULT 0, -- FSRS
+ last_review TIMESTAMPTZ,
+ search_vector TSVECTOR,
+ created_at TIMESTAMPTZ DEFAULT NOW()
+);
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 12/37
+
+[[page 13]]
+Input Text spaCy (F1 ~85%) flair (F1 92.31%)
+“Hans Meier” Only “Hans” recognized “Hans Meier” → person
+“Immo Treuhand AG” MISC or not recognized “Immo Treuhand AG” → organization
+“Betreibungsamt Luzern”
+(debt collection office) 2 separate entities 1 entity → organization
+“CHF” Never recognized “CHF” → concept
+Processing is performed sentence-by-sentence using SegtokSentenceSplitter with subsequent batch
+prediction, enabling efficient parallel processing for longer texts.
+8. Layer 5: Knowledge Graph
+The Knowledge Graph connects extracted entities across different memories and enables associative retrieval.
+Schema
+CREATE TABLE entities (
+ id UUID PRIMARY KEY,
+ workspace_id UUID NOT NULL,
+ name TEXT NOT NULL,
+ type TEXT NOT NULL,
+ created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE relationships (
+ id UUID PRIMARY KEY,
+ workspace_id UUID NOT NULL,
+ from_entity_id UUID REFERENCES entities(id),
+ to_entity_id UUID REFERENCES entities(id),
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 13/37
+
+[[page 14]]
+Relationship Construction
+When multiple entities appear in the same memory, they are automatically linked with the relation
+mentioned_with.
+Example: From “Peter N. from Immo Treuhand AG called regarding Galgerain 38,” three entities (Person,
+Organization, Location) and three relationships are created.
+Graph Traversal During Retrieval
+When searching for “Galgerain 38,” the system extracts the entity (Location), determines all relationships,
+returns connected entities, and retrieves their associated memories. The results are merged with the vector
+search.
+9. Layer 6: LLM-Based Query Expansion
+Query Expansion bridges the gap between colloquial language and technical terminology. An LLM call (Claude
+Haiku) intelligently expands each search query with 3-5 domain-specific technical terms. As a fallback, 15
+rule-based expansions are available.
+LLM Expansion
+The system prompt instructs the model as a Swiss property management expert that adds relevant technical
+terms, legal articles, and Swiss terminology (OR, ZGB, SchKG, VMWG). The original query is preserved,
+supplemented with professional expansions.
+ relation_type TEXT NOT NULL,
+ created_at TIMESTAMPTZ DEFAULT NOW()
+);
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 14/37
+
+[[page 15]]
+Examples
+Colloquial Query LLM Expansion
+“tenant doesnʼt pay” (mieter zahlt nicht)
++ payment default (Zahlungsverzug), debt
+collection (Betreibung), SchKG, reminder
+(Mahnung), OR 257d
+“how to initiate debt collection” (wie betreibung einleiten)
++ debt collection request (Betreibungsbegehren),
+payment order (Zahlungsbefehl), SchKG Art. 67
+“water damage in apartment” (wasserschaden in wohnung)
++ pipe burst (Rohrbruch), insurance claim
+(Versicherungsfall), damage report
+(Schadensmeldung), OR 259a
+“calculate utility costs” (nebenkosten abrechnen)
++ utility cost statement
+(Nebenkostenabrechnung), advance payment
+(Akontozahlung), heating costs (Heizkosten),
+VMWG
+Rule-Based Fallback
+When the LLM is unavailable, 15 pattern-based rules map colloquial patterns to technical property
+management terms.
+Effectiveness: LLM Expansion improves P@5 by 42% and MRR by 37% compared to pure Hybrid Search
+(cf. Section 14.6).
+10. Layer 7: Hybrid Search (RRF)
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 15/37
+
+[[page 16]]
+The search combines vector search (Cosine Similarity) with keyword search (PostgreSQL tsvector with
+German stemmer) using Reciprocal Rank Fusion (Cormack, Clarke & Büttcher, 2009).
+RRF Formula
+score = 0.7 × 1/(k + vector_rank) + 0.3 × 1/(k + keyword_rank)
+where k = 60 (standard RRF constant).
+Score Normalization
+The resulting RRF values are normalized to 0.1–1.0:
+relevance = 0.1 + 0.9 × (rrf_raw − rrf_min) / (rrf_max − rrf_min)
+Comparison of Methods
+Method Strength Weakness
+Vector Search Understands meaning, finds
+paraphrases
+Misses exact terms
+Keyword Search Exact terms, article numbers No semantic understanding
+RRF Hybrid Combines both strengths Slightly increased complexity
+Example: When searching for “utility statement Galgerain” (NK-Abrechnung Galgerain), vector search finds
+semantically similar memories while keyword search finds memories with the exact term. RRF fuses both
+rankings and prioritizes memories appearing in both result lists (Score 1.0), followed by vector-only (0.76) and
+keyword-only (0.54) matches.
+10b. Layer 7b: Cross-Encoder Re-Ranking
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 16/37
+
+[[page 17]]
+After Hybrid Search (RRF), the top-30 candidates are evaluated pairwise against the original query by a Cross-
+Encoder. Unlike vector search (which encodes query and document independently), the Cross-Encoder
+considers query and document jointly, enabling more precise relevance assessment.
+Model
+cross-encoder/ms-marco-MiniLM-L-6-v2 — a model trained on MS MARCO at ~80MB, optimized for retrieval re-
+ranking. Inference runs on CPU at ~120ms for 30 candidates.
+Pipeline
+Query → LLM Expansion → Hybrid Search (Top-30) → Cross-Encoder Re-Score → Top-N
+Score Normalization
+Cross-Encoder scores (logits) are normalized to 0.1–1.0 analogously to RRF:
+relevance = 0.1 + 0.9 × (ce_score − ce_min) / (ce_max − ce_min)
+Effectiveness
+The Cross-Encoder improves P@5 by 160% and MRR by 29% compared to pure Hybrid Search with LLM
+Expansion (cf. Section 14.6). The improvement is particularly strong for semantically complex queries that
+pure embedding similarity does not correctly capture.
+11. Layer 8: Implicit Feedback Loop (FSRS)
+11.1 Motivation
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 17/37
+
+[[page 18]]
+Traditional memory systems for AI agents treat all memories equally. There is no signal indicating which
+memories are actually useful in practice. Agent Brain solves this problem through implicit feedback — without
+any manual input.
+11.2 Mechanism
+When an agent: 1. Retrieves memories (creating a Recall Session) 2. Stores new information within 30 minutes
+the system compares the embedding of the new storage with each retrieved memory:
+Cosine SimilarityClassificationFSRS RatingStability Effect
+> 0.5 USED Easy Stability × 2–5
+0.3–0.5 PARTIAL Good Stability × 1.5
+< 0.3 IGNORED Again Stability / 5
+11.3 FSRS Integration
+The Free Spaced Repetition Scheduler (Ye, 2024) is employed with the following power-law decay:
+R = (1 + 0.2346 × elapsed_days / stability)^(−0.5)
+This differs fundamentally from exponential Ebbinghaus decay: memories do not disappear suddenly but
+become gradually harder to retrieve. The stability of a memory determines how long it survives.
+11.4 Practical Example: Annual Utility Cost Statement
+A procedural memory about the utility cost statement (Nebenkostenabrechnung) is typically retrieved once
+per year:
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 18/37
+
+[[page 19]]
+Time Event StabilityWeight
+February 2026 Initial storage 1.0 0.50
+March 2026 Retrieval → FSRS Easy 8.2 0.92
+September 2026No retrieval, Dream Cycle Decay8.2 0.12
+February 2027 Retrieval again → FSRS Easy 45.0 0.98
+Without FSRS (Ebbinghaus): Weight = 0.01 after 210 days → dead
+With FSRS: Weight = 0.12 after 210 days → survives, after renewed retrieval quasi-permanent
+12. Layer 9: Dream Cycle
+The Dream Cycle runs daily at 02:00 and comprises five phases:
+Phase 1: FSRS Decay
+All memories are re-weighted according to the power-law formula (Section 11.3). Memories with high stability
+(frequently retrieved, well reinforced) decay slowly; memories with low stability decay quickly.
+Phase 2: Consolidation
+Memory pairs with Cosine Similarity > 0.92 are merged. The memory with higher weight survives and is
+enriched with the content of the other. This reduces redundancy and strengthens surviving memories.
+Phase 3: Creative Association Formation
+Through random walks in the Knowledge Graph (depth 2), implicit relationships between entities are
+discovered. If Entity A is connected to B and B to C, but A and C are not directly connected, a creative
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 19/37
+
+[[page 20]]
+association is created. This enables subsequent associative retrieval via indirect paths.
+Phase 4: Pattern Recognition
+The system identifies recurring events within a 90-day window — for example, “utility cost statement appears
+every February” or “heating service is performed every October.”
+Phase 5: Predictive Alerts
+Based on recognized patterns and seasonal data, the system generates proactive warnings: “Utility cost
+statement for property X is due in 30 days” or “Heating service was scheduled last October — overdue?”
+Production Report
+Dream Cycle — 13.04.2026, 02:00 UTC
+Workspace: Example Workspace (564 memories)
+Phase 1 — Decay: 564 memories processed, avg. weight change: −0.02
+Phase 2 — Consolidation: 22 pairs merged
+Phase 3 — Creative: 10 new connections discovered
+Phase 4 — Patterns: 1 recurring pattern recognized
+Phase 5 — Alerts: 0 predictions generated
+Total duration: 112.1 seconds
+13. Layer 10: Workspace Isolation
+Each agent operates in a fully isolated workspace with its own memories, entities, relationships, API keys, and
+independent Dream Cycles. Isolation is enforced through Row-Level Security (RLS) in PostgreSQL at the
+database level.
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 20/37
+
+[[page 21]]
+In production, eight specialized workspaces are operated, covering domains such as case management,
+building maintenance, financial operations, marketing, technical architecture, security monitoring, and system
+diagnostics.
+14. Evaluation and Production Metrics
+14.1 System Overview
+Metric Value
+Total memories > 5,000
+Total entities > 10,000
+Total relationships > 7,500
+Active workspaces 8
+Uptime 99.9%
+Average retrieval latency~800ms
+14.2 FSRS Stability Distribution
+Stability RangeShare Description
+< 5 (fragile) 6% Decays quickly without retrieval
+5–50 (moderate) 82%Standard memories
+50–200 (stable) 10% Well anchored through repeated use
+> 200 (permanent)2% Quasi-unforgettable
+14.3 Weight Distribution
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 21/37
+
+[[page 22]]
+Weight Range Share Description
+< 0.05 (inactive) 3% Filtered out during retrieval
+0.05–0.3 (weak) 8% Low priority
+0.3–0.6 (moderate)43%Standard memories
+0.6–0.9 (strong) 23%Frequently used
+> 0.9 (peak) 23%Critical knowledge
+14.4 Memory Types
+Type Share
+Episodic 73%
+Semantic19%
+Procedural8%
+14.5 NER Improvement (spaCy → flair)
+Metric spaCy de_core_news_md flair ner-german-large
+F1 Score
+(CoNLL-03)
+~85% 92.31%
+Swiss company
+names
+Frequently incorrect (LOC instead of ORG) Correct
+Compound
+entities
+Split apart Recognized as unit
+Entities per
+1,000 memories~200 ~1,500
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 22/37
+
+[[page 23]]
+14.6 Retrieval Benchmark
+A benchmark framework with three test levels was developed for systematic evaluation of retrieval quality.
+Methodology: 20 queries in colloquial language (e.g., “tenant doesnʼt pay rent what to do”) with manually
+annotated ground-truth results, tested against the production Lean Master workspace (2,351 memories).
+Metrics: Precision@5 (P@5), Recall@10 (R@10), Mean Reciprocal Rank (MRR).
+Results — Pipeline Ablation (Production):
+Configuration P@5R@10MRRHit Rate
+Hybrid Search (RRF) 0.2000.2500.42050%
++ LLM Query Expansion (Haiku)0.2850.3350.57560%
++ Cross-Encoder Re-Ranking 0.7401.3800.74280%
++ Content Completion 0.7871.4840.76285%
+The four stages of the retrieval pipeline show cumulative improvements:
+1. Hybrid Search (RRF): Reciprocal Rank Fusion combines vector similarity (70%) and keyword match
+(30%). Already significantly better than pure vector search alone.
+2. LLM Query Expansion: A Claude Haiku call expands colloquial queries with 3-5 technical terms (e.g.,
+“initiate debt collection” → “debt collection request (Betreibungsbegehren), SchKG, payment order
+(Zahlungsbefehl), legal objection (Rechtsvorschlag)”). Improvement: +42% P@5, +34% R@10, +37%
+MRR.
+3. Cross-Encoder Re-Ranking: After Hybrid Search, the top-30 candidates are evaluated pairwise against
+the query by a Cross-Encoder (cross-encoder/ms-marco-MiniLM-L-6-v2). This enables a semantically
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 23/37
+
+[[page 24]]
+deeper relevance assessment than Cosine Similarity alone. Improvement over LLM Expansion: +160%
+P@5, +29% MRR.
+4. Content Completion: The remaining gaps (15% misses) are attributable to missing knowledge content,
+not retrieval weaknesses. After targeted addition of 4 specialist memories (SchKG debt collection
+procedures, condominium value quotas (STWE-Wertquoten), emergency triage, system documentation),
+the hit rate improved to 85%. The remaining 3 misses concern internal system terms and extreme edge
+cases.
+Results by Topic Area (Production, full pipeline):
+Topic MRRP@5
+Liability (Haftung) 1.0001.000
+Termination (Kuendigung) 1.0001.000
+Defects (Maengel) 0.8750.875
+Rent (Mietzins) 1.0001.250
+Utility costs (Nebenkosten) 1.0001.250
+Insurance (Versicherung) 1.0001.250
+Water damage (Wasserschaden) 1.0001.250
+Renovation 1.0001.000
+Condominium (STWE) 0.6670.667
+Payment default (Zahlungsverzug)0.7500.611
+Emergency (Notfall) 0.2500.200
+Latency: The Cross-Encoder Re-Ranking phase requires ~120ms for 30 candidates on CPU, which only
+marginally increases overall latency (total retrieval: ~2s warm, ~25s on cold start due to model loading).
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 24/37
+
+[[page 25]]
+15. Evaluation on LongMemEval-M
+15.1 Motivation
+The evaluation in §14 measured Agent Brain on our internal production workload (P@5 = 0.787 on the Valtis
+property-management corpus). While informative for production readiness, internal benchmarks are not
+cross-system comparable. To anchor Agent Brain against a publicly specified dataset we evaluated it on
+LongMemEval (Wu et al., 2024), a public long-context memory benchmark.
+LongMemEval is distributed in multiple variants. The most-reported in peer literature is LongMemEval-S
+(Small); the medium variant is distributed on Hugging Face as weaviate/longmemeval-m-cleaned. This work
+evaluates on the m-cleaned variant. To the best of our knowledge no peer numbers on m-cleaned were public at
+the time of writing, so the cross-system ranking in this section is deliberately non-comparative.
+15.2 Dataset and Methodology
+We used the weaviate/longmemeval-m-cleaned variant, which contains 500 question-answer pairs derived
+from 510 multi-turn conversational workspaces with an average length of approximately 115k tokens.
+Ground-truth answers are provided; judging is performed by GPT-4o as a rubric-graded judge.
+Ingestion pipeline (identical for all tested configurations):
+1. Each workspace ingested as one user with one session.
+2. Turn-level messages written to memories table via /memory/store endpoint.
+3. Auto-extraction produces episodic memories, entities, and relationships.
+4. Embeddings: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 (384 dimensions,
+normalized).
+5. Hybrid retrieval: vector cosine (70%) + PostgreSQL tsvector (30%), combined via Reciprocal Rank
+Fusion (k = 60), top-5 returned.
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 25/37
+
+[[page 26]]
+Answer generation: - Retrieval top-5 passed as context to GPT-4o. - Prompt template matched to published
+LongMemEval methodology. - One forward pass per question, no chain-of-thought prompting.
+Judging: - GPT-4o with LongMemEvalʼs published rubric. - Partial credit awarded for semantically equivalent
+answers. - Results aggregated across all 500 queries.
+Configurations tested: - Brain Test 0 (no consolidation): Raw ingestion, no Dream Cycle, no post-
+processing. - Brain Test 1 (with Dream Cycle): Full consolidation pipeline including creative-connection
+synthesis. - Baseline pgvector (our control): Same ingestion, no entity extraction, no hybrid — pure vector
+top-5, run twice.
+15.3 Results
+Configuration Accuracy (GPT-4o judge)Δ vs Brain Test 0
+Agent Brain — Test 0 (no consolidation) 71.7% —
+Agent Brain — Test 1 (with Dream Cycle) 69.8% −1.9 pp
+Baseline pgvector (our control, run 1) 73.9% +2.2 pp
+Baseline pgvector (our control, run 2) 72.2% +0.5 pp
+All four configurations share the same ingestion corpus and judging rubric and are therefore directly
+comparable. The table deliberately does not include peer-system numbers; see §15.4 for why.
+15.4 On cross-system comparability
+Earlier versions (v1/v2) of this report included a table comparing our 71.7% on m-cleaned against figures for
+Zep, Mem0, LangMem, and OpenAI Memory. That comparison was withdrawn in v3 because it was not apples-
+to-apples.
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 26/37
+
+[[page 27]]
+Zep (Rasmussen et al., 2025, arXiv:2501.13956). Zep reports on LongMemEvalS, not m-cleaned. The 63.8%
+figure in Zepʼs Table 2 is the full-context baseline row, not Zep itself; Zepʼs own reported accuracy on
+LongMemEval-S with gpt-4o-mini is 71.2%, and higher with gpt-4o. We regret citing the baseline as Zep in v2.
+Mem0. Mem0 v1ʼs own published evaluation focus was LoCoMo, not LongMemEval. The 49% figure we cited in
+v2 reflected third-party 2024 evaluations. Mem0 v2, released ~17 April 2026 (between our v1 and v2 dates),
+reports substantially higher LongMemEval accuracy (approximately 92% on a variant not fully specified in the
+public posting we consulted). A clean comparison with Mem0 v2 on m-cleaned has not yet been run.
+LangMem (LangChain AI, 2025) and OpenAI Memory (2024). Public numbers we cited exist only on
+LongMemEval-S; we did not re-evaluate these on m-cleaned.
+Conclusion. The honest cross-system statement is: no peer system has published numbers on
+weaviate/longmemeval-m-cleaned as of this writing; comparisons on LongMemEval-S are not transferable. Future
+work should re-evaluate peers on m-cleaned under identical judging to enable a valid ranking.
+15.5 Discussion of the Consolidation Regression
+A surprising — and instructive — result is that enabling our Dream Cycle consolidation pipeline reduces
+accuracy by 1.9 pp (71.7% → 69.8%), and that our own pgvector-only baseline without entity extraction
+outperforms Brain by 2.2 pp on one run (73.9% vs 71.7%).
+We interpret this as follows:
+1. The Dream Cycle is too aggressive for quiz-style benchmarks. Consolidation compresses multiple
+related memories into summarized representations (Phase 2 of the five-phase cycle). This preserves
+meaning well for continuity-based retrieval — the workload our production system is designed for — but
+removes verbatim detail that LongMemEvalʼs GPT-4o judge requires for exact factual matches (dates,
+phone numbers, specific names).
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 27/37
+
+[[page 28]]
+2. Hybrid retrieval helps continuity but not quizzes. The 70/30 vector–tsvector split trades some exact-
+match lexical recall for robustness against paraphrasing. LongMemEval rewards exact match heavily.
+3. Entity-extraction overhead costs recall on single-hop questions. 95%+ of LongMemEval questions
+require recalling one specific fact from one specific turn. Entity abstraction (our design for multi-hop
+reasoning) adds noise to the top-5 when the question is a lookup, not a reasoning task.
+We do not consider these findings a failure — they are calibration data. They indicate that our design choices
+favor production workloads (multi-month conversational continuity with complex entities) over synthetic quiz
+benchmarks. We are actively addressing the regression:
+Dream Cycle tuning: Reducing consolidation aggressiveness, preserving high-weight episodic
+memories verbatim when the Ebbinghaus decay timer is still fresh (< 30 days).
+Embedding upgrade: Evaluating BAAI/bge-base-en-v1.5 (768d) and mxbai-embed-large-v1 (1024d) as
+replacements for MiniLM-L12-v2 (384d). Preliminary internal runs suggest +3–5 pp on our production
+corpus.
+Retrieval gating: Detecting quiz-style questions (short, specific, single-entity) and routing them to a
+purely lexical path, bypassing entity-level abstraction.
+Target: ≥ 80% on LongMemEval-m-cleaned with Dream Cycle enabled, within one evaluation cycle (Q2 2026).
+15.6 Limitations of LongMemEval as a Metric
+LongMemEval measures quiz-style factual recall from long conversational context. It is the best-known
+public benchmark for memory systems available today, and we take its signal seriously. However, it does not
+measure:
+Cross-session continuity (remembering context from a week ago in a new conversation).
+Relational reasoning (connecting entities across workspaces — the strength of graph-augmented
+memory).
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 28/37
+
+[[page 29]]
+Temporal reasoning (which version of a fact was true at a given time — a known strength of temporal
+knowledge graphs, including our hybrid implementation).
+Creative connection (Dream-Cycle-style pattern synthesis across memories).
+Real-world ambiguity (production messages are messier than curated QA pairs).
+The 71.7% figure should therefore be read as: a first published measurement on weaviate/longmemeval-m-
+cleaned by a system purpose-built for a larger class of workloads that no public benchmark currently
+measures. We encourage the community to propose benchmarks that evaluate continuity and relational
+reasoning explicitly.
+15.7 Reproducibility
+All evaluation scripts, ingestion code, and judge configurations are released under MIT license at:
+https://github.com/AgentBrainHQ/agentbrain-benchmarks (Zenodo-mirrored; DOI for v3 of this
+paper assigned on release)
+Re-running the benchmark from a clean Brain deployment takes approximately 8 hours on the published
+configuration. Cost: ~USD 18 for 500 GPT-4o judge calls plus ~USD 4 for ingestion embeddings at OpenAI
+rates, or USD 0 with self-hosted MiniLM.
+15.8 Conclusion of §15
+Agent Brain achieves 71.7% on weaviate/longmemeval-m-cleaned without Dream Cycle consolidation, and
+69.8% with it. Our pgvector-only control reaches 72.2 – 73.9% on the same corpus. We report the 2.2 pp gap
+transparently as evidence that consolidation strategies optimized for production continuity can regress on
+quiz-style benchmarks.
+We deliberately abstain from a cross-system ranking on m-cleaned because no peer numbers are publicly
+available on this specific variant. Prior versions of this report contained such comparisons using LongMemEval-S
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 29/37
+
+[[page 30]]
+peer numbers and are withdrawn in v3.
+We view public, reproducible benchmarking with explicit variant labels as a necessary discipline for the
+emerging memory-systems field. We welcome pull requests to agentbrain-benchmarks that add runs for peer
+systems on the m-cleaned variant so that a valid ranking becomes possible.
+16. SDK (Software Development Kit)
+A Python SDK is provided for integrating Agent Brain into external applications, supporting both synchronous
+and asynchronous operations.
+16.1 Installation
+pip install agent-brain
+16.2 Basic Usage
+from agent_brain import BrainClient
+brain = BrainClient(
+ api_key="...",
+ workspace_id="...",
+)
+# Store a memory
+result = brain.store(
+ "Tenant M. reported water damage in the bathroom",
+ memory_type="episodic",
+ source_trust=0.8,
+)
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 30/37
+
+[[page 31]]
+16.3 Session Management with Automatic Feedback Loop
+The SDK provides a context manager that automatically performs a recall upon entry and stores all added
+memories upon exit — with the Feedback Loop (Section 11) triggered automatically:
+16.4 Asynchronous Support
+16.5 Available Methods
+Method Description
+store() Store a single memory
+recall() Hybrid search (Vector + Keyword + RRF)
+store_batch()Store multiple memories sequentially
+session() Context manager with automatic Feedback Loop
+# Recall via Hybrid Search (RRF + Query Expansion)
+recall = brain.recall("water damage", limit=5)
+for m in recall.memories:
+ print(f"[{m.relevance:.2f}] {m.content}")
+with brain.session("utility statement Galgerain") as s:
+ for m in s.memories:
+ print(m.content)
+ s.add("Utility statement completed, Total CHF 12,450")
+# → Feedback Loop compares new storage with retrieved memories
+# → FSRS ratings are applied automatically
+from agent_brain import AsyncBrainClient
+async with AsyncBrainClient(api_key="...", workspace_id="...") as brain:
+ result = await brain.recall("termination")
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 31/37
+
+[[page 32]]
+Method Description
+health() Query system status
+predictions()Retrieve predictive alerts from the Dream Cycle
+17. Limitations
+1. Domain Specificity: Query Expansion is currently tailored to Swiss property management
+(Immobilienbewirtschaftung). Transferring to other domains requires new expansion rules.
+2. Language Limitation: NER and full-text search are optimized for German. Multilingual support is
+architecturally feasible but not implemented.
+3. Production Benchmark Scope: The production benchmark dataset (20 queries, 10 topic areas) covers
+the most common property management scenarios but is not standardized. §15 adds a public
+measurement on LongMemEval-M-cleaned, but without comparable peer numbers on that variant cross-
+system ranking remains out of reach.
+4. Consolidation Regression on Quiz-Style Benchmarks: On LongMemEval-M-cleaned, enabling the Dream
+Cycle reduces accuracy by 1.9 pp versus the un-consolidated Brain, and our own pgvector-only control
+outperforms the full pipeline by up to 2.2 pp (see §15.5). We attribute this to over-aggressive detail
+pruning and are actively tuning the consolidation phase.
+5. Scaling Limits: The system runs on a single VPS with 8 GB RAM. Significantly larger data volumes would
+require a distributed architecture.
+6. Feedback Latency: The implicit Feedback Loop requires that storage operations occur within 30
+minutes of retrieval operations. Longer work processes are not captured.
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 32/37
+
+[[page 33]]
+7. Threshold Sensitivity: The Cosine thresholds (0.92 for deduplication, 0.5/0.3 for feedback) were
+determined empirically and may be suboptimal for other domains.
+18. Future Work
+1. Dream Cycle Tuning: Reduce consolidation aggressiveness on high-weight episodic memories; target ≥
+80% on LongMemEval-m-cleaned with Dream Cycle enabled (§15.5).
+2. Embedding Upgrade: Evaluate BAAI/bge-base-en-v1.5 (768d) and mxbai-embed-large-v1 (1024d) as
+replacements for the current MiniLM-L12-v2 (384d).
+3. Retrieval Gating: Detect quiz-style questions and route them through a purely lexical path, bypassing
+entity abstraction.
+4. Multi-Language Support: Extension of NER and Query Expansion to French and Italian (additional Swiss
+official languages).
+5. Public Benchmark Dataset for Continuity: Creation of a benchmark that measures cross-session
+continuity and relational reasoning (workloads LongMemEval does not capture, see §15.6).
+6. Adaptive Thresholds: Automatic adjustment of Cosine thresholds based on workspace-specific data
+characteristics.
+7. Federated Memory: Controlled knowledge exchange between workspaces with defined permission
+levels.
+8. Explainability: Transparent presentation of why specific memories were reinforced or attenuated (FSRS
+audit trail).
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 33/37
+
+[[page 34]]
+19. Conclusion
+Agent Brain demonstrates that biologically inspired memory mechanisms — perceptual evaluation, typed
+storage, usage-based reinforcement, temporal decay, and nightly consolidation — can be successfully
+transferred to autonomous AI agents.
+The central contributions are: - An implicit Feedback Loop that operates without manual user feedback. -
+The first-time application of FSRS to agent memory. - A multi-stage Dream Cycle with consolidation and
+creative association formation. - LLM-based Query Expansion with intelligent technical term augmentation. -
+Cross-Encoder Re-Ranking for precise relevance assessment after Hybrid Search. - Quantitative
+evaluation: P@5 = 0.787, MRR = 0.762, Hit Rate = 85% in the production benchmark (2,355 memories, 20
+queries). - First published evaluation on LongMemEval-M-cleaned:71.7% accuracy without consolidation,
+69.8% with the Dream Cycle enabled, 72.2 – 73.9% for our pgvector-only control. We transparently report
+the 1.9 pp consolidation regression and the 2.2 pp gap to the control, and we deliberately abstain from cross-
+system ranking because no peer numbers exist on this specific variant (§15).
+The system has been in production use since early 2026 and demonstrates that weighted, self-organizing
+memory enhances the performance of autonomous agents on multi-month processes. We view reproducible
+benchmarking with explicit variant labels as a necessary discipline for the emerging memory-systems field and
+invite the community to reproduce our m-cleaned numbers and add peer runs via the released repository.
+References
+Akbik, A., Blythe, D., & Vollgraf, R. (2018). Contextual String Embeddings for Sequence Labeling. Proceedings
+of the 27th International Conference on Computational Linguistics (COLING), 1638–1649.
+Cormack, G. V., Clarke, C. L. A., & Büttcher, S. (2009). Reciprocal Rank Fusion outperforms Condorcet and
+individual Rank Learning Methods. Proceedings of the 32nd International ACM SIGIR Conference, 758–759.
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 34/37
+
+[[page 35]]
+Ebbinghaus, H. (1885). Über das Gedächtnis: Untersuchungen zur experimentellen Psychologie. Leipzig:
+Duncker & Humblot.
+LangChain. (2023). Memory — LangChain Documentation.
+https://python.langchain.com/docs/modules/memory/
+Mem0. (2024). Mem0: The Memory Layer for AI Apps. https://mem0.ai/
+Packer, C., Wooders, S., Lin, K., Fang, V., Patil, S., Stoica, I., & Gonzalez, J. (2023). MemGPT: Towards LLMs as
+Operating Systems. arXiv preprint arXiv:2310.08560.
+Ye, J. (2024). A Stochastic Shortest Path Algorithm for Optimizing Spaced Repetition Scheduling. Proceedings
+of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining, 6080–6089.
+Blumenthal, A., et al. (2025). A brain-inspired agentic architecture to improve planning with LLMs. Nature
+Communications, 16, Article 63804.
+Wang, W., Subagdja, B., Tan, A.-H., & Tan, Y.-S. (2012). A Self-Organizing Multi-Memory System for
+Autonomous Agents. Proceedings of the IEEE International Conference on Systems, Man, and Cybernetics
+(SMC), 1969–1974.
+Yu, B., Wei, J., Hu, M., Han, Z., Zou, T., He, Y., & Liu, J. (2024). Brain-inspired AI Agent: The Way Towards AGI.
+arXiv preprint arXiv:2412.08875.
+Zep. (2024). Zep: Long-Term Memory for AI Assistants. https://getzep.com/
+Chhikara, P., Khant, D., Aryan, S., Singh, T., & Yadav, D. (2024). Mem0: Building Production-Ready AI Agents
+with Scalable Long-Term Memory. Technical report / blog post. Mem0.ai. [Authorsʼ own correction notice: the
+arXiv ID 2408.03243 cited in v1/v2 of this preprint refers to an unrelated physics paper and was in error. The
+Mem0 system is documented at https://mem0.ai/research ; no canonical arXiv ID was available to us at the
+time of v3 writing.]
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 35/37
+
+[[page 36]]
+Rasmussen, P., Paliychuk, P., Beauvais, T., Ryan, J., & Chalef, D. (2025). Zep: A Temporal Knowledge Graph
+Architecture for Agent Memory. arXiv preprint arXiv:2501.13956.
+Wu, D., Wang, H., Yu, W., Zhang, Y., Chang, K.-W., & Yu, D. (2024). LongMemEval: Benchmarking Chat
+Assistants on Long-Term Interactive Memory. arXiv preprint arXiv:2410.10813.
+LangChain AI. (2025). LangMem — Long-Term Memory for Agents. https://langchain-ai.github.io/langmem/
+OpenAI. (2024). Memory and new controls for ChatGPT. https://openai.com/index/memory-and-new-controls-
+for-chatgpt/
+Appendix: Technology Stack
+Component Technology
+API Framework FastAPI (async Python)
+Database PostgreSQL (hosted)
+Vector Index pgvector + HNSW
+Embeddings paraphrase-multilingual-MiniLM-L12-v2 (384 Dim.)
+Re-Ranking cross-encoder/ms-marco-MiniLM-L-6-v2
+Query ExpansionClaude Haiku (LLM) + Regex Fallback
+NER flair/ner-german-large (XLM-RoBERTa)
+Spaced RepetitionFSRS v6.3
+Full-Text Search PostgreSQL tsvector (German config)
+Scheduler APScheduler
+SDK Python (httpx, sync + async)
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 36/37
+
+[[page 37]]
+“Intelligence without memory is merely raw computation.”
+Valtis AG, 2026
+21.04.26, 03:01 Agent Brain v3
+ﬁle:///Users/thesh/claude code/ﬁgment-aura-agent/ImmoPilot-Brain/docs/AGENT-BRAIN-PREPRINT-V3-EN.html 37/37
