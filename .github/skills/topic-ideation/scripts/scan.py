@@ -47,6 +47,10 @@ ARXIV_MIN_DELAY = 3.0
 
 VENUE_LIMIT = 8
 
+# Below this many works in the prior year, a growth ratio is noise: three works
+# against one is not 3x momentum, it is four works.
+MOMENTUM_MIN_BASE = 5
+
 # Deliberately standalone: these helpers are duplicated from the sibling
 # publications-search skill so ideation runs without it on sys.path.
 STOPWORDS = frozenset(
@@ -80,8 +84,45 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
+class BudgetExhausted(RuntimeError):
+    """OpenAlex daily budget spent; every remaining call would fail identically."""
+
+
+def load_dotenv(start: Path | None = None) -> None:
+    """Populate os.environ from the nearest .env, without overriding real env vars."""
+    current = (start or Path.cwd()).resolve()
+    for folder in (current, *current.parents):
+        env_path = folder / ".env"
+        if not env_path.is_file():
+            continue
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+        return
+
+
 def _mailto() -> str:
+    load_dotenv()
     return os.getenv("CONTACT_EMAIL", "").strip()
+
+
+def _openalex_headers() -> dict[str, str]:
+    """Auth headers for OpenAlex.
+
+    Without a key the daily budget is $0.10 against a shared per-IP bucket, so a
+    twelve-area sweep can starve itself. The key travels in the Authorization
+    header rather than the documented api_key query parameter because httpx logs
+    full request URLs, which would write the key into terminal scrollback.
+    """
+    load_dotenv()
+    headers = {"User-Agent": "topic-ideation/0.2"}
+    key = os.getenv("OPENALEX_API_KEY", "").strip()
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    return headers
 
 
 def _polite_sleep(delay: float) -> None:
@@ -122,14 +163,19 @@ def parse_areas_md(path: Path) -> list[str]:
 
 
 def run_slug(areas: list[str]) -> str:
-    # Single-area smoke tests keep a readable folder name; sweeps use a count.
-    return slugify(areas[0], 40) if len(areas) == 1 else f"{len(areas)}-areas"
+    # A bare "12-areas" folder loses the audit trail, so the lead area names the run.
+    if len(areas) == 1:
+        return slugify(areas[0], 40)
+    return f"{slugify(areas[0], 40)}-plus-{len(areas) - 1}"
 
 
 def _openalex(params: dict[str, Any]) -> dict[str, Any]:
     if _mailto():
         params["mailto"] = _mailto()
-    resp = httpx.get(OPENALEX_WORKS, params=params, timeout=60.0)
+    resp = httpx.get(OPENALEX_WORKS, params=params, headers=_openalex_headers(), timeout=60.0)
+    if resp.status_code == 429:
+        # Never retried: the budget resets at midnight UTC, not in a backoff window.
+        raise BudgetExhausted(resp.text.strip()[:200] or "OpenAlex daily budget exhausted")
     resp.raise_for_status()
     return resp.json()
 
@@ -138,11 +184,25 @@ def _year_filter(from_year: int) -> str:
     return f"from_publication_date:{from_year}-01-01"
 
 
-def volume_by_year(area: str, from_year: int) -> dict[str, int]:
+def _scope_params(area: str, from_year: int, scope: str) -> dict[str, Any]:
+    """Query params selecting an area either broadly or on-topic.
+
+    OpenAlex `search` spans full text, so it counts every paper that merely
+    mentions the terms: "LLM agents for business process automation" matches
+    14,323 works that way but 143 when the terms must appear in the title or
+    abstract. Ranking that broad pool by citations surfaces GPT-4 and Flamingo
+    as "key papers" for business process automation, so everything a rubric
+    score depends on is drawn from the on-topic scope.
+    """
+    year = _year_filter(from_year)
+    if scope == "broad":
+        return {"search": area, "filter": year}
+    return {"filter": f"title_and_abstract.search:{area},{year}"}
+
+
+def volume_by_year(area: str, from_year: int, scope: str = "focused") -> dict[str, int]:
     """Publication counts per year; keys are strings for JSON stability."""
-    data = _openalex(
-        {"search": area, "filter": _year_filter(from_year), "group_by": "publication_year"}
-    )
+    data = _openalex({**_scope_params(area, from_year, scope), "group_by": "publication_year"})
     counts: dict[str, int] = {}
     for group in data.get("group_by", []):
         key = str(group.get("key") or "")
@@ -154,8 +214,7 @@ def volume_by_year(area: str, from_year: int) -> dict[str, int]:
 def top_venues(area: str, from_year: int, limit: int = VENUE_LIMIT) -> list[dict[str, Any]]:
     data = _openalex(
         {
-            "search": area,
-            "filter": _year_filter(from_year),
+            **_scope_params(area, from_year, "focused"),
             "group_by": "primary_location.source.id",
         }
     )
@@ -197,8 +256,7 @@ def _work(item: dict[str, Any]) -> dict[str, Any]:
 def fetch_works(area: str, from_year: int, limit: int, sort: str) -> list[dict[str, Any]]:
     data = _openalex(
         {
-            "search": area,
-            "filter": _year_filter(from_year),
+            **_scope_params(area, from_year, "focused"),
             "sort": sort,
             "per-page": min(limit, 200),
             "select": _WORK_FIELDS,
@@ -269,18 +327,23 @@ def momentum(counts: dict[str, int]) -> dict[str, Any]:
     """Compare the last full year against the year before it.
 
     The current year is always partial, so it never enters the ratio; the
-    per-year table still shows it, flagged as partial, for eyeballing.
+    per-year table still shows it, flagged as partial, for eyeballing. A ratio
+    is withheld when the prior year is too small to carry one, because an area
+    that went from one work to three is new, not growing 3x.
     """
     last_full = datetime.now(UTC).year - 1
     prior = last_full - 1
     last_count = counts.get(str(last_full), 0)
     prior_count = counts.get(str(prior), 0)
+    thin = prior_count < MOMENTUM_MIN_BASE
     return {
         "last_full_year": last_full,
         "prior_year": prior,
         "last_full_year_works": last_count,
         "prior_year_works": prior_count,
-        "ratio": round(last_count / prior_count, 2) if prior_count else None,
+        "ratio": None if thin else round(last_count / prior_count, 2),
+        "thin_baseline": thin,
+        "minimum_base": MOMENTUM_MIN_BASE,
     }
 
 
@@ -288,7 +351,12 @@ def scan_area(area: str, from_year: int, per_area: int, delay: float) -> dict[st
     """Collect one area's landscape, degrading per step instead of aborting."""
     record: dict[str, Any] = {
         "area": area,
+        "query_scope": {
+            "focused": "title_and_abstract.search — papers about the area",
+            "broad": "?search= — papers mentioning the terms anywhere, full text included",
+        },
         "volume_by_year": {},
+        "broad_volume_by_year": {},
         "momentum": {},
         "top_venues": [],
         "top_cited": [],
@@ -298,6 +366,7 @@ def scan_area(area: str, from_year: int, per_area: int, delay: float) -> dict[st
     }
     steps: tuple[tuple[str, Any], ...] = (
         ("volume_by_year", lambda: volume_by_year(area, from_year)),
+        ("broad_volume_by_year", lambda: volume_by_year(area, from_year, scope="broad")),
         ("top_venues", lambda: top_venues(area, from_year)),
         ("top_cited", lambda: fetch_works(area, from_year, per_area, "cited_by_count:desc")),
         ("most_recent", lambda: fetch_works(area, from_year, per_area, "publication_date:desc")),
@@ -329,7 +398,29 @@ def _md_escape(text: str) -> str:
 
 
 def _momentum_label(mom: dict[str, Any]) -> str:
-    return f"{mom['ratio']}x" if mom.get("ratio") is not None else "n/a"
+    if mom.get("ratio") is not None:
+        return f"{mom['ratio']}x"
+    return "too new" if mom.get("thin_baseline") else "n/a"
+
+
+def _work_rows(works: list[dict[str, Any]], limit: int) -> list[str]:
+    rows = ["| Year | Cites | Paper | Venue | DOI |", "|---|---:|---|---|---|"]
+    seen: set[str] = set()
+    for work in works:
+        # Zenodo mints a DOI per version, so the same paper arrives two or three
+        # times and would otherwise eat a third of the table.
+        key = " ".join(tokenize(work["title"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(
+            f"| {work['year'] or '----'} | {work['cited_by']:,} "
+            f"| {_md_escape(work['title'])} | {_md_escape(work['venue'] or '—')} "
+            f"| {work['doi'] or '—'} |"
+        )
+        if len(seen) >= limit:
+            break
+    return rows
 
 
 def _area_card(record: dict[str, Any], from_year: int, current_year: int) -> list[str]:
@@ -337,21 +428,35 @@ def _area_card(record: dict[str, Any], from_year: int, current_year: int) -> lis
     mom = record["momentum"]
     if mom.get("ratio") is not None:
         lines.append(
-            f"Momentum: {mom['last_full_year_works']:,} works in {mom['last_full_year']} "
+            f"Momentum: {mom['last_full_year_works']:,} on-topic works in {mom['last_full_year']} "
             f"vs {mom['prior_year_works']:,} in {mom['prior_year']} "
             f"({_momentum_label(mom)})."
         )
     else:
         lines.append(
-            f"Momentum: {mom['last_full_year_works']:,} works in {mom['last_full_year']}; "
-            f"no {mom['prior_year']} baseline to compare."
+            f"Momentum: {mom['last_full_year_works']:,} on-topic works in "
+            f"{mom['last_full_year']} against {mom['prior_year_works']:,} in "
+            f"{mom['prior_year']} — too thin for a ratio "
+            f"(under {mom.get('minimum_base', MOMENTUM_MIN_BASE)} works in the base year). "
+            f"Read this as an area that barely existed, not as growth."
         )
     lines.append("")
     if record["volume_by_year"]:
-        lines += ["| Year | Works |", "|---|---:|"]
-        for year, count in record["volume_by_year"].items():
+        broad = record.get("broad_volume_by_year") or {}
+        lines += ["| Year | On-topic | Broad mentions |", "|---|---:|---:|"]
+        # OpenAlex omits empty buckets, so a year with no on-topic work would
+        # disappear entirely; "2023 | 0 | 726" is the whole point of the table.
+        for year in sorted(set(record["volume_by_year"]) | set(broad)):
             partial = " (partial)" if int(year) == current_year else ""
-            lines.append(f"| {year}{partial} | {count:,} |")
+            lines.append(
+                f"| {year}{partial} | {record['volume_by_year'].get(year, 0):,} "
+                f"| {broad.get(year, 0):,} |"
+            )
+        lines.append("")
+        lines.append(
+            "On-topic counts require the terms in the title or abstract; broad "
+            "mentions match anywhere in the full text and are context only."
+        )
         lines.append("")
     if record["top_venues"]:
         lines.append(
@@ -361,16 +466,17 @@ def _area_card(record: dict[str, Any], from_year: int, current_year: int) -> lis
         lines.append("")
     if record["top_cited"]:
         lines += [
-            f"### Key papers (top-cited since {from_year})",
+            f"### Key papers (most-cited on-topic work since {from_year})",
             "",
-            "| Year | Cites | Paper | DOI |",
-            "|---|---:|---|---|",
+            *_work_rows(record["top_cited"], 10),
         ]
-        for work in record["top_cited"][:10]:
-            lines.append(
-                f"| {work['year'] or '----'} | {work['cited_by']:,} "
-                f"| {_md_escape(work['title'])} | {work['doi'] or '—'} |"
-            )
+        lines.append("")
+    if record["most_recent"]:
+        lines += [
+            "### Newest on-topic work",
+            "",
+            *_work_rows(record["most_recent"], 10),
+        ]
         lines.append("")
     if record["arxiv_recent"]:
         lines += ["### Fresh arXiv submissions", ""]
@@ -395,15 +501,30 @@ def render_markdown(payload: dict[str, Any]) -> str:
             f"· {payload['per_area']} works per list per area."
         ),
         "",
+    ]
+    if payload.get("incomplete"):
+        lines += [
+            (
+                f"> INCOMPLETE SCAN: {payload['areas_scanned']} of "
+                f"{payload['areas_requested']} areas were scanned before the "
+                f"OpenAlex daily budget ran out. Missing areas are absent, not empty. "
+                f"Re-run after the budget resets before scoring anything."
+            ),
+            "",
+        ]
+    lines += [
         "## Momentum overview",
         "",
         (
-            f"Ranked by {last_full}-vs-{prior} volume growth. "
-            f"{current_year} is partial and never enters the ratio."
+            f"Ranked by {last_full}-vs-{prior} growth in on-topic works, meaning the "
+            f"terms appear in the title or abstract. {current_year} is partial and "
+            f"never enters the ratio. Areas whose {prior} base is under "
+            f"{MOMENTUM_MIN_BASE} works show \"too new\" instead of a ratio, because a "
+            f"jump from one work to three is an origin, not a trend."
         ),
         "",
-        f"| Area | {prior} | {last_full} | Momentum |",
-        "|---|---:|---:|---|",
+        f"| Area | On-topic since {payload['from_year']} | {prior} | {last_full} | Momentum |",
+        "|---|---:|---:|---:|---|",
     ]
     ranked = sorted(
         areas,
@@ -413,7 +534,8 @@ def render_markdown(payload: dict[str, Any]) -> str:
     for record in ranked:
         mom = record["momentum"]
         lines.append(
-            f"| {_md_escape(record['area'])} | {mom['prior_year_works']:,} "
+            f"| {_md_escape(record['area'])} | {sum(record['volume_by_year'].values()):,} "
+            f"| {mom['prior_year_works']:,} "
             f"| {mom['last_full_year_works']:,} | {_momentum_label(mom)} |"
         )
     lines.append("")
@@ -443,11 +565,21 @@ def main() -> int:
         return EXIT_ERROR
 
     results: list[dict[str, Any]] = []
+    budget_error: str | None = None
     for index, area in enumerate(areas, 1):
         logger.info("[%d/%d] %s", index, len(areas), area)
-        results.append(scan_area(area, args.from_year, args.per_area, args.delay))
+        try:
+            results.append(scan_area(area, args.from_year, args.per_area, args.delay))
+        except BudgetExhausted as exc:
+            # Every remaining area would fail the same way until midnight UTC.
+            budget_error = str(exc)
+            logger.error("OpenAlex budget exhausted at area %d/%d: %s", index, len(areas), exc)
+            logger.error(
+                "Add OPENALEX_API_KEY to .env for 10x the keyless budget, or wait for reset."
+            )
+            break
 
-    if all(_empty(record) for record in results):
+    if not results or all(_empty(record) for record in results):
         logger.error("Every area came back empty. Check network access and try again.")
         return EXIT_ERROR
 
@@ -456,6 +588,10 @@ def main() -> int:
         "from_year": args.from_year,
         "per_area": args.per_area,
         "areas_file": None if args.areas else str(args.areas_file),
+        "areas_requested": len(areas),
+        "areas_scanned": len(results),
+        "incomplete": budget_error is not None,
+        "budget_error": budget_error,
         "areas": results,
     }
     root = args.out / f"{datetime.now(UTC):%Y%m%d}-ideation-{run_slug(areas)}"
@@ -467,10 +603,14 @@ def main() -> int:
 
     degraded = sum(1 for record in results if record["errors"])
     logger.info(
-        "%d areas scanned (%d degraded) -> %s", len(results), degraded, root / "landscape.md"
+        "%d/%d areas scanned (%d degraded) -> %s",
+        len(results),
+        len(areas),
+        degraded,
+        root / "landscape.md",
     )
     print(root)
-    return EXIT_SUCCESS
+    return EXIT_ERROR if budget_error else EXIT_SUCCESS
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).parent))
 from _common import Paper
 from _common import run_dir as make_run_dir
-from saturation import EVIDENCE_DOMAINS
+from saturation import DOMAINS_FILE, EVIDENCE_DOMAINS
 
 EXIT_SUCCESS = 0
 EXIT_ERROR = 2
@@ -120,9 +120,14 @@ Additional topic-specific tests (edit before searching):
 
 ## 4. Preregistered evidence domains ({len(EVIDENCE_DOMAINS)})
 
-Saturation is evaluated against this fixed taxonomy (saturation.py
-EVIDENCE_DOMAINS). Adding a domain after reading begins invalidates the
-stopping rule; log any such change as a protocol amendment with its date.
+Saturation is evaluated against the taxonomy in this run's
+`evidence-domains.json`, seeded below from the built-in default. That default
+was derived from a software-engineering review: **edit it to fit this subject
+before reading begins**, because concepts that map to no domain are
+indistinguishable from a paper that introduced nothing new, and an ill-fitting
+taxonomy reports saturation that never happened. `saturation.py check` warns
+when read papers have unmapped concepts. Adding a domain after reading begins
+invalidates the stopping rule; log any such change as a dated amendment.
 
 {domains}
 
@@ -168,8 +173,28 @@ def initialize(topic: str, out: Path, run_root: Path | None) -> int:
         )
         return EXIT_ERROR
     path.write_text(protocol_template(topic, run_root), encoding="utf-8")
+    domains_path = run_root / DOMAINS_FILE
+    domains_path.write_text(
+        json.dumps(
+            {
+                "note": (
+                    "Preregistered saturation taxonomy for this run. Seeded from the "
+                    "built-in software-engineering default; edit to fit the subject "
+                    "before reading begins."
+                ),
+                "domains": {name: list(markers) for name, markers in EVIDENCE_DOMAINS.items()},
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     logger.info("Protocol scaffold -> %s", path)
+    logger.info("Evidence domains  -> %s (edit to fit the subject)", domains_path)
     logger.info("Fill every <...> placeholder, then: protocol.py hash %s", run_root)
+    # Logs go to stderr; the documented `RUN=$(protocol.py init ... | tail -1)`
+    # needs the folder on stdout or every later command targets the wrong place.
+    print(run_root)
     return EXIT_SUCCESS
 
 
@@ -207,6 +232,39 @@ def parse_known_items(text: str) -> list[dict[str, Any]]:
     return items
 
 
+# A hand-written known-item title is often a prefix of the indexed one: a
+# subtitle gets dropped, or the entry is copied from a truncated listing. Long
+# normalized prefixes are safe to match on; short ones are not.
+MIN_PREFIX_MATCH = 30
+
+
+def find_known_item(
+    known: dict[str, Any],
+    by_doi: dict[str, Paper],
+    by_title: dict[str, Paper],
+) -> tuple[Paper | None, str]:
+    """Locate a preregistered known item, reporting how it was matched.
+
+    Exact matching alone produces false MISSING reports that send the reviewer
+    off to broaden a search that already succeeded: the preregistered DOI is
+    the published one while the corpus holds the same work's preprint DOI, or
+    the preregistered title stops before the subtitle.
+    """
+    if known["doi"]:
+        hit = by_doi.get(known["doi"])
+        if hit is not None:
+            return hit, "doi"
+    wanted = normalized_title(known["title"])
+    hit = by_title.get(wanted)
+    if hit is not None:
+        return hit, "title"
+    if len(wanted) >= MIN_PREFIX_MATCH:
+        for title, paper in by_title.items():
+            if title.startswith(wanted) or wanted in title:
+                return paper, "title-prefix"
+    return None, ""
+
+
 def check_known_items(run_root: Path) -> int:
     path = run_root / "protocol.md"
     if not path.is_file():
@@ -233,15 +291,14 @@ def check_known_items(run_root: Path) -> int:
             placeholders += 1
             logger.warning("PLACEHOLDER  %s", item["title"][:80])
             continue
-        hit = by_doi.get(item["doi"]) if item["doi"] else None
-        if hit is None:
-            hit = by_title.get(normalized_title(item["title"]))
+        hit, how = find_known_item(item, by_doi, by_title)
         if hit is None:
             missing += 1
             logger.error("MISSING      %s", item["title"][:80])
         else:
             found += 1
-            logger.info("FOUND        %s", item["title"][:80])
+            suffix = "" if how in ("doi", "title") else f"  [matched by {how}]"
+            logger.info("FOUND        %s%s", item["title"][:80], suffix)
 
     logger.info(
         "Known-item recall: %d found, %d missing, %d placeholders (of %d listed).",

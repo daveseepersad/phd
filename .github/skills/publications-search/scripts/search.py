@@ -82,6 +82,17 @@ def create_parser() -> argparse.ArgumentParser:
         help="Max records to backfill from OpenAlex; skipped targets are logged.",
     )
     parser.add_argument("--out", type=Path, default=Path("results"))
+    parser.add_argument(
+        "--run-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Reuse an existing run folder instead of slugging one from the topic. "
+            "Required whenever protocol.py init was given a shorter topic string "
+            "than the question searched, or Stage 0 and Stage 2 land in different "
+            "folders and the protocol hash never reaches the search artifacts."
+        ),
+    )
     parser.add_argument("--profile-dir", type=Path, default=DEFAULT_PROFILE_DIR)
     parser.add_argument(
         "--ranking-profile",
@@ -154,15 +165,60 @@ def _openalex_request(
     return None
 
 
-def search_openalex(topic: str, limit: int, from_year: int | None) -> list[Paper]:
-    params: dict[str, Any] = {"search": topic, "per-page": min(limit, 200)}
-    if from_year:
-        params["filter"] = f"from_publication_date:{from_year}-01-01"
+def openalex_query(topic: str) -> str:
+    """Strip OpenAlex wildcard operators from a natural-language topic.
+
+    OpenAlex reads `*` and `?` as wildcards and rejects them outright unless the
+    search is unstemmed, so a topic phrased as a question -- the skill's most
+    natural input, and what topic-ideation hands over verbatim -- returns a 400
+    and silently costs the review its primary source.
+    """
+    return re.sub(r"[*?]", " ", topic).strip()
+
+
+def _openalex_page(params: dict[str, Any]) -> list[Paper]:
     resp = _openalex_get(params, timeout=60.0)
     if resp is None:
         raise httpx.HTTPError("OpenAlex rate limited after retries")
     resp.raise_for_status()
     return [paper_from_openalex(item) for item in resp.json().get("results", [])]
+
+
+def search_openalex(topic: str, limit: int, from_year: int | None) -> list[Paper]:
+    """Query both OpenAlex scopes, because neither one alone recalls the topic.
+
+    `search=` ranks by relevance across full text, so a precise on-topic paper
+    with few citations sits below thousands of works that merely mention the
+    terms. `title_and_abstract.search` returns only papers actually about the
+    terms. Measured on this skill's own preregistered known items: full-text
+    search recovered 4 of 8 from a 14,241-work pool, the scoped filter
+    recovered 8 of 8 from 141.
+    """
+    year = f"from_publication_date:{from_year}-01-01" if from_year else ""
+    broad: dict[str, Any] = {"search": openalex_query(topic), "per-page": min(limit, 200)}
+    if year:
+        broad["filter"] = year
+    papers = _openalex_page(broad)
+
+    # The scoped filter ANDs every term, so one qualifier too many silently
+    # excludes on-topic papers that simply never use that word. Both widths run
+    # unconditionally: a healthy result count from the strict conjunction says
+    # nothing about whether it kept the papers that matter, and the wider
+    # conjunction returns a larger pool whose citation-ranked page is different
+    # rather than a superset.
+    for max_terms in (6, 4):
+        terms = condense(topic, max_terms=max_terms)
+        if not terms:
+            continue
+        scoped_filter = f"title_and_abstract.search:{terms}"
+        papers += _openalex_page(
+            {
+                "filter": f"{scoped_filter},{year}" if year else scoped_filter,
+                "sort": "cited_by_count:desc",
+                "per-page": min(limit, 200),
+            }
+        )
+    return papers
 
 
 def search_crossref(topic: str, limit: int, from_year: int | None) -> list[Paper]:
@@ -703,10 +759,17 @@ def main() -> int:
         ("arxiv", search_arxiv),
     ):
         if name in requested:
+            if name == "openalex":
+                sent = (
+                    f"search={openalex_query(args.topic)!r} + "
+                    f"title_and_abstract.search={condense(args.topic)!r}"
+                )
+            else:
+                sent = args.topic
             entry: dict[str, Any] = {
                 "source": name,
                 "interface": "api",
-                "query_as_sent": args.topic,
+                "query_as_sent": sent,
                 "requested": args.per_source,
                 "returned": 0,
             }
@@ -765,7 +828,16 @@ def main() -> int:
         logger.error("No source returned results.")
         return EXIT_ERROR
 
-    root = run_dir(args.out, args.topic)
+    if args.run_dir is not None and not str(args.run_dir).strip(".").strip("/").strip():
+        # An unset shell variable expands to "", and Path("") is Path("."), which
+        # would scatter candidates.json and the logs across the repository root.
+        logger.error(
+            "--run-dir is empty. It usually means RUN was never set; check that "
+            "protocol.py init printed a folder before using $RUN."
+        )
+        return EXIT_ERROR
+    root = args.run_dir if args.run_dir else run_dir(args.out, args.topic)
+    root.mkdir(parents=True, exist_ok=True)
     out_path = root / "candidates.json"
 
     # A run folder accumulates across invocations: added sources, refresh runs

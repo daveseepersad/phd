@@ -82,6 +82,23 @@ EVIDENCE_DOMAINS = {
     "verification-testing": ("verification", "validation", "test", "compiler", "audit", "critic", "judge", "contract"),
 }
 
+# The built-in taxonomy above was derived from a software-engineering review. A
+# run on another subject would map most of its concepts to nothing, every
+# new_domains list would come back empty, and the stopping rule would fire on
+# the minimum-read threshold alone while reporting saturation. Each run
+# therefore preregisters its own taxonomy here, written by protocol.py init.
+DOMAINS_FILE = "evidence-domains.json"
+
+
+def load_domains(run_dir: Path) -> tuple[dict[str, tuple[str, ...]], str]:
+    """The run's preregistered taxonomy, or the built-in default."""
+    path = run_dir / DOMAINS_FILE
+    if not path.is_file():
+        return EVIDENCE_DOMAINS, "built-in"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    domains = raw.get("domains", raw)
+    return {name: tuple(markers) for name, markers in domains.items()}, DOMAINS_FILE
+
 
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -193,11 +210,33 @@ def merge_chunks(run_dir: Path, chunk_paths: list[Path]) -> int:
 
     for path in chunk_paths:
         chunk = read_json(path)
-        for item in chunk.get("records", []):
+        # Reviewers hand back a bare array as often as a wrapped object, and a
+        # shape mismatch used to surface as an AttributeError traceback.
+        if isinstance(chunk, list):
+            chunk_records = chunk
+        elif isinstance(chunk, dict):
+            chunk_records = chunk.get("records", [])
+        else:
+            logger.error(
+                "%s: expected a JSON array of records or an object with a "
+                "'records' array, got %s.",
+                path,
+                type(chunk).__name__,
+            )
+            return EXIT_ERROR
+        if not chunk_records:
+            logger.error("%s: contains no records.", path)
+            return EXIT_ERROR
+        for item in chunk_records:
             order = item.get("order")
             status = item.get("status")
             if order not in by_order:
-                logger.error("%s contains unknown selected order: %s", path, order)
+                logger.error(
+                    "%s contains unknown selected order: %s. Evidence chunks bind by "
+                    "the ledger's 'order' field, not by key or title.",
+                    path,
+                    order,
+                )
                 return EXIT_ERROR
             if order in reviewed:
                 logger.error("Selected order %s appears in multiple evidence chunks.", order)
@@ -266,6 +305,7 @@ def merge_chunks(run_dir: Path, chunk_paths: list[Path]) -> int:
         return EXIT_ERROR
 
     read_records = [item for item in records if item["status"] == "read"]
+    domains_taxonomy, taxonomy_source = load_domains(run_dir)
     for item in records:
         if item["status"] != "read":
             item["new_concepts"] = []
@@ -285,29 +325,51 @@ def merge_chunks(run_dir: Path, chunk_paths: list[Path]) -> int:
         current = [concept for concept in item["concepts"] if concept.lower() not in seen]
         item["new_concepts"] = current
         seen.update(concept.lower() for concept in item["concepts"])
-        domains = classify_domains(item["concepts"])
+        domains = classify_domains(item["concepts"], domains_taxonomy)
         item["evidence_domains"] = domains
         item["new_domains"] = [domain for domain in domains if domain not in seen_domains]
         seen_domains.update(domains)
+
+    unmapped = [
+        item["key"]
+        for item in sequence
+        if item["concepts"] and not item["evidence_domains"]
+    ]
 
     ledger["generated"] = datetime.now(UTC).date().isoformat()
     ledger["records"] = records
     write_json_atomic(ledger_path, ledger)
     logger.info("Merged evidence for %d papers from %d chunks.", len(reviewed), len(chunk_paths))
     logger.info("Concept vocabulary: %d", len(seen))
-    logger.info("Evidence domains: %d/%d", len(seen_domains), len(EVIDENCE_DOMAINS))
+    logger.info(
+        "Evidence domains: %d/%d (taxonomy: %s)",
+        len(seen_domains),
+        len(domains_taxonomy),
+        taxonomy_source,
+    )
+    if unmapped:
+        # Concepts that map nowhere look identical to genuine zero novelty.
+        logger.warning(
+            "%d read papers have concepts that map to no domain (%s). The taxonomy "
+            "may not fit this subject; saturation would fire on read count alone.",
+            len(unmapped),
+            ", ".join(unmapped[:5]),
+        )
     return EXIT_SUCCESS
 
 
-def classify_domains(concepts: list[str]) -> list[str]:
+def classify_domains(
+    concepts: list[str], domains: dict[str, tuple[str, ...]] | None = None
+) -> list[str]:
     """Map detailed reviewer labels into a stable, preregistered taxonomy."""
-    domains: list[str] = []
-    for domain, markers in EVIDENCE_DOMAINS.items():
+    taxonomy = EVIDENCE_DOMAINS if domains is None else domains
+    found: list[str] = []
+    for domain, markers in taxonomy.items():
         if domain in concepts or any(
             marker in concept for concept in concepts for marker in markers
         ):
-            domains.append(domain)
-    return sorted(domains)
+            found.append(domain)
+    return sorted(found)
 
 
 def reading_sequence(read_records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str]:
@@ -346,6 +408,18 @@ def check(run_dir: Path, minimum_read: int, window: int, window_sweep: bool = Fa
     read = [item for item in records if item["status"] == "read"]
     sequence, basis = reading_sequence(read)
     warnings: list[str] = []
+    domains_taxonomy, taxonomy_source = load_domains(run_dir)
+    unmapped = [item for item in read if item.get("concepts") and not item.get("evidence_domains")]
+    if unmapped:
+        # A concept that maps to no domain is indistinguishable from a paper
+        # that introduced nothing new, so an ill-fitting taxonomy reads as
+        # saturation. Say so in the report rather than letting it pass.
+        warnings.append(
+            f"{len(unmapped)} of {len(read)} read papers have concepts that map to no "
+            f"domain in the '{taxonomy_source}' taxonomy; zero novelty may be a "
+            f"taxonomy mismatch rather than saturation"
+        )
+        logger.warning(warnings[-1])
     if basis == "corpus-order-fallback":
         warnings.append(
             "read_order absent; consecutive-novelty window evaluated over corpus order"
@@ -378,6 +452,8 @@ def check(run_dir: Path, minimum_read: int, window: int, window_sweep: bool = Fa
         "pending_core": len(pending_core),
         "trailing_zero_novelty": no_novelty,
         "saturation_basis": "preregistered-evidence-domains",
+        "domain_taxonomy": taxonomy_source,
+        "domain_taxonomy_size": len(domains_taxonomy),
         "evidence_domains": sorted(
             {domain for item in read for domain in item.get("evidence_domains", [])}
         ),

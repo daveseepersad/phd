@@ -105,7 +105,14 @@ and `--sources`.
 Take the top one or two candidates by total score into the
 [publications-search skill](../publications-search/SKILL.md) for a full
 saturation-bounded review, using the command written in each candidate's
-card. Each deep-dive run is self-contained under its own `results/<run>/`
+card. That command preregisters the protocol first and then pins the search to
+the same folder with `--run-dir`, because `protocol.py` and `search.py` derive
+their own run folders from whatever string each is given and would otherwise
+split one review across two directories. The candidate's research question
+belongs in `protocol.md`; the search itself gets a keyword phrase, since a
+question's qualifiers dilute the terms that carry the topic.
+
+Each deep-dive run is self-contained under its own `results/<run>/`
 folder with its own `thesis.md` and rendered `.docx`; follow the
 publications-search `SKILL.md` for the pipeline and its
 [THESIS-TEMPLATE.md](../publications-search/references/THESIS-TEMPLATE.md)

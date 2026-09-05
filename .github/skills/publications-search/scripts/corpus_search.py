@@ -60,6 +60,16 @@ def create_parser() -> argparse.ArgumentParser:
         help="Rank every matching page instead of only each paper's best page.",
     )
     parser.add_argument(
+        "--expect-page",
+        type=int,
+        default=None,
+        help=(
+            "Assert the page a document cites for this quotation. Without it a "
+            "verbatim quote passes while carrying the wrong page, which is how a "
+            "bad page citation reaches a submitted document."
+        ),
+    )
+    parser.add_argument(
         "--quote",
         default=None,
         help="Verify this passage exists in the corpus instead of searching.",
@@ -244,7 +254,9 @@ def normalize_for_quote(text: str) -> str:
     return re.sub(r"\s+", "", text).casefold()
 
 
-def verify_quote(run_root: Path, quote: str, decisions: set[str] | None) -> int:
+def verify_quote(
+    run_root: Path, quote: str, decisions: set[str] | None, expect_page: int | None = None
+) -> int:
     pages = load_pages(run_root)
     if not pages:
         logger.error("No page-marked text under %s; run extract.py first.", run_root / "text")
@@ -293,6 +305,13 @@ def verify_quote(run_root: Path, quote: str, decisions: set[str] | None) -> int:
         context = paper_context(stem, stem_to_title, info)
         decision = context["decision"] or "?"
         print(f"  {stem}  p.{page_number}  match={kind}  [{decision}]")
+    if expect_page is not None and all(page != expect_page for _, page, _ in matches):
+        found = ", ".join(f"p.{page}" for _, page, _ in matches)
+        print(
+            f"\nPAGE MISMATCH: cited as p.{expect_page} but the text is at {found}. "
+            "Correct the citation before this quotation enters any document."
+        )
+        return EXIT_ERROR
     if decisions and not any(
         paper_context(stem, stem_to_title, info)["decision"] in decisions
         for stem, _, _ in matches
@@ -320,7 +339,7 @@ def main() -> int:
     )
     try:
         if args.quote:
-            return verify_quote(args.run_dir, args.quote, decisions)
+            return verify_quote(args.run_dir, args.quote, decisions, args.expect_page)
         return search(args.run_dir, args.query, args.top, decisions, args.all_pages)
     except (FileNotFoundError, json.JSONDecodeError) as exc:
         logger.error("%s", exc)

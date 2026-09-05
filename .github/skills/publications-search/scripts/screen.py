@@ -260,6 +260,13 @@ def apply_decisions(
             seen.add(paper.key())
 
     counts = Counter(item["decision"] for item in records)
+    # Without a per-paper decision, nothing downstream can tell core from
+    # supporting without re-joining on screening.json -- and "every core paper
+    # has been read" is the stopping rule the whole review turns on.
+    decision_by_key = {item["key"]: item["decision"] for item in records}
+    decision_by_title = {
+        normalized_title(item["title"]): item["decision"] for item in records
+    }
     save_papers(
         run_dir / "selected.json",
         payload["topic"],
@@ -267,6 +274,11 @@ def apply_decisions(
         screening_counts=dict(counts),
         baseline_size=screening.get("baseline_size", 20),
         selection_decisions=sorted(include),
+        paper_decisions={
+            paper.key(): decision_by_key.get(paper.key())
+            or decision_by_title.get(normalized_title(paper.title))
+            for paper in selected
+        },
     )
     logger.info("%d selected from %d screened -> %s", len(selected), len(records), run_dir / "selected.json")
     return EXIT_SUCCESS
@@ -289,7 +301,24 @@ def merge_chunks(run_dir: Path, chunk_paths: list[Path]) -> int:
 
     for path in chunk_paths:
         chunk = json.loads(path.read_text(encoding="utf-8"))
-        for item in chunk.get("records", []):
+        # Reviewers hand back a bare array as often as a wrapped object, and a
+        # shape mismatch used to surface as an AttributeError traceback.
+        if isinstance(chunk, list):
+            chunk_records = chunk
+        elif isinstance(chunk, dict):
+            chunk_records = chunk.get("records", [])
+        else:
+            logger.error(
+                "%s: expected a JSON array of records or an object with a "
+                "'records' array, got %s.",
+                path,
+                type(chunk).__name__,
+            )
+            return EXIT_ERROR
+        if not chunk_records:
+            logger.error("%s: contains no records.", path)
+            return EXIT_ERROR
+        for item in chunk_records:
             key, title = item.get("key"), item.get("title")
             if not key:
                 logger.error(
@@ -447,15 +476,25 @@ def kappa_report(run_dir: Path) -> int:
 
     pairs: list[tuple[str, str, dict[str, Any]]] = []
     unmatched: list[str] = []
+    unratable: list[str] = []
     blank = 0
     for entry in sample.get("entries", []):
         rater_b = (entry.get("rater_b_decision") or "").strip().lower()
         if not rater_b:
             blank += 1
             continue
+        if rater_b == "unresolved":
+            # sample() draws from screened records, but a record can hold a
+            # decision made from a title while its abstract is boilerplate or a
+            # truncated teaser. Forcing the second rater to pick one of the four
+            # screened categories there manufactures agreement or disagreement
+            # from a guess, so those pairs are excluded and counted instead.
+            unratable.append(entry["key"])
+            continue
         if rater_b not in SCREENED_DECISIONS:
             logger.error(
-                'Invalid rater_b_decision "%s" for %s; use one of %s.',
+                'Invalid rater_b_decision "%s" for %s; use one of %s, or '
+                '"unresolved" when the record has no usable abstract to rate.',
                 rater_b, entry["key"], "/".join(SCREENED_DECISIONS),
             )
             return EXIT_ERROR
@@ -511,6 +550,8 @@ def kappa_report(run_dir: Path) -> int:
         "disagreements": disagreements,
         "blank_entries": blank,
         "unmatched_entries": unmatched,
+        "unratable_entries": unratable,
+        "sampled_entries": len(sample.get("entries", [])),
     }
     report_path = run_dir / "second-rater-report.json"
     write_json_atomic(report_path, report)
@@ -518,6 +559,12 @@ def kappa_report(run_dir: Path) -> int:
         "Cohen's kappa = %.3f over %d records (%d disagreements) -> %s",
         kappa, n, len(disagreements), report_path,
     )
+    if unratable:
+        logger.info(
+            "%d sampled records were excluded as unratable (no usable abstract); "
+            "report kappa as computed over %d of %d sampled.",
+            len(unratable), n, len(sample.get("entries", [])),
+        )
     return EXIT_SUCCESS
 
 

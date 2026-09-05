@@ -109,6 +109,16 @@ def create_parser() -> argparse.ArgumentParser:
         help="Paper JSON to fetch. Defaults to selected.json when present.",
     )
     parser.add_argument(
+        "--decision",
+        default=None,
+        help=(
+            "Comma-separated screening decisions to retrieve, e.g. 'core'. Reads "
+            "the paper_decisions map written by screen.py apply. Use this rather "
+            "than hand-building a filtered input file: the paper key is normalized "
+            "and a DOI-less record will not match a naive doi-or-title join."
+        ),
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=None,
@@ -339,6 +349,26 @@ def main() -> int:
         return EXIT_ERROR
     input_payload = json.loads(input_path.read_text(encoding="utf-8"))
     all_papers = load_papers(input_path)
+    if args.decision:
+        wanted = {d.strip() for d in args.decision.split(",") if d.strip()}
+        decisions = input_payload.get("paper_decisions") or {}
+        if not decisions:
+            logger.error(
+                "%s has no paper_decisions map; re-run screen.py apply to write one.",
+                input_path,
+            )
+            return EXIT_ERROR
+        before = len(all_papers)
+        all_papers = [p for p in all_papers if decisions.get(p.key()) in wanted]
+        logger.info(
+            "Filtered to %d of %d papers with decision in %s.",
+            len(all_papers),
+            before,
+            sorted(wanted),
+        )
+        if not all_papers:
+            logger.error("No papers match --decision %s.", args.decision)
+            return EXIT_ERROR
     retrieved_path = args.run_dir / "retrieved.json"
     if retrieved_path.is_file():
         prior = {paper.key(): paper for paper in load_papers(retrieved_path)}

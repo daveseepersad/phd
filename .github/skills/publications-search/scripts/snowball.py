@@ -402,6 +402,17 @@ def main() -> int:
                     len(references),
                     len(forward),
                 )
+                if not references and not forward:
+                    # --anchors-from takes the top-ranked core papers, and the
+                    # frontier profile weights recency, so it reliably picks the
+                    # newest papers -- the ones with no citation graph yet. The
+                    # round still reports success, just with nothing in it.
+                    logger.warning(
+                        "Anchor contributed no citation edges in either direction: %s. "
+                        "Recently published anchors have no indexed graph; choose an "
+                        "established paper with --anchor instead.",
+                        anchor.title[:64],
+                    )
             except (httpx.HTTPError, ValueError) as exc:
                 record["error"] = str(exc)
                 anchor_errors.append(

@@ -136,7 +136,9 @@ decision the answer changes.
 **Next step.**
 
     S=.github/skills/publications-search/scripts
-    uv run $S/search.py "<research question verbatim>" \
+    RUN=$(uv run $S/protocol.py init "<short topic phrase>" | tail -1)
+    # put the verbatim research question in RUN/protocol.md section 1
+    uv run $S/search.py "<keyword-style topic phrase>" --run-dir "$RUN" \
       --sources openalex,crossref,scholar --from-year <year>
 ```
 
@@ -146,3 +148,12 @@ agentic topics — earlier only when a pre-LLM literature genuinely anchors the
 question). Start `--sources` at `openalex,crossref,scholar`; add `acm,ieee`
 when an institutional session is live, since both matter for refereed-anchor
 verification.
+
+Never pass the research question verbatim as the search topic. A question is
+the right content for `protocol.md` and the wrong query for a search engine:
+its qualifiers ("does", "without a corresponding loss in", "compared with")
+dilute the terms that carry the topic. Measured on a run of this pipeline, the
+verbatim question recalled 0 of 8 preregistered known items while a six-word
+keyword phrase over the same sources recalled 8 of 8. Hand `search.py` the
+keyword phrase, and pin both stages to one folder with `--run-dir` so the
+preregistered protocol and the search artifacts do not separate.
