@@ -1,0 +1,512 @@
+[[page 1]]
+CodeQual-Agent: An Intelligent LLM-Agent
+Framework for Automated Software Quality
+Assessment with Explainable Predictions and
+Real-Time Analysis
+Faisal Mohammad, Junaid K. Kakar, D. R. Bekale Be Ndong, Mot Chas, and Duksan Ryu
+Department of Software Engineering
+Jeonbuk National University, Jeonju 54896, Republic of Korea
+{mfaisal, duksan.ryu}@jbnu.ac.kr
+Abstract—Software quality assurance requires scalable solutions
+combining the deterministic precision of static analysis with
+the contextual reasoning of semantic understanding. This paper
+presents CodeQual-Agent, a hybrid neural-symbolic framework
+bridging traditional metrics-based assessment with Large Lan-
+guage Model (LLM) capabilities through an intelligent orchestra-
+tion architecture. The framework addresses three fundamental
+challenges: (1) integration of symbolic features with neural
+reasoning, (2) efficient distillation of quality-assessment expertise
+from high-capacity teacher models into deployable student
+agents, and (3) explainable predictions that build developer trust.
+CodeQual-Agent employs a Virtual SonarQube Instance as its
+symbolic foundation, extracting objective metrics (cyclomatic
+complexity, code duplication, maintainability indices) that serve as
+attention-weighted anchors grounding LLM reasoning. Through
+knowledge distillation from GPT-4 and Gemini Pro teachers
+to a Gemini 2.5 Flash student, the framework achieves 94.0%
+precision at 450 ms inference latency, maintaining 96.8% of
+teacher accuracy while delivering a 2.6 × speedup. A Human-in-
+the-Loop (HITL) active learning pipeline reduces false positives
+by 17% over three update cycles. SHAP-based explainability
+achieves 87% alignment with developer intuition. Evaluated on
+150,000 samples across three complementary datasets, real-world
+deployment demonstrates a 14% reduction in production defect
+escape rates and 83% developer adoption.
+Index Terms—Software Quality Assessment, Hybrid Neural-
+Symbolic Systems, Knowledge Distillation, LLM Agents, Explain-
+able AI, Static Analysis Integration, Active Learning, Defect
+Prediction
+I. I NTRODUCTION
+M
+ODERN software development operates at unprece-
+dented scale, with distributed teams managing codebases
+of millions of lines across diverse languages. Quality assurance
+must therefore transcend manual code review and conventional
+static analysis.
+The software quality assessment landscape presents a funda-
+mental tension. Symbolic approaches (SonarQube, Checkmarx,
+PMD) provide deterministic, rule-based analysis but suffer
+from context-blindness, producing 30–70% false positive rates
+that drive developer alert fatigue [1], [2]. Neural approaches
+(LLMs) demonstrate remarkable semantic understanding but
+risk hallucination and operate as black boxes, limiting developer
+trust. We hypothesise that synthesising these paradigms—using
+symbolic metrics to ground neural reasoning while leveraging
+LLM contextual understanding to overcome symbolic rigid-
+ity—achieves superior performance beyond simple feature
+concatenation.
+This work addresses three research questions: RQ1 (Hybrid
+Effectiveness): Does attention-weighted fusion of SonarQube
+metrics with LLM analysis reduce false positives and false
+negatives compared to pure approaches? RQ2 (Distillation
+Efficiency): How effectively can quality-assessment rationales
+be distilled from high-parameter teachers to lightweight stu-
+dents without significant recall loss? RQ3 (Explainability and
+Trust): Does SHAP-based explainability improve actionability
+and developer trust compared to ungrounded LLM explana-
+tions?
+Contributions: (1) A hybrid neural-symbolic fusion mecha-
+nism with dynamic symbolic-neural weight balance preventing
+hallucination while maintaining contextual flexibility. (2) A
+Teacher-Student distillation pipeline introducing rationale dis-
+tillation—training the Student to replicate Teacher explanation
+embeddings, preserving reasoning depth. (3) A HITL active
+learning pipeline using uncertainty-based sample selection
+and LoRA fine-tuning for continuous improvement. (4) An
+integrated SHAP-based explainability framework with counter-
+factual generation and natural language rationales.
+II. R ELATED WORK
+Early ML approaches (Naive Bayes, Random Forests, SVM)
+predicted defect-prone modules using hand-crafted features, re-
+porting AUC values of 0.70–0.85 but with limited cross-project
+generalisation [3], [4]. Pre-trained code models (CodeBERT [5],
+GraphCodeBERT [6], CodeT5 [7]) improved performance but
+require substantial labeled data and offer limited interpretability.
+Recent LLMs (GPT-4 [8], Gemini [9], Claude [10]) demon-
+strate sophisticated code understanding but are typically
+deployed as passive inference endpoints without structured
+analysis integration. Hybrid symbolic-neural systems show
+promise in narrow tasks (specific bug types, clone detection),
+but comprehensive quality assessment with explainability and
+production deployment remains an open problem.
+123
+2026 IEEE International Conference on Software Testing, Verification and Validation Workshops (ICSTW)
+979-8-3195-4691-3/26/$31.00 ©2026 IEEE
+DOI 10.1109/ICSTW72326.2026.00035
+2026 IEEE International Conference on Software Testing, Verification and Validation Workshops (ICSTW) | 979-8-3195-4691-3/26/$31.00 ©2026 IEEE | DOI: 10.1109/ICSTW72326.2026.00035
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:13:21 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 2]]
+Fig. 1. CodeQual-Agent system framework comprising data ingestion (Raw Source Code, Static Metrics), preprocessing (AST Extraction, SMOTE), LLM
+core (Gemini 2.5 Flash with LoRA Adapters), and output stages (Reasoning and Explanation Module, Report Generation), with a human-in-the-loop (HITL)
+feedback mechanism for active learning.
+Knowledge distillation [11], [12] has been applied to
+NLP [13] and code tasks, but primarily focuses on label
+distillation. Our rationale distillation [14], [15]—preserving
+reasoning depth by training students on teacher explanation
+embeddings—is a novel extension. XAI techniques (LIME [16],
+SHAP [17], counterfactuals [18]) have been applied to defect
+prediction in post-hoc settings; CodeQual-Agent integrates
+explainability directly into the agent’s reasoning process.
+III. C ODE QUAL-AGENT ARCHITECTURE
+A. System Overview
+Figure 1 provides the overview of the proposed architecture.
+CodeQual-Agent implements a three-layer architecture: a
+Symbolic F oundation (SonarQube + AST parsing), a Neural
+Reasoning Core (Gemini 2.5 Flash with attention-weighted
+fusion), and an Application Interface (REST API, dashboard,
+CI/CD hooks). Three design principles guide the architecture:
+complementary fusion (each component compensates for
+the other’s weaknesses), reasoning preservation (distillation
+transfers reasoning processes, not just labels), and continuous
+adaptation (HITL feedback refines behaviour post-deployment).
+B. Symbolic-Neural Bridge
+Symbolic Foundation. A containerised SonarQube 9.9 in-
+stance extracts per-file metrics including cyclomatic complexity
+(CC ), cognitive complexity, duplication ratio, maintainability
+index (MI = 171− 5.2 ln(HV )− 0.23CC− 16.2 ln(LOC)),
+technical debt, and security hotspots (CWE/OW ASP), together
+with violations across 174 built-in rules. Tree-sitter [28]
+parsers provide language-agnostic AST extraction for seven
+languages, serialised to compact JSON (60% token reduction).
+Combined, these form a 68-dimensional hybrid feature vector
+(48 quantitative metrics, 12 code smell flags, 8 contextual
+features).
+Attention-Weighted Fusion. Rather than treating metrics
+as ordinary features, CodeQual-Agent dynamically adjusts the
+symbolic-neural balance based on code complexity:
+α =
+
+
+
+0.7 CC <10 (neural emphasis)
+0.5 10 ≤CC≤ 20 (balanced)
+0.3 CC >20 (symbolic emphasis)
+(1)
+Qfused =α·Qneural + (1−α)·Qsymbolic (2)
+For simple code, LLM contextual understanding adds value
+beyond deterministic metrics; for complex code, symbolic
+grounding prevents hallucination [25]. Symbolic metrics also
+constrain neural reasoning (preventing implausible assessments
+such as rating CC = 45 code as maintainable), while
+neural understanding overrides symbolic rigidity for context-
+appropriate violations.
+C. Knowledge Distillation Pipeline
+GPT-4 and Gemini 3 Pro serve as Teachers; when they
+agree (87.7% of cases) their consensus label is used, and
+disagreements (12.3%) undergo expert adjudication (18,750
+high-quality samples). The Student (Gemini 2.5 Flash) is trained
+on dual objectives:
+Label distillation:
+Llabel =−PC
+i=1yTeacher
+i log ˆyStudent
+i (3)
+Rationale distillation (novel; penalises divergence between
+explanation embeddings):
+Lrationale = 1− CosineSim
+ 
+Emb(RTeacher), Emb(RStudent)
+
+(4)
+Ltotal =Llabel +βLrationale, β = 0.3 (5)
+where R is generated explanation text and Emb(·) is a frozen
+sentence transformer (all-MiniLM-L6-v2). Training follows
+a three-phase curriculum [26]: foundation (easy, clear-metric
+examples, epochs 1–3), development (nuanced, conflicting-
+metric cases, epochs 4–6), and mastery (hard, adversarial, and
+Teacher-disagreement cases, epochs 7–10). Optimiser: AdamW,
+lr 3× 10−5, cosine decay, batch size 64 (effective).
+124
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:13:21 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 3]]
+D. Human-in-the-Loop Active Learning
+Developers provide per-issue feedback (confirmed bug, false
+positive, severity mismatch, missing issue). A composite prior-
+ity score selects the top 500 samples monthly for retraining:
+Priority = 0.5H + 0.3 (1− ConfGap) + 0.2 FI Var (6)
+whereH is prediction entropy, ConfGap the top-two probability
+margin, and FI Var feature importance variance. LoRA [23]
+(rank r = 8, 3 epochs on prioritised samples + 10% original
+data) enables monthly updates at a fraction of full fine-tuning
+cost. Updated models undergo A/B testing on 10% of users be-
+fore full promotion (p< 0.05 required on agreement rate, FPR,
+and critical recall). Over three cycles: FPR 14.3% → 11.8%
+(17% reduction), agreement 82.7% → 85.2%, critical recall
+89.1%→ 91.3%.
+E. Integrated Explainability and SMOTE
+SHAP Attribution. KernelSHAP (1,000 samples; 95%
+correlation with exact values at <100 ms overhead) computes
+Shapley values over the hybrid feature vector, producing
+signed feature importance visualisations, counterfactual what-
+if scenarios, and LLM-generated natural language rationales
+grounded in feature importance.
+SMOTE in Feature Space. To address severe class im-
+balance (critical bugs: 2–5%), SMOTE [19] is applied to the
+extracted feature vector rather than raw code (text interpolation
+is semantically meaningless). A 1:3 minority-to-majority target
+ratio maintains distributional realism; critical F1 improves from
+0.829 (without) to 0.920 (with), and critical recall from 78.1%
+to 89.6%.
+IV. E XPERIMENTAL METHODOLOGY
+Datasets. Three complementary corpora totalling 150,000
+samples: SonarQube Metrics (90,000 samples / 60%): These
+provide the quantitative baseline for static analysis, including
+cyclomatic complexity, maintainability index, and common
+code smells. 500 open-source Java/Python projects annotated
+with SonarQube 9.9 (174 rules; severity labels Blocker–Info).
+CQDataset (37,500 samples / 25%): Mined from high-star
+GitHub repositories, these snippets were filtered using commit
+history (focusing on ”fix” vs. ”refactor” keywords) to provide
+labels for general code quality and readability. Python code
+from top-1000 GitHub projects and competitive programming
+platforms, annotated by automated tools (40%) and 6 expert
+developers (60%; Cohen’s κ = 0.72). Defects4J v2.0(22,500
+samples / 15%): A benchmark of reproducible real-world bugs
+from large-scale Java projects, used as the ”Golden Standard”
+for training the agent to recognize critical defect patterns [20].
+835 real bugs from 17 Java projects, augmented via temporal
+expansion, context expansion, and clone-detected similar code
+mining; 1,000 augmented samples manually validated (91%
+label agreement). Stratified 70/15/15 train/validation/test split
+with project-level separation to prevent data leakage.
+Baselines. (1) GPT-4 [8]: identical prompting without
+orchestration; establishes accuracy ceiling (1.76T params,
+1,200 ms). (2) CodeLlama [27]: 7B-parameter decoder-only
+model fine-tuned on code; represents efficient instruction-tuned
+Fig. 2. Performance evaluation of the CodeQual-Agent against the SOTA
+models
+LLM baselines. (3) CodeT5 [7]: 220M-parameter encoder-
+decoder; represents specialised pre-trained code models. (4)
+CodeBERT [5]: 125M-parameter encoder-only model with
+classification head, 10 epochs, AdamW, lr 2e-5. (5) Mamba-
+2.8B [22]: state-space model; continued pre-training on Code-
+SearchNet [21] then fine-tuned for quality assessment; tests
+SSM alternatives.
+Metrics. Classification: Precision, Recall, and F1 (macro-
+averaged)
+Ablations. Five variants isolate component contributions:
+NoAST (removes structural features), NoSMOTE (original
+imbalanced data), NoAgent (uniform preprocessing; no or-
+chestration), NoXAI (removes explainability output), NoDistill
+(Student trained on labels only, no Teacher rationales).
+V. R ESULTS AND ANALYSIS
+A. Primary Performance (RQ1, RQ2)
+TABLE I
+COMPREHENSIVE PERFORMANCE COMPARISON .
+Model Type Prec. Rec. F1 Lat. (ms) Size
+CodeQual-Agent LLM Agent 0.940 0.910 0.920 450 API
+GPT-4 (Teacher) LLM 0.960 0.940 0.950 1,200 1.76T
+CodeLlama Decoder 0.900 0.890 0.900 300 7B
+CodeT5 Enc-Dec 0.890 0.880 0.880 200 220M
+CodeBERT Enc-only 0.820 0.790 0.800 80 125M
+Mamba SSM 0.880 0.850 0.860 150 2.8B
+Table I and Fig. 2 illustrate the average performance of
+the CodeQual-Agent against the SOTA models in terms of
+evaluation metrics. RQ1 – Hybrid Effectiveness. CodeQual-
+Agent achieves 94.0% precision and 92.0% F1—outperforming
+the strongest encoder-only baseline (CodeBERT: 82.0%, 80.0%
+F1, +12.0 F1 points) and the strongest decoder baseline
+(CodeLlama: 90.0%, 90.0% F1, +2.0 points). Against CodeT5
+(88.0% F1) and Mamba (86.0% F1), the hybrid advantage
+is 4.0 and 6.0 points respectively. Attention-weighted fusion
+exceeds simple feature concatenation by 2.8% F1, confirming
+that active symbolic-neural integration outperforms passive
+metric appending.
+RQ2 – Distillation Efficiency. The Student maintains 96.8%
+of GPT-4 Teacher F1 (0.920 vs 0.950, −3.0 points) while
+achieving a 2.6× speedup (450 vs 1,200 ms), enabling real-
+time CI/CD integration. Even against CodeLlama (300 ms, 7B
+125
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:13:21 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 4]]
+params), the framework delivers superior F1 at only 1.5 × the
+latency. The 3.5× throughput improvement (42 vs 12 req/s)
+allows simultaneous service to hundreds of developers.
+B. Ablation Studies
+Table II presents the ablation results. Removing SMOTE and
+agent orchestration each cause the largest equal performance
+drop ( ∆F1 =−0.100), followed by knowledge distillation
+(−0.060), AST integration (−0.040), while XAI removal incurs
+zero accuracy cost.
+SMOTE (−10.0% F1): without oversampling, the model
+trained on the imbalanced raw defect distribution suffers a
+dramatic recall collapse from 91.0% to 74.0% ( −17 points),
+reducing F1 from 0.920 to 0.820 and confirming that class
+balancing is essential for minority defect class coverage.
+Agent Orchestration (−10.0% F1): removing symbolic
+and RAG grounding reduces the system to a standard LLM,
+matching SMOTE’s drop at F1 = 0.820, which confirms that
+structured reasoning over static metrics is equally critical to
+balanced training data.
+Knowledge Distillation (−6.0% F1): training on labels alone
+yields F1 = 0.860 vs. 0.920, confirming that rationale transfer
+from teacher models conveys reasoning depth beyond label
+matching.
+AST Integration (−4.0% F1): structural code abstraction
+contributes meaningfully, with impact expected to intensify on
+high-complexity code (CC >15) where raw text input loses
+syntactic context.
+XAI Components (∆F1 = 0.000): the negligible accuracy
+cost validates that SHAP explainability is incorporated without
+any compromise to predictive performance.
+TABLE II
+ABLATION STUDY RESULTS .
+Variant Prec. Rec. F1 ∆ F1
+CodeQual-Agent (Full) 0.940 0.910 0.920 –
+– NoDistill 0.880 0.840 0.860 −0.060
+– NoSMOTE 0.920 0.740 0.820 −0.100
+– NoAST 0.890 0.870 0.880 −0.040
+– NoAgent 0.840 0.800 0.820 −0.100
+– NoXAI 0.940 0.910 0.920 0.000
+C. Explainability V alidation (RQ3)
+TABLE III
+XAI T RUST RATINGS (1–5 L IKERT SCALE , N=12).
+Component Mean Std
+Feature Importance Accuracy 4.3 0.6
+Counterfactual Usefulness 4.1 0.7
+Rationale Clarity 4.5 0.5
+Overall Trust 4.2 0.6
+Likelihood of Acting on Advice 4.4 0.5
+RQ3 – Trust and Actionability. SHAP-grounded expla-
+nations achieve 87% alignment with developer intuition and
+4.4/5.0 likelihood of acting on recommendations—significantly
+higher than baseline GPT-4 explanations without SHAP (accu-
+racy 3.8, usefulness 3.9, trustworthiness 3.7; all p < 0.01).
+Qualitative analysis revealed three themes: grounding in
+verifiable metrics builds confidence; counterfactuals provide ac-
+tionable remediation guidance; and confidence scores calibrate
+appropriate automation reliance.
+D. Qualitative Output Inspection
+Fig. 3 illustrates a representative output generated by
+CodeQual-Agent on a buggy code sample. The system correctly
+classifies the input as BUGGY with 0.95 confidence, accom-
+panied by a SonarQube-verified radar chart decomposing four
+static metrics — Cyclomatic Complexity (85), Cognitive Com-
+plexity (82), Halstead V olume (13.92), and Comment Density
+(42.86) — alongside the AI reasoning and feature importance
+panel and a structured inspection report, demonstrating the end-
+to-end pipeline from raw source code to explainable, actionable
+output.
+VI. D ISCUSSION
+A. Why Hybrid Outperforms Pure Approaches
+Symbolic metrics eliminate “plausible but incorrect” as-
+sessments common in purely neural approaches [25]: without
+SonarQube grounding, the agent occasionally rates CC >20
+code as maintainable. The hybrid advantage is maximal (>10%
+F1 over CodeBERT and Mamba) for complex algorithms
+(CC >20), security-critical code, and performance-sensitive
+paths; moderate (2–4%) over instruction-tuned models like
+CodeLlama and CodeT5 for standard business logic; and
+minimal (<2%) for simple CRUD operations and configuration
+files—suggesting adaptive deployment strategies allocating
+hybrid analysis to prioritised modules.
+B. Distillation and Curriculum Insights
+Distillation fidelity varies by capability: high fidelity ( >95%
+of Teacher) for pattern recognition and severity classification;
+moderate (90–95%) for contextual judgment; low ( <90%)
+for novel defect types and domain-specific best practices.
+Curriculum training contributes 1.5 F1 points overall and 4.9
+points on hard examples (Teacher disagreements), with faster
+convergence (7 vs 10 epochs) and better generalisation (test-
+train gap 0.012 vs 0.023).
+LoRA [23], [24] achieves 82% of full fine-tuning benefit
+(+0.018 vs +0.022 F1) at 36× faster training and with minimal
+catastrophic forgetting (0.2 vs 0.9 F1 point drop), enabling a
+sustainable monthly update cadence.
+C. Failure Modes
+Systematic weaknesses include: domain-specific idioms
+(initial 23% FPR on valid NumPy patterns; reduced to 11%
+after 2 HITL cycles); legacy code overwhelm ( 100+ findings
+per file; mitigated by gradual rollout); concurrency complexity
+(race condition recall 73% vs 91% overall, due to limited data
+flow analysis and training data skew toward synchronous code);
+and novel framework idioms in frameworks released within 6
+months.
+126
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:13:21 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 5]]
+Fig. 3. Sample CodeQual-Agent output for a defective code fragment, showing the B UGGY verdict (confidence = 0.95), SonarQube-verified complexity radar
+chart, SHAP feature importance panel, and structured inspection report.
+D. Threats to V alidity
+Internal: Dataset concentration in Java/Python; inheritance
+of GPT-4 biases in Teacher labels; hyperparameter sensitivity.
+External: Domain specificity (general-purpose code); two de-
+ployment organisations; temporal validity (2015–2024 training
+data). Construct: Five quality dimensions are not exhaustive;
+ground truth involves subjective expert judgment.
+E. Ethical Considerations
+Automation risk of atrophying developer critical thinking is
+mitigated through confidence scores, explainability, and framing
+the tool explicitly as advisory. Bias monitoring (FPR/FNR
+stratified by code style) and third-party audits address potential
+perpetuation of historical coding biases. Developers remain
+accountable for committed code; organisations for deployment
+configuration; and tool providers for transparency regarding
+limitations.
+VII. C ONCLUSION
+CodeQual-Agent demonstrates that hybrid neural-symbolic
+architectures, enhanced through knowledge distillation and
+HITL active learning, enable practical, trustworthy automated
+software quality assessment. Symbolic grounding in SonarQube
+metrics constrains LLM outputs to verifiable static analysis
+evidence, reducing false positives, while LLM flexibility over-
+comes symbolic rigidity, achieving 94.0% precision at 450 ms
+— a 2.6× speedup over GPT-4 at 96.8% relative accuracy,
+and superior F1 over all non-teacher baselines including
+CodeLlama (0.900), CodeT5 (0.880), Mamba (0.860), and
+CodeBERT (0.800). Rationale distillation preserves reasoning
+depth; uncertainty-based HITL reduces false positives 17% over
+three cycles; and SHAP explainability achieves 87% developer
+alignment and 4.4/5.0 likelihood-to-act ratings. Production
+deployments demonstrate 14% defect escape reduction and
+83% adoption, validating practical effectiveness. The hybrid-
+distillation-HITL paradigm is broadly applicable to domains
+combining systematic rigour with contextual judgment —
+including medical diagnosis, financial analysis, and legal review.
+Future work will extend coverage to additional programming
+languages, multi-file architectural analysis, and automated
+remediation with formal verification.
+ACKNOWLEDGMENTS
+This work was supported by the MSIT(Ministry of Science
+and ICT), Korea, under the ITRC(Information Technology Re-
+search Center) support program(IITP-2026-RS-2020-II201795,
+25%) supervised by the IITP(Institute for Information &
+Communications Technology Planning & Evaluation) and
+by the IITP-Innovative Human Resource Development for
+Local Intellectualization program grant funded by the Korea
+government(MSIT) (IITP-2026-RS-2024-00439292).
+REFERENCES
+[1] N. Ayewah, W. Pugh, J. D. Morgenthaler, J. Penix, and Y . Zhou,
+“Evaluating static analysis defect warnings on production software,” in
+Proc. ACM PASTE, 2008, pp. 1–8.
+[2] M. Christakis and C. Bird, “What developers want and need from program
+analysis: An empirical study,” in Proc. IEEE/ACM ASE, 2016, pp. 332–
+343.
+[3] T. Menzies, J. Greenwald, and A. Frank, “Data mining static code
+attributes to learn defect predictors,” IEEE Trans. Softw. Eng., vol. 33,
+no. 1, pp. 2–13, 2007.
+[4] B. Ghotra, S. McIntosh, and A. E. Hassan, “Revisiting the impact of
+classification techniques on defect prediction,” in Proc. IEEE/ACM ICSE,
+2015, pp. 789–800.
+[5] Z. Feng et al., “CodeBERT: A pre-trained model for programming and
+natural languages,” in Proc. EMNLP Findings, 2020, pp. 1536–1547.
+[6] D. Guo et al., “GraphCodeBERT: Pre-training code representations with
+data flow,” in Proc. ICLR, 2021.
+[7] Y . Wang et al., “CodeT5: Identifier-aware unified pre-trained encoder-
+decoder models for code,” in Proc. EMNLP, 2021, pp. 8696–8708.
+[8] OpenAI, “GPT-4 technical report,” arXiv preprint arXiv:2303.08774,
+2023.
+[9] Google DeepMind, “Gemini: A family of highly capable multimodal
+models,” arXiv preprint arXiv:2312.11805, 2023.
+[10] Anthropic, “The Claude 3 model family: Opus, Sonnet, Haiku,” Technical
+Report, 2024.
+[11] G. Hinton, O. Vinyals, and J. Dean, “Distilling the knowledge in a neural
+network,” arXiv preprint arXiv:1503.02531, 2015.
+[12] J. Gou, B. Yu, S. J. Maybank, and D. Tao, “Knowledge distillation: A
+survey,” Int. J. Comput. Vis., vol. 129, pp. 1789–1819, 2021.
+[13] V . Sanh, L. Debut, J. Chaumond, and T. Wolf, “DistilBERT, a distilled
+version of BERT,” arXiv preprint arXiv:1910.01108, 2019.
+[14] Y . Gu, L. Dong, F. Wei, and M. Huang, “Knowledge distillation of large
+language models,” arXiv preprint arXiv:2306.08543, 2023.
+[15] N. Ho, L. Schmid, and S.-Y . Yun, “Large language models are reasoning
+teachers,” in Proc. ACL, 2022, pp. 9072–9082.
+127
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:13:21 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 6]]
+[16] M. T. Ribeiro, S. Singh, and C. Guestrin, “‘Why should I trust you?’
+Explaining the predictions of any classifier,” in Proc. ACM SIGKDD,
+2016, pp. 1135–1144.
+[17] S. M. Lundberg and S.-I. Lee, “A unified approach to interpreting model
+predictions,” in Proc. NeurIPS, 2017, pp. 4765–4774.
+[18] S. Wachter, B. Mittelstadt, and C. Russell, “Counterfactual explanations
+without opening the black box,” Harvard J. Law Technol., vol. 31, no. 2,
+pp. 841–887, 2018.
+[19] N. V . Chawla et al., “SMOTE: Synthetic minority over-sampling
+technique,” J. Artif. Intell. Res., vol. 16, pp. 321–357, 2002.
+[20] R. Just, D. Jalali, and M. D. Ernst, “Defects4J: A database of existing
+faults,” in Proc. ISSTA, 2014, pp. 437–440.
+[21] H. Husain et al., “CodeSearchNet challenge,” arXiv preprint
+arXiv:1909.09436, 2019.
+[22] A. Gu and T. Dao, “Mamba: Linear-time sequence modeling with
+selective state spaces,” arXiv preprint arXiv:2312.00752, 2023.
+[23] E. J. Hu et al., “LoRA: Low-rank adaptation of large language models,”
+in Proc. ICLR, 2022.
+[24] T. Dettmers et al., “QLoRA: Efficient finetuning of quantized LLMs,” in
+Proc. NeurIPS, 2023.
+[25] J. Wei et al., “Chain-of-thought prompting elicits reasoning in large
+language models,” in Proc. NeurIPS, 2022.
+[26] Y . Bengio et al., “Curriculum learning,” in Proc. ICML, 2009, pp. 41–48.
+[27] B. Rozi`ere et al., “Code Llama: Open foundation models for code,” arXiv
+preprint arXiv:2308.12950, 2023.
+[28] M. Brunsfeld, “Tree-sitter: A parser generator tool and incremental
+parsing library,” https://tree-sitter.github.io/, 2023.
+[29] B. Settles, “Active learning literature survey,” Tech. Rep. 1648, Univ.
+Wisconsin–Madison, 2009.
+[30] R. Monarch, Human-in-the-Loop Machine Learning. Manning, 2021.
+128
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:13:21 UTC from IEEE Xplore. Restrictions apply.

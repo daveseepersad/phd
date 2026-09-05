@@ -1,0 +1,1576 @@
+[[page 1]]
+Received 13 January 2026, accepted 9 February 2026, date of publication 18 February 2026, date of current version 25 February 2026.
+Digital Object Identifier 10.1 109/ACCESS.2026.3665894
+A Critical Review and Evaluation of LLMs for RTL
+Generation
+ARUN RAVINDRAN
+ 1, ADITYA PATRA2, VAHID BABAEY 1, (Graduate Student Member, IEEE),
+AND SURESH PURINI 3, (Member, IEEE)
+1Department of Electrical and Computer Engineering, University of North Carolina at Charlotte, Charlotte, NC 28223, USA
+2California High School, San Ramon, CA 94583, USA
+3International Institute of Information Technology, Hyderabad 500032, India
+Corresponding author: Arun Ravindran (arun.ravindran@charlotte.edu)
+ABSTRACT Large language models (LLMs) are emerging as powerful tools for hardware design, with
+recent work exploring their ability to generate register-transfer level (RTL) code directly from natural-
+language specifications. This paper presents a critical review and empirical evaluation of LLM-based
+RTL generation. We examine thirty-one published efforts, classifying their use of techniques such
+as fine-tuning, reinforcement learning, retrieval-augmented prompting, and multi-agent orchestration
+across eight methodological dimensions including debugging support, post-RTL metrics, and benchmark
+development. Building on this synthesis, we experimentally evaluate frontier commercial and open-weight
+models—GPT-4.1, GPT-4.1-mini, Claude Sonnet 4, and Llama 4 Maverick —on the V erilogEvalV2 and
+RTLLM-v2.0 benchmarks under both single-shot generation and a lightweight ReAct-style reflection loop,
+with compilation and simulation performed through Icarus V erilog interfaced via the Model Context Protocol
+(MCP). Results show that these models achieve up to 89.74% on V erilogEval and 96.08% on RTLLM,
+matching or exceeding prior domain-specific pipelines without specialized fine-tuning. Detailed failure
+analysis reveals systematic error modes, including FSM mis-sequencing, handshake drift, blocking vs.
+non-blocking misuse, and state-space oversimplification. Finally, we outline a forward-looking research
+roadmap toward natural-language-to-System-on-Chip (SoC) design, emphasizing realistic benchmarks and
+open flows, richer specification formalisms, AI-human collaborative design environments, and system-level
+feedback that spans physical design, firmware, and design space exploration. Together, this work provides
+a synthesis of recent advances and a baseline evaluation of frontier LLMs, highlighting opportunities and
+challenges in moving toward AI-native electronic design automation.
+INDEX TERMS Large language models, RTL generation, electronic design automation, hardware design,
+specification-to-RTL, high-level synthesis, multi-agent systems, benchmarking.
+I. INTRODUCTION
+Designing modern system-on-chips (SoCs) remains one of
+the most challenging tasks in computing systems engi-
+neering. An SoC integrates heterogeneous accelerators for
+cryptography, signal and image processing, and machine
+learning, each with deep pipelines, hierarchical reuse, and
+stringent power, performance, and area (PPA) require-
+ments [1], [2]. The design flow involves multiple stages—
+capturing specifications, planning microarchitectures, imple-
+menting register-transfer level (RTL) modules, synthesizing
+The associate editor coordinating the review of this manuscript and
+approving it for publication was Ludovico Minati
+ .
+netlists, performing placement and routing, and verifying
+correctness at every level [3]. While commercial [4], [5] and
+open-source [6] electronic design automation (EDA) tools
+have matured in the later stages of RTL-to-GDSII, the earlier
+task of translating natural-language or informal specifications
+into correct RTL remains largely manual, error-prone, and
+iterative.
+The emergence of large language models (LLMs) has
+opened new opportunities to address this gap [7]. LLMs
+trained on vast amounts of code and technical text demon-
+strate strong capabilities in program synthesis and reasoning,
+suggesting their potential for hardware description language
+(HDL) generation. Over the past two years, research in this
+28522
+
+ 2026 The Authors. This work is licensed under a Creative Commons Attribution 4.0 License.
+For more information, see https://creativecommons.org/licenses/by/4.0/ VOLUME 14, 2026
+
+[[page 2]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+space has accelerated rapidly. We analyze this evolving body
+of work to identify the techniques explored—ranging from
+prompt engineering [8], retrieval augmented generation [9],
+multi-agent LLM systems [10], [11], fine-tuning [12],
+tool use [13] and reinforcement learning [14]—and to
+chart how the field has progressed. Benchmarks such as
+V erilogEval [15] and RTLLM [16] have played a central
+role in this evolution, enabling standardized evaluation of
+these techniques. Despite notable successes, most efforts
+remain point solutions that optimize benchmark performance
+without deeply examining the root causes of failures.
+Two recent surveys examine the use of large language
+models across the EDA stack, but differ fundamentally
+from our work in both scope and methodology. Pan et al.
+[17] present a comprehensive catalog of LLM applications
+spanning system-level design, RTL, synthesis, physical
+design, and analog domains, organizing prior work by model
+type and customization strategy. While valuable as a broad
+reference, their analysis is largely descriptive and does
+not include controlled experimental evaluation, cross-model
+comparison under a unified protocol, or critical examination
+of benchmark limitations. Similarly, Xu et al. [18] provide
+an extensive taxonomy of LLM-based techniques and outline
+high-level challenges and future directions across the EDA
+workflow, but stop short of empirically evaluating model
+behavior or validating proposed methodologies.
+By contrast, our work is narrowly focused on the
+specification-to-RTL problem, a stage that is both less
+mature and more open-ended than downstream synthesis
+or physical design, and where errors in interpretation,
+decomposition, and architectural reasoning are most pro-
+nounced. We explicitly focus on the prevailing Natural
+Language (NL)-to-RTL paradigm to rigorously quantify its
+limits, establishing an empirical baseline that demonstrates
+where prose-based generation breaks down and motivating
+the transition to formal specifications for complex, long-
+context designs. This focused scope enables a deeper
+critical analysis of agentic refinement strategies, benchmark
+adequacy, and specification structure. Crucially, unlike prior
+surveys, we conduct a controlled experimental evaluation
+of multiple frontier LLMs—both proprietary and open-
+weight—on standardized benchmarks (V erilogEvalV2 and
+RTLLM-v2.0), directly comparing baseline and agentic
+approaches under identical conditions. This allows us to
+quantify when agentic refinement meaningfully improves
+reliability, identify benchmark saturation effects, and analyze
+systematic failure modes exposed by current evaluation suites
+— insights that are largely absent from existing surveys.
+Finally, while automated RTL-to-GDSII flows such as
+OpenROAD [6] and recent AI-assisted backend tools [19],
+[20], [21], [22] address downstream phases of the design
+flow, they operate on already well-structured RTL and
+constraints. Our review deliberately excludes these stages to
+concentrate on the specification-to-RTL bottleneck, where
+ambiguity, weak contracts, and inadequate benchmarks
+remain fundamental obstacles. In this sense, our work com-
+plements prior surveys by providing empirical grounding and
+critical depth in a narrowly scoped but still methodologically
+evolving phase of the hardware design pipeline, particularly
+with respect to benchmark rigor, agentic evaluation, and
+systematic failure analysis.
+This paper makes three contributions:
+1) Analysis of recent work and benchmarks: We review
+and synthesize techniques proposed in the literature,
+showing how approaches have evolved over the past
+three years and how they align with benchmark design.
+2) Experimental evaluation of state-of-the-art LLMs:
+We show that baseline single-shot generation and
+simple ReAct-style [23] reflection with Icarus V er-
+ilog simulation interfaced via MCP—achieves strong
+performance on current benchmarks, suggesting that
+these benchmarks may no longer stress the limits of
+today’s models. This highlights the need for richer, more
+complex benchmarks to drive further progress.
+3) Identification of recurring failure modes: By analyz-
+ing failed designs in depth, we surface systematic issues
+such as finite state machine mis-sequencing, handshake
+protocol drift, and misuse of blocking vs. non-blocking
+semantics, offering insight into why LLMs struggle with
+hardware concurrency and temporal reasoning.
+Together, these contributions provide the reader with
+both a comprehensive map of existing approaches and a
+grounded assessment of how well current LLMs perform.
+More importantly, they highlight where progress has been
+made, where gaps remain, and what research directions are
+most promising.
+The remainder of the paper is organized as follows.
+Section II surveys prior work on LLM-driven RTL genera-
+tion. Section III presents our evaluation setup and benchmark
+results. Section IV analyzes systematic failure modes.
+Section V outlines a research roadmap for natural-language-
+to-SoC design. Section VI concludes.
+II. PRIOR WORK ON LLM BASED RTL GENERATION
+We surveyed the literature on RTL generation using large
+language models (LLMs), focusing on work published
+from the introduction of publicly accessible LLMs in late
+2022 through mid-2025. This period spans the release
+of foundational models such as ChatGPT [24], Code
+Llama [25], DeepSeek [26], Gemini [27], and Qwen [28],
+which made LLM-based code generation broadly feasible for
+hardware applications.
+We selected 31 works that address RTL synthesis, verifi-
+cation, or refinement using generative models. Collectively,
+they span the state of the art in LLM-based hardware
+design, employing techniques such as supervised fine-
+tuning [12], reinforcement learning, [14] retrieval-augmented
+prompting [9], and multi-agent coordination [10].
+VOLUME 14, 2026 28523
+
+[[page 3]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+A. SURVEY METHODOLOGY
+Each project is evaluated along eight methodological dimen-
+sions that capture the breadth of techniques employed in
+LLM-based RTL generation. The fine-tuning (FT) dimension
+reflects whether the model is further trained on RTL-specific
+corpora, typically drawn from GitHub or curated repositories.
+The reinforcement learning (RL) dimension identifies
+models that incorporate feedback-driven optimization,
+such as policy-gradient or reward-weighted fine-tuning,
+to improve correctness under evaluation constraints.
+Agentic execution (Ag) denotes the use of multi-agent
+workflows, where distinct agents (e.g., planner, generator,
+verifier) coordinate task decomposition, code generation, and
+evaluation.
+The retrieval or in-context learning (RAG) dimension cap-
+tures systems that enhance generation with example-based
+conditioning or retrieval-augmented prompts, often improv-
+ing robustness on long-tail designs.
+Debugging support (Dbg) refers to mechanisms that
+help localize and correct faults, such as Abstract Syntax
+Tree(AST)-level backtracing, simulation waveform check-
+points, or compiler error alignment.
+Post-RTL metrics (Beyond) assesses whether the approach
+accounts for downstream qualities of the generated RTL—
+such as gate count, synthesis efficiency, Boolean Satisfiabil-
+ity (SA T) solving time, or resource utilization.
+The benchmark contribution (BM) dimension marks
+whether a paper introduces a new benchmark suite for
+evaluating RTL generation systems.
+Finally, prompt engineering or chain-of-thought (PE)
+refers to the deliberate design of structured prompts that guide
+model reasoning or decompose complex specifications, and
+can be extended beyond text to include multimodal inputs
+such as block diagrams, dataflow graphs, timing waveforms,
+and interface schematics that anchor architectural intent and
+reduce ambiguity in specification interpretation. Together,
+these dimensions provide a structured basis for comparison
+across systems and inform the taxonomy presented in
+Table 1.
+B. PER-PAPER SUMMARIES
+The following summaries present each research project in
+alphabetical order, highlighting core methodologies, contri-
+butions, and benchmark results. Full citations are provided in
+the bibliography.
+AIVRIL Two-agent ReAct [23] loop (coding and
+review) co-generates RTL and testbenches, then applies
+coverage and assertion checks to iteratively fix errors.
+Benchmarked on V erilogEval-Human.[15], [29]
+AssertLLM Uses a multi-agent method for specifi-
+cation extraction, signal mapping, and System V er-
+ilog Assertion (SV A) generation. Techniques include
+in-context learning and prompt engineering, with eval-
+uations performed using Formal Property V erification
+(FPV) tools (e.g., Jasper[30]) against a golden RTL.[31]
+AutoBench Automates testbench creation by generating
+JSON-based scenarios, V erilog drivers, and Python
+checkers from RTL. Iterative corrections are applied,
+with syntactic and functional correctness validated while
+mutating the RTL under test for coverage. Evaluated on
+V erilog-HumanEval.[32]
+AutoChip Early ReAct framework that feeds compiler
+and simulation errors back to the LLM for self-
+correction. [33]
+AutoVCoder Pipeline of GitHub mining, GPT-3.5 syn-
+thetic instructions, two-round fine-tuning, and dual
+RAG retrievers for examples and design rules. Evaluated
+on V erilogEval and RTLLM.[34]
+Autosilicon Multi-agent framework with dedicated
+agents for decomposition, implementation, and debug-
+ging, augmented by persistent vector-memory, serial-
+ized waveforms, and automated testbench generation.
+Evaluated on V erilogEval, RTLLM, and large-scale
+open-source designs (CPUs, I/O, accelerators), with
+PPA analysis via Synopsys Silicon Compiler on TSMC
+65 nm technology. [35]
+BetterV Pairs a small ‘‘LLM-as-judge’’ discriminator
+with CodeLlama, DeepSeek, and CodeQwen LLM
+backbones to minimize post Y osys [36] synthesis node
+count and SA T solve time—the first study targeting post-
+synthesis metrics. [37]
+C2HLSC Proposes a flow from C implementations
+to HLS-compatible C, synthesizable by tools such as
+Catapult. Stages include function hierarchy analysis,
+refactoring to HLS-compatible code, and insertion of
+pragmas via LLM prompts. Benchmarks include cryp-
+tographic primitives, randomness tests, and quick sort.
+Results show correctness and efficiency approaching
+hand-coded RTL with reduced effort. [38]
+ChatCPU Presents an end-to-end LLM-driven CPU
+design and verification platform that integrates
+fine-tuned language models, a processor description
+language (PDL), and a module-interchangeable veri-
+fication paradigm to support agile CPU development.
+Unlike prior RTL generation works focused on
+isolated modules, ChatCPU demonstrates system-scale
+capability by generating, verifying, and taping out a
+6-stage in-order RISC-V CPU, achieving significant
+improvements in design productivity and verification
+efficiency. [39]
+ChipChat Presents one of the earliest conversational
+LLM–assisted hardware design studies, examining how
+instruction-tuned LLMs (ChatGPT-4) can act as a
+co-architect in the iterative design of digital hardware.
+Through an observational case study, the authors
+demonstrate the end-to-end co-design, verification,
+and tapeout of an 8-bit accumulator-based processor,
+highlighting both productivity gains and limitations of
+interactive LLM use for HDL authoring and debugging.
+[40]
+28524 VOLUME 14, 2026
+
+[[page 4]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+ChipGPT-FT Argues that data scarcity, rather than
+model architecture, is the primary bottleneck for
+RTL generation with LLMs, and proposes an auto-
+mated design-data augmentation framework to generate
+aligned natural-language, V erilog, V erilog-repair, and
+EDA-script training data at scale. Using program-
+analysis–based alignment and EDA-tool feedback, the
+authors fine-tune LLaMA-2 models and demonstrate
+substantial gains in V erilog generation, repair, and
+EDA script synthesis, outperforming prior open-source
+models and GPT-3.5 on standard benchmarks. [41]
+ChipGPT-VArgues that natural-language–only prompt-
+ing is insufficient for RTL generation when designs have
+significant spatial or structural complexity, and propose
+a multi-modal approach that combines block-diagram
+images with textual specifications. They introduce an
+open-source multi-modal V erilog benchmark and a
+structured query language to evaluate vision–language
+models on RTL generation tasks, showing substantial
+improvements in syntax and functional correctness over
+text-only baselines, particularly for pipelines, FSMs,
+and systolic architectures. [42]
+ChipNeMo NVIDIA ’s 70 B-parameter model
+domain-adapted for chip design via continued pre-training
+and instruction alignment. Demonstrations include EDA
+script generation and bug summarization. [43]
+CorrectBench Uses LLMs as both generator and judge
+of RTL. A pool of imperfect RTLs and testbench
+scenarios are cross-validated via majority voting with
+safeguards against over-rejection. [44]
+HLSPilot Introduces a set of C-to-HLS optimization
+strategies tailored to patterns such as nested loops and
+local arrays. These strategies are applied via in-context
+learning, where exemplary C/C++–to–HLS prompts
+guide code refactoring. A design space exploration tool
+tunes pragma parameters, while software profiling iden-
+tifies bottlenecks for selective hardware acceleration.
+[45]
+LHS Applies LLMs to improve high level synthesis
+of deep learning workloads. Error logs guide code
+refactoring into synthesizable forms with loop optimiza-
+tions, accumulator insertion, and structural changes.
+Pragmas for pipelining, unrolling, and partitioning are
+applied based on synthesis feedback and performance-
+gain metrics. [46]
+LLM-based Formal V erification Represents early
+work on generating System V erilog Assertion (SV As)
+directly from RTL. Consistency between RTL and
+properties is checked with Formal Property V erification
+(FPV) tools, leaving resolution of conflicts to designers.
+[47]
+MAGE Multi-agent engine that samples high-temperature
+RTL candidates, uses checkpoint-based waveform
+checks, and lets a judge agent steer regeneration,
+reaching 95.7% functional correctness on V erilogEval-
+Human. [48]
+Paradigm-based Prompt-engineering scheme that clas-
+sifies each task as combinational or sequential, then
+applies a tailored ‘‘paradigm block’’ of sub-prompts and
+tool calls, boosting pass@1 without extra data or tuning.
+[49]
+PyHDLEval Benchmark spanning V erilog and five
+Python-embedded DSLs; emphasizes in-context learn-
+ing and provides a uniform harness to compare LLMs
+across HDLs. [50]
+RTLCoder Publishes an open dataset for fine-
+tuning, plus a lightweight RL fine-tuning recipe
+(policy-gradient with KL regularization). Mistral- and
+DeepSeek-based variants beat GPT-3.5 on V erilogEval.
+[51]
+RTLFixer Specializes in debugging: retrieves
+compiler-error exemplars and feeds them through ReAct
+prompting to correct syntax faults, repairing more than
+98% of build failures in V erilogEval-Human. [52]
+RTLLM Earliest open specification-to-RTL bench-
+mark; groups 30 designs into arithmetic, control,
+memory, and miscellaneous categories and encourages
+Chain-of-Thought prompting. [16]
+RTL-Repo Large-scale corpus of 4000 multi-file
+GitHub projects with full context for code-completion
+evaluation, stressing the long-context reasoning absent
+from earlier suites. [53]
+V eriAssistSelf-verifying assistant that iteratively sim-
+ulates, reasons over waveforms, patches code, and
+reports FPGA resource utilization as a quality metric.
+[54]
+V erigenAmong the early works in supervised fine-tune
+of CodeGen-16B on curated GitHub and textbook data;
+shows that domain data alone can outperform GPT-
+3.5 on HDLBits completion. [55]
+V eriOpt Employs a multi-agent workflow with plan-
+ning, programming, reviewing, and evaluation roles.
+Its key contribution lies in PPA-aware prompting,
+incorporating techniques such as clock gating, power
+gating, resource sharing, FSM encoding, pipelining,
+and loop unrolling. Multi-modal feedback—synthesis
+reports, timing diagrams, and hardware metrics—is fed
+back to the LLM, enabling optimization for power,
+performance, and area. [56]
+V eriReason Adds human-style reasoning traces
+and high-quality testbenches, then fine-tunes Qwen
+2.5 models using Guided Reward Proximal Optimiza-
+tion; evaluated on V erilogEval.[57]
+V erilogCoder Task-Circuit Relation Graph planner
+with four collaborating agents (planner, coder, verifier,
+AST-tracer). AST (Abstract Syntax Tree) back-tracing
+pinpoints faulty signals before regeneration. Evaluated
+on V erilogEval.[58]
+V erilogEval Widely used benchmark offering
+code-completion and spec-to-RTL tasks plus reference
+testbenches; later releases add a failure taxonomy and
+in-context prompts. [15].
+VOLUME 14, 2026 28525
+
+[[page 5]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+VGV (Vision HDL) Explores multimodal RTL gen-
+eration, evaluating whether vision–language models
+can translate circuit diagrams directly into V erilog.
+The authors introduce a lightweight, difficulty-graded
+benchmark of basic to intermediate digital circuits and
+propose Thinking Vision, a visual prompting strategy
+that significantly improves RTL generation success rates
+in open-source multimodal LLMs. [59]
+C. TECHNIQUE TAXONOMY
+To compare the methodological contributions of each project,
+we construct a taxonomy based on eight recurring dimensions
+observed across the literature. Table 1 summarizes the
+presence (✓) or absence (×) of each dimension for all
+31 reviewed projects. This matrix highlights both the
+concentration of effort around certain techniques (e.g., fine-
+tuning and agentic execution) and the relative scarcity of
+others (e.g., post-RTL analysis or tool-flow integration).
+It also reveals distinct methodological clusters, which we
+analyze further through the observations below.
+D. OBSERVATIONS
+• Fine-tuning as a starting point. Early systems such
+as V erigen, AutoVCoder, BetterV , and ChipNeMo
+rely primarily on supervised fine-tuning on GitHub-
+style datasets. More recent work (e.g., V eriReason,
+RTLCoder) incorporates RL to improve functional
+correctness on benchmark suites like V erilogEval.
+• Rise of agentic frameworks. Projects such as MAGE
+and V erilogCoder demonstrate that multi-agent orches-
+tration with simulation feedback can outperform mono-
+lithic prompting. This trend extends to AssertLLM
+(multi-role pipeline for SV A generation), V eriOpt
+(PPA-aware agent loop), and CorrectBench (LLM-
+as-generator-and-judge). A key challenge is enabling
+agents to reason collectively over a shared context.
+• Retrieval and in-context learning address edge cases.
+Systems like AutoVCoder and RTLFixer incorporate
+RAG to retrieve relevant design examples or compiler-
+error templates. PyHDLEval extends this to multi-
+ple Python based DSLs. Recent HLS-oriented work
+(C2HLSC, HLSPilot, LHS) relies heavily on in-context
+strategies and synthesis-feedback prompting to refactor
+C code, while V eriOpt incorporates exemplar-guided
+design optimizations.
+• Debugging strategies are becoming more sophis-
+ticated. Early work relied on binary pass/fail simu-
+lation outcomes. Recent methods integrate Abstract
+Syntax Tree (AST) back-tracing (V erilogCoder),
+checkpoint-based waveform inspection (MAGE), and
+pattern-matching against compiler diagnostics (RTL-
+Fixer). AutoBench and CorrectBench add iterative
+correction and voting-based self-judgment, while
+V eriOpt leverages synthesis reports and timing diagrams
+for reflective corrections. Nevertheless, accurate fault
+attribution remains an open problem.
+• Post-RTL metrics are underexplored. BetterV intro-
+duces design-time metrics such as Y osys node count
+and SA T solve time. V eriAssist adds FPGA resource
+utilization. V eriOpt advances this trend further with
+explicit PPA-aware prompting, while LHS optimizes for
+latency/area trade-offs. However, systematic integration
+of such post-RTL metrics remains limited.
+• Benchmarks shape progress. V erilogEval and RTLLM
+remain the dominant evaluation suites, while HDLBits
+and RTL_Repo expand test coverage to code-completion
+and long-context inference. AssertLLM contributes
+a dedicated SV A benchmark. Still, few datasets
+stress synthesis quality, timing closure, or end-to-end
+hardware viability.
+E. EVOLUTION OVER TIME
+LLM-based RTL generation is a recent area of study,
+emerging only after large language models became widely
+accessible with the public release of ChatGPT in November
+2022. This accessibility catalyzed a wave of research that
+adapted LLMs to hardware design tasks, initially through
+supervised fine-tuning and later through more structured,
+interactive, and feedback-driven approaches. The following
+timeline outlines key phases of technical progression:
+1) 2023. Initial efforts such as ChipChat and ChipNeMo
+demonstrated the feasibility of applying large language
+models to hardware design tasks, including code gener-
+ation and EDA tool interaction. These systems primarily
+focused on exploratory use cases and domain adaptation
+of general-purpose models.
+2) Early 2024. Projects such as V erigen and BetterV
+established a baseline for RTL generation using LLMs
+through domain-specific supervised fine-tuning and
+basic prompt engineering. These approaches improved
+performance on benchmark tasks but lacked structured
+reasoning or interactive workflows.
+3) Mid 2024. Research shifted toward more structured
+prompting methods, including instruction prompting,
+chain-of-thought reasoning, in-context learning, and
+retrieval-augmented generation. Most systems in this
+phase remained single-agent, relying on static prompt
+composition or few-shot exemplars with limited use
+of external tool feedback. Notable examples include
+AutoVCoder, RTLFixer, and PyHDLEval.
+4) Late 2024. Agentic execution emerged as a dominant
+paradigm, with systems such as MAGE, V erilogCoder,
+and AIVRIL introducing multi-agent workflows capable
+of decomposing tasks, coordinating generation and
+verification, and iteratively refining outputs based on
+simulation and analysis. AutoBench extended this line
+of work to automatic testbench generation, integrating
+iterative correction and evaluation strategies.
+28526 VOLUME 14, 2026
+
+[[page 6]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+TABLE 1. Technique coverage. Abbreviations: FT= fine tuning; RL= reinforcement learning; Ag= agentic execution; RAG= retrieval / in-context
+learning; Dbg= explicit debugging support; Beyond = post-RTL quality metrics; BM = benchmark contribution; PE= prompt or Chain-of-Thought
+engineering. A tick (✓) means the feature is present, a cross (×) means it is absent.
+5) 2025. Specialized agentic methods expanded to verifi-
+cation and debugging. AssertLLM applied multi-agent
+pipelines for specification extraction and assertion
+generation, while CorrectBench introduced voting-
+based self-judgment to sidestep the need for a golden
+DUT. These works marked a shift toward autonomous
+verification flows beyond RTL generation.
+High-Level Synthesis (HLS) emerged as a parallel
+research trajectory. C2HLSC and HLSPilot demon-
+strated how LLMs can refactor C/C++ code into
+HLS-compatible implementations with pragma inser-
+tion and design space exploration. LHS further advanced
+this direction by integrating synthesis feedback to
+optimize latency/area trade-offs in deep learning
+accelerators.
+Reinforcement learning was integrated into the RTL
+generation workflow, with projects such as V eriReason
+and RTLCoder applying policy-gradient or reward-
+based fine-tuning to optimize model outputs for
+functional correctness and benchmark performance,
+particularly on suites like V erilogEval.
+Overall, although RTL generation remains the central
+focus, recent work highlights the rise of parallel tracks—one
+emphasizing HLS-driven design flows (C2HLSC, HLSPilot,
+LHS) and another focusing on autonomous verification
+and debugging (AssertLLM, AutoBench, CorrectBench)—
+broadening the scope of LLM integration in hardware design.
+III. EVALUATION OF BENCHMARKS WITH
+STATE-OF-THE-ART LLMS
+While prior work has introduced techniques aimed at
+improving benchmark scores, comparatively little attention
+has been paid to the adequacy of the benchmarks themselves
+or to the specific failure modes they reveal. A central question
+is whether current benchmarks are well designed to capture
+RTL complexity, or whether construction artifacts — such
+as incomplete prompts, underspecified contracts, or flawed
+testbenches confound the interpretation of reported results.
+In parallel, it remains unclear how effectively contemporary
+LLMs—without task-specific agents, multi-step planning,
+or external optimizers—can directly produce verifiable RTL
+from specification.
+We therefore establish a baseline along two axes: (i) the
+generative capabilities and limitations of current models, and
+(ii) the validity and diagnostic power of existing benchmarks.
+Our study is guided by the following research questions:
+• RQ1: How well do current LLMs perform on prompt-
+to-RTL generation when evaluated without auxiliary
+agents, planning mechanisms, or external optimization?
+• RQ2: To what extent do observed failures stem from
+intrinsic model limitations versus artifacts of benchmark
+design (e.g., incomplete prompts, incorrect or under-
+specified testbenches)?
+• RQ3: Are existing benchmarks sufficiently well
+designed to provide a reliable and comprehensive
+VOLUME 14, 2026 28527
+
+[[page 7]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+TABLE 2. Model pricing (USD per 1M tokens). Prices fluctuate; shown
+here to contextualize cost at evaluation time.
+measure of RTL generation capability, or do they require
+refinement to more accurately capture task challenges?
+The results below analyze both axes, identifying where
+failures originate from models and where they arise from
+benchmark construction.
+We focus on two widely used benchmarks: V erilogEvalV2
+and RTLLM-v2.0, each providing diverse RTL tasks with
+ground-truth implementations and testbenches for correct-
+ness checking.
+To isolate model quality from system-level orchestration,
+we adopt two inference settings. The first is a non-agentic
+baseline: single prompt with temperature sampling, reporting
+pass@5 (i.e., success if any of five samples passes the
+testbench). The second is an agentic ReAct-style loop
+allowing up to 10 iterations of feedback from simulation to
+guide revisions. This approximates the outer loop of recent
+agentic frameworks while preserving a controlled evaluation
+interface.
+For our evaluation, we consider general-purpose frontier
+language models rather than domain-specific fine-tuned
+systems. The models selected include GPT-4.1 and its
+smaller, lower-cost variantGPT-4.1-mini(OpenAI), together
+with Claude Sonnet 4 (Anthropic), which represent widely
+used commercially accessible LLMs with strong capabilities
+in reasoning and structured code generation. In addi-
+tion, we evaluate the open-weight Llama-4-Maverick-17B-
+128E-Instruct model (Meta), which can be self-hosted and
+provides a representative example of a high-capacity frontier-
+class model without proprietary API constraints. Pricing
+(where applicable) is summarized in Table 2.
+Other vendors such as Google (Gemini) and DeepSeek
+also offer competitive frontier models; however, the models
+chosen here provide a representative cross-section of com-
+mercially hosted and open-weight general-purpose LLMs
+currently used for code generation. Domain-specific RTL
+models such as V eriReason [57] and RTLCoder-v1.1 [51]
+are excluded, as our objective is to evaluate how far general-
+purpose models—both proprietary and open—can be applied
+to specification-to-RTL tasks without additional fine-tuning.
+A. BENCHMARKS
+V erilogEvalV2[15]. The spec-to-RTL subset presents a flat
+list of problems, each pairing a text specification with a
+reference RTL implementation and a testbench. Testbenches
+exercise generated designs by simulating waveforms and
+comparing output signals to golden responses, enabling
+fine-grained temporal checking.
+RTLLM-v2.0 [16]. Tasks are grouped by circuit category
+(e.g., counters, multiplexers, adders), providing a structured
+taxonomy. Each task includes a natural-language specifi-
+cation, a hand-crafted reference RTL implementation, and
+a testbench with multiple input–output cases. RTLLM’s
+testbenches primarily verify final-value correctness rather
+than waveform-level temporal behavior.
+B. TOOL INTEGRATION VIA MODEL CONTEXT PROTOCOL
+(MCP)
+The evaluation framework connects Icarus V erilog [60] to
+the LLM via MCP , a standardized interface for external
+tool calls by agents [61]. At the backend, an MCP server
+manages compilation and simulation tasks: it invokes Icarus
+with configurable timeouts, captures both stdout and stderr
+streams, and normalizes these into structured JSON responses
+that report status, outputs, and errors. At the frontend,
+an MCP client embedded in the agent runtime issues requests
+to this server through well-defined endpoints. This separation
+allows the agent to remain agnostic to tool invocation
+details while still receiving actionable, structured feedback.
+In practice, agentic runs invoke MCP endpoints to (i)
+compile generated RTL modules, (ii) execute correspond-
+ing testbenches, and (iii) collect error traces or assertion
+violations. These responses are fed back into the reasoning
+loop, enabling the agent to iteratively design, test, and refine
+candidate implementations until convergence or a maximum
+loop count is reached. While the current setup employs
+Icarus V erilog for simulation, the MCP abstraction makes
+it straightforward to extend the framework to other tools
+such as V erilator [62] for simulation, SymbiY osys [63] for
+formal verification, or Y osys [36] for synthesis, ensuring the
+architecture can evolve with broader evaluation needs.
+C. AGENTIC SYSTEM ARCHITECTURE
+The SystemV erilog generation framework is implemented
+as a stateful workflow in LangGraph [64], an open-source
+library for building multi-step LLM applications as explicit
+state machines. A directed graph coordinates two core stages:
+(i) candidate RTL generation and (ii) MCP-backed validation.
+Control flow routes based on pass/fail, enabling termination
+when tests succeed or iterative refinement when they fail.
+Context persists across iterations, combining the original
+prompt with compiler/simulation feedback. A reflection step
+proposes targeted edits, which seed the next generation
+attempt. LangGraph manages state transitions and loop
+control, enabling robust iterative improvement.
+D. RESUL TS
+We evaluate V erilogEvalV2 (spec-to-RTL) and RTLLM-
+v2.0 using their provided testbenches under the two settings
+above. Unless noted, temperature is fixed at 0.7. Models
+tested are GPT-4.1, GPT-4.1-mini, Claude Sonnet 4, and
+Llama 4 Maverick. Tables 3 and 4 summarize V erilogEval
+results, and Table 5 summarizes RTLLM results. Failures are
+28528 VOLUME 14, 2026
+
+[[page 8]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+highlighted in red. The baseline column reports the number
+of independent generations required to produce a functionally
+correct RTL design (i.e., one that passes all tests). Theagentic
+column reports the number of feedback-driven refinement
+iterations needed to achieve a correct design.
+On V erilogEval, GPT-4.1 improved from a 75% baseline
+pass rate to 85.26% with agentic refinement. GPT-4.1-mini
+rose from 73.08% to 80.77%, while Sonnet-4 achieved the
+largest gain, from 73.72% to 89.74%. Llama-4-Maverick
+improved from 62.82% to 74.36% with agentic refinement.
+On RTLLM, GPT-4.1 improved from 88.24% to 96.08%,
+and Sonnet-4 matched this performance with a similar
+improvement (90.2% to 96.08%). GPT-4.1-mini showed
+strong baseline performance at 90.2%, though its agentic
+approach produced a lower pass rate (82.35%). Llama-4-
+Maverick improved from 66.00% to 71.43% with agentic
+refinement.
+Notably, Llama-4-Maverick is an open-weight model with
+substantially fewer parameters than the proprietary frontier
+models, suggesting that agentic refinement can partially
+offset model scale limitations and improve competitiveness
+in specification-to-RTL tasks.
+Overall, agentic refinement substantially improves reli-
+ability for most model–benchmark pairs, with particularly
+pronounced gains on V erilogEval. RTLLM results indicate
+that one-shot generation is already competitive for many
+tasks, narrowing the headroom for iterative loops.
+To contextualize our findings, we compare with recent
+reports. Pinkney et al. [15] achieved a 62.6% pass rate on
+V erilogEval spec-to-RTL using GPT-4o with in-context
+learning alone. Autosilicon [35] reports 73.8% for GPT-
+4 on V erilogEval spec-to-RTL and similar RTLLM results.
+V eriReason reports higher scores—83% on V erilogEval
+spec-to-RTL with GPT-4-Turbo and 83.1% with V eriReason-
+Qwen2.5-7B—via supervised fine-tuning and reinforcement
+learning.
+In contrast, our results show that newer foundation models
+(GPT-4.1, Claude Sonnet 4), coupled with a lightweight
+reflection loop, can meet or exceed these numbers on V er-
+ilogEval (up to 89.74%) and RTLLM (up to 96.08%) without
+multi-agent orchestration, persistent memory, or specialized
+testbench generation. This suggests a shift in the evaluation
+landscape: stronger base models plus minimal iterative
+refinement can match more elaborate pipelines, raising the
+bar for benchmark design and analysis going forward.
+IV. ANALYSIS AND DISCUSSION
+The quantitative results in the previous section show that
+newer foundation models, when paired with a single agent
+ReAct refinement loop, achieve strong performance on both
+V erilogEval and RTLLM. However, aggregate pass rates do
+not explain why failures persist or which mistakes dominate.
+A closer analysis of failures provides insight into current
+LLM limitations for RTL generation, the kinds of corrections
+needed in benchmark prompts/testbenches, and systematic
+error patterns across designs.
+We first examine RTLLM, where several prompt/testbench
+adjustments were required and where the radix-2
+divider remained unsolved despite repeated attempts.
+We then turn to V erilogEval, focusing on Prob154
+fsm_ps2data as a representative failure case in FSM
+reasoning. Building on these, we synthesize recurring error
+patterns and close with recommendations toward reliable
+spec-to-RTL generation.
+A. RTLLM
+During RTLLM evaluation, we made targeted modifications
+to align prompts, reference designs, and the simulation
+harness. These addressed inconsistencies in text descrip-
+tions, missing parameters, and testbench behavior. Examples
+include clarifying parameterization in the 64-bit pipelined
+adder; adding the missing res_ready signal in the radix-
+2 divider prompt; toggling display statements in FIFO
+modules to aid reflection; fixing module-name mismatches
+in frequency dividers; adjusting the ring-counter testbench
+loop bounds; clarifying shift vs. rotate semantics in the barrel
+shifter; and correcting instantiation order in the LFSR test-
+bench. These adjustments improved benchmark robustness
+and enabled systematic reflection across iterations, with an
+overall success rate of 96.08%.
+Despite these changes, radix2_div failed across mod-
+els and settings. Dominant error sources included:
+Specification ambiguity: Prompts leave degrees of freedom
+(restoring vs. non-restoring, tie-breaking, don’t-care han-
+dling), and models often pick a valid but incompatible variant.
+Cycle accuracy: Precise per-cycle sequencing (shift–
+subtract–restore, final commit) is required; off-by-one or
+misordered steps corrupt results.
+Bit-width arithmetic: Restoring division needs a 9-bit remain-
+der path and borrow detection; models frequently implement
+8-bit compares/subtracts.
+Finalization: The last quotient bit and final remainder must
+be explicitly committed; this step is often omitted.
+Sign rules: Signed division requires |a|/|b| internally, quo-
+tient sign via a⊕b, and remainder sign matching the dividend;
+frequently mishandled.
+Handshake logic: Misuse of res_ready/res_valid and
+level vs. edge confusion produce deadlocks or stale outputs.
+State control:Incorrect sequencing ofstart/active/done
+leads to premature termination or extra cycles.
+Edge cases: Divide-by-zero, 0/N , N /N are often unspecified
+or incorrectly handled.
+Syntax vs. semantics: Syntactically valid code with seman-
+tic errors (e.g., blocking in sequential logic, replacing
+borrow-detect with simple compare).
+Lack of internal verification: No internal symbolic trace or
+truth-table reasoning to catch subtle algorithmic mistakes
+during generation.
+Overall, division circuits stress algorithmic rigor, cycle-
+level timing, and careful state/handshake control—areas
+where current models most often stumble.
+VOLUME 14, 2026 28529
+
+[[page 9]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+TABLE 3. Evaluation results for VerilogEval spec-to-rtl benchmark (Problem 001-075) with GPT 4.1, GPT 4.1-mini, Sonnet 4, and Llama4 Maverick LLM
+models for both baseline and agentic settings. Red indicates where the generated Verilog failed the tests. The baseline reports a pass @5 metric. The
+agentic approach uses an iterative refinement of upto 10 iterations.
+28530 VOLUME 14, 2026
+
+[[page 10]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+TABLE 4. Evaluation results for VerilogEval spec-to-RTL benchmark (Problems 076–156) with GPT-4.1, GPT-4.1-mini, Claude Sonnet 4, and
+Llama 4 Maverick models under baseline and agentic settings.
+VOLUME 14, 2026 28531
+
+[[page 11]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+TABLE 5. Evaluation results for RTLLM-v2.0 benchmark with GPT 4.1, GPT 4.1-mini, Sonnet 4, and Llama4 Maverick LLM models for both baseline and
+agentic settings. Red indicates where the generated Verilog failed the tests. The baseline reports a pass @5 metric. The agentic approach uses an iterative
+refinement of upto 10 iterations.
+B. VERILOGEVAL
+On V erilogEval spec-to-RTL, the overall success rate
+reached 89.74%. A representative failure is Prob154
+fsm_ps2data, which requires detecting message bound-
+aries in a byte stream and emitting valid 3-byte frames with a
+one-cycle done pulse after the third byte.
+The reference solution uses a four-state FSM (BYTE1
+→ BYTE2 → BYTE3 → DONE), a shift register to
+collect bytes, and asserts done only in the DONE state.
+Model outputs consistently deviated by asserting done
+combinationally whenever in[3]==1, and by outputting the
+sliding window {byte2,byte1, in} without state tracking.
+This caused:
+• Protocol violation: done became level-sensitive, not a
+one-cycle pulse after three valid bytes.
+• Frame misalignment: Without explicit states, frame
+boundaries drifted, yielding frequent cycle-shifted out-
+puts at valid times.
+In the testbench, this produced widespread mismatches
+(thousands of incorrect done cycles; hundreds of output
+miscompares at valid times). The case highlights a broader
+trend: models often succeed on combinational logic but falter
+28532 VOLUME 14, 2026
+
+[[page 12]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+on temporal protocols requiring explicit FSM reasoning and
+gated validity.
+C. OBSERVATIONS ON ERRORS MADE BY LLMS
+We observe recurring error classes spanning protocol han-
+dling, control sequencing, and RTL semantics:
+1) PROTOCOL HANDLING AND CONTROL SEQUENCING
+Transition priority mistakes: In V erilog, constructs like
+if/else if or case statements create an implicit pri-
+ority. The first condition that evaluates to true is executed.
+This error occurs when the LLM writes code for mutually
+exclusive conditions without a clear priority, leading to
+behavior that is unpredictable and may differ between
+simulation and the actual synthesized hardware.
+Moore vs. Mealy confusion: This is a fundamental error in
+Finite State Machine (FSM) design. A Moore machine’s
+outputs depend only on the current state (they are registered).
+A Mealy machine’s outputs depend on the current state and
+the current inputs (they are combinational). The error occurs
+when a Mealy output is created where a stable, registered
+Moore output was intended. This can introduce glitches on
+the output, as it will change immediately with the input rather
+than only on a clock edge.
+Over/under-registering signals: This refers to incorrect
+pipeline staging. Over-registering is adding unnecessary
+registers (always @(posedge clk)) in a data path,
+which adds clock cycle latency. Under-registering is failing
+to register a signal when needed, such as exposing the
+combinational ‘‘next-state’’ logic of an FSM as an output
+instead of the registered ‘‘current-state,’’ which can cause
+timing violations or glitches.
+Missing hysteresis/invariants: Hysteresis is the dependence
+of a system’s state on its history. An LLM might generate
+logic that reacts to every single rising edge of a noisy input
+signal, causing an output to ‘‘flap’’ rapidly. A proper design
+would include logic to ensure the signal is stable for a few
+clock cycles before acting on it.
+Boundary/off-by-one errors: This is a common programming
+error that is particularly problematic in hardware. It involves
+using the wrong comparison operator (e.g., > instead of >=)
+or incorrect counter limits, causing an operation to run for one
+cycle too many or too few.
+Handshake timing drift: In protocols using signals like
+valid and ready, timing is critical. This error occurs
+when the LLM asserts valid one cycle before the data
+is actually stable or de-asserts ready a cycle too late.
+This desynchronizes the communicating modules, leading to
+incorrect data being latched.
+Event vs. level detection: This is the confusion between
+reacting to a signal changing versus reacting to its state.
+Event/Edge Detection (posedge clk) triggers on the
+rising edge. Level Detection (if (enable)) checks if the
+signal is high. The error is using one when the other is
+required, which can cause missed or repeated triggers.
+State-space oversimplification: This is an FSM design flaw
+where the LLM improperly combines distinct states. For
+example, a protocol might require a module to enter a WAIT
+state for at least one clock cycle. The LLM might omit this
+state and transition directly, violating the required timing gap.
+2) RTL SEMANTICS AND STRUCTURE
+Blocking vs. non-blocking misuse: This is one of the
+most fundamental V erilog errors. Blocking assignments (=)
+are used for combinational logic (always @( *)). Non-
+blocking assignments (<=) are used for sequential logic
+(always @(posedge clk)). The error is using blocking
+assignments in a sequential block, which can create a
+simulation race condition and a mismatch between simulation
+and synthesized hardware.
+Reset semantics drift: An incorrect reset implementation.
+This can mean using the wrong polarity (active-high vs.
+active-low), using the wrong type (synchronous vs. asyn-
+chronous), or forgetting to initialize all registers, which
+causes them to start with an unknown (X) value.
+Bit-ordering/shift-direction mistakes: A critical error where
+data bits are misinterpreted. This includes swapping Most
+Significant Bit (MSB) and Least Significant Bit (LSB)
+ordering (e.g., wire [7:0] data vs. wire [0:7]
+data) or using a left-shift (≪) when a right-shift (≫) was
+needed.
+Asymmetry violations: Occurs when a design assumes inputs
+or protocols are symmetric when they are not. For example,
+a request signal might need to be held high until an
+acknowledge is received, while the acknowledge itself is a
+single-cycle pulse. Treating both as symmetric violates the
+protocol.
+Algebraic incompleteness: The LLM attempts to simplify a
+Boolean logic expression but does so incorrectly by dropping
+a term. The resulting logic may pass simple test cases but will
+fail on the specific corner cases covered by the missing term.
+Output-validity contract ignored: In many designs, output
+data is only valid during a specific window, often indicated
+by a data_valid signal. This error occurs when the
+LLM allows the output bus to be driven with changing
+or intermediate values outside of this window, risking a
+downstream module latching ‘‘garbage’’ data.
+Error-path underspecification: The generated code works
+perfectly for normal operation but fails to define what the
+hardware should do when an error occurs. Without a defined
+error state or recovery mechanism, the module can get stuck
+or behave unpredictably.
+These patterns show that while models produce syntacti-
+cally valid RTL, they often miss temporal correctness, state
+consistency, and interface contracts—precisely the aspects
+that matter for reliable hardware. Table 6 summarizes these
+observations.
+Importantly, these failure modes are not merely model
+deficiencies; they also reflect the dimensions that current
+benchmarks emphasize and those they leave under-stressed.
+VOLUME 14, 2026 28533
+
+[[page 13]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+This motivates a deeper examination of what existing
+spec-to-RTL benchmarks actually measure—and what they
+systematically omit.
+D. CRITICAL ASSESSMENT OF CURRENT BENCHMARKS
+While V erilogEvalV2 and RTLLM-v2.0 provide valuable
+standardized evaluation suites, our experimental findings
+reveal structural limitations that constrain their diagnostic
+power for modern frontier models.
+1) SATURATION EFFECTS AND CEILING PERFORMANCE
+Several model-benchmark pairs approach high pass rates
+under both single-shot and lightweight agentic settings.
+In particular, RTLLM exhibits strong baseline performance
+for most frontier models, leaving limited headroom for itera-
+tive refinement. This suggests partial saturation: benchmarks
+originally designed to distinguish earlier-generation models
+may no longer adequately stress contemporary systems.
+As pass rates converge toward the upper bound, aggregate
+metrics become less discriminative, masking qualitative dif-
+ferences in architectural reasoning and temporal correctness.
+2) LIMITED STRUCTURAL COMPLEXITY
+Both benchmarks primarily emphasize single-module
+designs with clearly scoped functionality. Although they
+include arithmetic, control, and memory elements, they
+rarely require hierarchical composition across multiple
+interacting modules. Realistic SoC subsystems involve
+interface contracts, pipeline boundaries, arbitration logic, and
+cross-module invariants that extend beyond the complexity
+represented in most current tasks. As a result, present
+benchmarks predominantly measure localized synthesis
+capability rather than system-level architectural reasoning.
+3) SHORT-CONTEXT AND REPOSITORY INDEPENDENCE
+Tasks are presented as self-contained specifications with no
+requirement to reason over multi-file repositories or long-
+context dependencies. Consequently, models are evaluated in
+isolation from challenges common in production RTL design,
+such as interface reuse, parameter propagation across mod-
+ules, shared signal conventions, or incremental modifications
+within existing codebases. This setup favors short-horizon
+reasoning and limits assessment of long-context consistency.
+4) FUNCTIONAL CORRECTNESS AS THE SOLE PRIMARY
+METRIC
+Evaluation is driven almost exclusively by testbench pass/fail
+outcomes. While this is necessary for baseline verification,
+it does not capture architectural optimality, resource effi-
+ciency, timing feasibility, or maintainability. Two designs
+may be functionally equivalent under testbench stimuli yet
+differ significantly in pipeline depth, state encoding, reset
+discipline, or PPA implications. Current benchmarks do
+not distinguish between minimal and structurally robust
+solutions.
+5) LIMITED STRESS ON TEMPORAL AND PROTOCOL
+CONTRACTS
+Although certain tasks (e.g., division or FSM protocols)
+expose temporal reasoning challenges, most problems
+emphasize combinational logic or straightforward sequential
+constructs. Complex handshake protocols, multi-cycle invari-
+ants, backpressure semantics, and concurrency-heavy designs
+are underrepresented. As shown in our failure analysis, these
+dimensions are precisely where current LLMs struggle most.
+6) BENCHMARK CONSTRUCTION ARTIFACTS
+During evaluation, we observed cases requiring prompt
+clarification or minor harness corrections. While such adjust-
+ments improve robustness, they highlight that benchmark
+artifacts—such as underspecified control signals, ambiguous
+variants, or fragile testbench assumptions—can confound
+interpretation of model capability. Distinguishing intrinsic
+model failure from dataset construction noise remains a
+nontrivial challenge.
+7) IMPLICATION
+Collectively, these observations suggest that existing bench-
+marks primarily measure short-horizon functional synthesis
+under controlled conditions. They are effective for standard-
+ized comparison but insufficient for evaluating architectural
+reasoning, hierarchical composition, contract satisfaction,
+or tool-flow integration. Advancing the field will require
+next-generation benchmarks that (i) incorporate multi-
+module composition, (ii) integrate synthesis- and timing-
+aware metrics, (iii) stress protocol-level temporal correctness,
+and (iv) support iterative agentic workflows rather than
+single-shot evaluation.
+E. FUTURE WORK: TOWARD RELIABLE SPEC-TO-RTL
+GENERATION
+The recurring errors observed in current LLM-generated RTL
+suggest several avenues for advancing research:
+Contract-based synthesis: Embedding explicit temporal and
+structural contracts into the design process can ensure that
+generated control logic respects precedence rules, handshake
+timing, and reset semantics by construction.
+Schema-driven specifications: Capturing I/O, signal roles,
+invariants, and protocol semantics in machine-checkable
+schemas can reduce ambiguity and provide stronger
+guardrails against misinterpretation during generation.
+Counterexample-guided refinement: Leveraging simula-
+tion and formal verification traces to drive iterative repair
+can help address subtle corner cases such as off-by-one
+errors, algebraic incompleteness, and state-space underspec-
+ification.
+Automated protocol and invariant checkers: Integrating
+lightweight protocol monitors and invariant analyzers into the
+workflow can catch timing drift, invalid outputs, and missing
+recovery sequences early in the design loop.
+28534 VOLUME 14, 2026
+
+[[page 14]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+TABLE 6. Common error patterns observed in LLM-generated RTL designs.
+Persistent error memory: Maintaining a record of past
+errors and their fixes in a structured knowledge base can
+help prevent recurrence and enable models to learn corrective
+patterns over time.
+Symbolic and structural reasoning aids: Combining lan-
+guage models with symbolic execution, AST-based debug-
+ging, and circuit-graph reasoning may improve robustness in
+handling concurrency, bit-level manipulations, and complex
+state machines.
+Taken together, these directions point toward a system-
+atic methodology in which specification clarity, automated
+checks, and iterative refinement loops converge to reduce
+the brittleness of current approaches and move closer to
+trustworthy specification-to-RTL automation.
+V. FUTURE WORK: TOWARD
+NATURAL-LANGUAGE-TO-SOC DESIGN
+Realizing the vision of natural-language-to-SoC (NL-to-
+SoC) design requires coordinated advances across multiple
+layers of the hardware–software stack. Below we outline key
+areas where future research can drive progress.
+A. REALISTIC BENCHMARKS AND OPEN FLOWS
+Existing spec-to-RTL benchmarks remain limited in realism,
+as they predominantly target small, self-contained modules
+and evaluate correctness in isolation. To meaningfully
+advance AI-driven hardware design, future benchmarks must
+introduce concrete structural and methodological enhance-
+ments that reflect real SoC development workflows. First,
+benchmarks should scale from single modules to composable
+subsystem templates, including processor pipelines, memory
+controllers, cache hierarchies, accelerators, and on-chip
+interconnects, with clearly defined interfaces and integration
+constraints. Such compositions naturally expose architectural
+trade-offs and cross-module dependencies that are absent
+in current module-level suites. The recently published
+ArchXBench [65], [66] take an important step toward realism
+by moving beyond toy arithmetic and control blocks to a
+hierarchically organized, multi-level benchmark suite that
+spans cryptography, signal processing, image processing, and
+machine learning accelerators.
+Second, benchmarks should incorporate PPA-aware evalu-
+ation hooks, where tasks are not only functionally constrained
+but also specify latency, throughput, area, or power targets.
+This can be achieved by coupling RTL correctness with
+synthesis- and place-and-route-derived metrics, enabling
+assessment of whether generated designs satisfy architectural
+intent beyond simulation pass rates. Importantly, these
+metrics should be reported in standardized, tool-agnostic
+forms to allow reproducible comparison across methods.
+Third, specification modalities must extend beyond prose.
+Recent work on multi-modal RTL generation [42], [59] sug-
+gests that block diagrams, dataflow graphs, FSM diagrams,
+timing waveforms, and memory-layout schematics encode
+essential structural information that is difficult to capture in
+text alone. Future benchmarks should therefore treat such
+visual artifacts as first-class specification inputs, paired with
+structured textual constraints and executable reference mod-
+els. This multi-modal formulation better reflects industrial
+practice and enables evaluation of an AI system’s ability to
+reason over hierarchy, connectivity, and temporal behavior.
+Fourth, benchmarks should be explicitly designed to sup-
+port agentic design workflows. Rather than single-shot spec-
+to-code tasks, they should expose intermediate artifacts—
+partial specifications, failing test cases, architectural mis-
+matches, or PPA violations—that invite iterative refinement,
+debugging, and architectural exploration. By embedding
+checkpoints for diagnosis and repair, benchmarks can eval-
+uate whether agentic AI systems can plan, decompose, and
+adapt across the full design loop.
+Fifth, benchmarks should measure architectural reasoning,
+not just code generation. In addition to pass/fail functional
+metrics, tasks should include criteria that distinguish whether
+the generated RTL matches the intended microarchitecture
+(e.g., pipelined vs. iterative realizations, hierarchy and mod-
+ule boundaries, and latency/throughput contracts), thereby
+rewarding correct architectural choices rather than incidental
+functional equivalence.
+VOLUME 14, 2026 28535
+
+[[page 15]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+Finally, benchmark suites should be packaged with repro-
+ducible, end-to-end open flows that tie together specification,
+RTL, verification, synthesis, and (when feasible) place-
+and-route. Toolchains based on open-source infrastructure
+can ensure broad accessibility and repeatable results, while
+optional commercial EDA validation remains important for
+assessing scalability and industry transfer.
+Collectively, these enhancements would move spec-to-
+RTL benchmarks beyond toy problems toward realistic,
+multi-modal, and agent-friendly evaluations that better reflect
+the demands of modern SoC design.
+B. STRUCTURED SPECIFICATIONS BEYOND PROSE
+Free-form natural language is too ambiguous for automation,
+particularly for complex, long-context repositories where
+context windows limit the precision of prose. Controlled
+Natural Language (CNL) schemas are required to precisely
+encode design contracts, including I/O protocols, timing
+constraints, invariants, resource bounds, memory maps,
+arbitration policies, and interrupt behavior. To be actionable,
+such contracts must be machine-checkable and amenable
+to automated reasoning, rather than remaining informal
+annotations over prose specifications.
+One viable implementation path is to represent contracts
+using formal constraint systems grounded in logic program-
+ming or standardized verification languages. For example,
+interface compatibility, timing bounds, and structural invari-
+ants can be formalized using SystemV erilog Assertions
+(SV A) or Property Specification Language (PSL). These can
+be mapped to facts and rules in an Answer Set Program-
+ming (ASP) [67] or SMT-based framework [68], enabling
+automated consistency checking, design-space pruning, and
+counterexample generation prior to RTL synthesis. In this
+formulation, contract satisfaction becomes a solvable deci-
+sion problem, allowing an AI-driven design agent to reason
+explicitly about which architectural choices are admissible
+before generating or refining RTL.
+Visual specifications, such as block diagrams, dataflow
+graphs, and pipeline schematics, can complement this
+approach by supplying structured architectural facts—
+component connectivity, hierarchy, and concurrency—that
+are difficult to infer reliably from text alone. Rather than
+serving as primary specifications, these visual artifacts
+can be parsed into symbolic representations that popu-
+late the contract system, anchoring high-level architectural
+intent while leaving correctness enforcement to formal
+constraints.
+This naturally supports an agentic specification-to-RTL
+workflow in which agents iteratively propose microarchitec-
+tural refinements, check them against formalized contracts
+using logic solvers, and generate RTL only for contract-
+satisfying designs. Contract violations—such as unmet
+latency bounds, incompatible interfaces, or illegal arbitration
+patterns—can be surfaced as solver-derived counterexam-
+ples, enabling targeted debugging and refinement rather than
+blind regeneration.
+From a benchmarking perspective, this suggests that future
+spec-to-RTL benchmarks should include explicit, machine-
+checkable contracts alongside specifications and testbenches.
+Crucially, this shifts the evaluation metric from simple
+functional pass/fail rates to concrete verification targets, such
+as Formal Property V erification (FPV) coverage and Bounded
+Model Checking (BMC) depth. Such benchmarks would
+evaluate not only whether generated RTL is functionally
+correct on a limited set of vectors, but whether AI systems
+can reason about, satisfy, and debug formal design con-
+tracts, moving beyond purely generative evaluation toward
+constraint-aware architectural synthesis.
+C. AI–HUMAN COLLABORATIVE EDA ENVIRONMENTS
+The next generation of design tools should resemble AI
+copilots for hardware engineers—akin to Cursor[69] or Copi-
+lot [70] for software but tailored to RTL and SoC contexts.
+Such environments would allow designers to express intent
+via natural language, block diagrams, or waveform sketches,
+while the AI generates corresponding code, assertions, and
+refinements. Interactive visualization of datapaths, FSMs,
+and timing diagrams would enable human oversight and
+correction. Seamless interfacing with both open-source and
+commercial flows is critical to make these systems practical
+in real-world design environments.
+D. PHYSICAL DESIGN AND PPA-INFORMED FEEDBACK
+Although RTL-to-GDSII flows are mature, their outputs
+rarely inform upstream architectural decisions. Future work
+should enable PPA-in-the-loop design, where synthesis
+and place-and-route metrics directly guide design choices
+such as pipelining depth, memory partitioning, and inter-
+connect topology. Lightweight machine-learning surrogates
+for backend flows can provide near-real-time feedback,
+enabling interactive exploration under realistic constraints.
+Open backends such as OpenLane [3] and OpenROAD [6]
+offer research-friendly entry points, while integration with
+commercial flows is necessary to validate scalability and
+industry transferability.
+E. FIRMWARE AND SYSTEM SOFTWARE GENERATION
+Hardware design does not end at RTL. SoC assembly requires
+generators that automatically derive interconnects, memory
+maps, interrupt tables, and glue logic directly from specifica-
+tions. Parameterized IP instantiation should be paired with
+interface metadata that drives firmware generation. From
+the same specification, the flow should produce device-
+tree entries, driver skeletons, and RTOS bring-up collateral,
+enabling early hardware–software co-validation.
+F. AI-DRIVEN DESIGN SPACE EXPLORATION
+Today, design space exploration (DSE)—balancing pipelin-
+ing depth, parallelism, memory hierarchy, and interconnect
+choices—is largely a manual and time-consuming pro-
+cess, restricting the breadth of configurations that can be
+28536 VOLUME 14, 2026
+
+[[page 16]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+evaluated. Recent advances such as Google DeepMind’s
+AlphaEvolve [71] demonstrate how evolutionary coding
+agents can autonomously search vast algorithmic spaces,
+guided by evaluator feedback. Extending similar approaches
+to hardware design could enable automated exploration of
+RTL microarchitectures, accelerator topologies, and SoC-
+level trade-offs under realistic PPA constraints. By coupling
+generative models with synthesis and simulation feedback,
+AI-assisted DSE promises to expand coverage far beyond
+human-driven iteration, accelerating architectural innovation.
+VI. CONCLUSION
+This paper presented a survey and evaluation of large
+language models (LLMs) for specification-to-RTL (spec-
+to-RTL) generation, synthesizing findings from thirty-one
+recent works and benchmarking frontier models on V er-
+ilogEval and RTLLM. Our review highlights the rapid
+evolution of the field: early efforts relied on supervised
+fine-tuning over GitHub-style datasets, while more recent
+approaches embrace multi-agent orchestration, retrieval-
+augmented prompting, reinforcement learning, and post-RTL
+metrics. Alongside these methods, new benchmarks such as
+ArchXBench are beginning to push beyond toy problems
+toward realistic datapaths and subsystem-level complexity.
+Our experimental evaluation shows that frontier commer-
+cial models such as GPT-4.1 and Claude Sonnet 4, when
+paired with lightweight reflection loops, achieve strong per-
+formance on V erilogEval (up to 89.74%) and RTLLM (up to
+96.08%). These results approach or surpass those of domain-
+specific fine-tuned pipelines, highlighting both the strength of
+today’s frontier models and the need for richer benchmarks.
+Case studies on the radix-2 divider (RTLLM) and FSM
+detection task (V erilogEval) reveal recurring LLM failure
+modes in algorithmic sequencing, temporal reasoning, and
+FSM design. Systematic error patterns—including transition-
+priority mistakes, handshake drift, blocking vs. non-blocking
+misuse, and state-space oversimplification—illustrate the
+challenges of applying natural-language-driven generation to
+hardware with tight concurrency and protocol constraints.
+From this analysis, several lessons emerge. First, bench-
+mark design must evolve: underspecified prompts and brittle
+testbenches obscure true capability and hinder progress.
+Second, structured specification methods, combined with
+systematic debugging aids such as AST- or graph-based
+reasoning, offer practical ways to address recurring classes
+of design errors. Third, evaluation must expand beyond
+functional correctness to include post-RTL metrics such
+as power, performance, and area (PPA), bridging the gap
+between correctness and design quality. Finally, moving from
+module-level generation to SoC-scale automation will require
+advances in formal specification languages, hierarchical
+composition techniques, and scalable assurance frameworks.
+Looking ahead, we outlined a research roadmap toward
+natural-language-to-SoC design. Key priorities include
+developing controlled natural language schemas for speci-
+fications, building open and reproducible end-to-end flows,
+incorporating PPA feedback into early design stages, and
+advancing modular contracts for assurance. Bridging RTL
+generation with SoC assembly, system software interfaces,
+and physical implementation will require both open-source
+and commercial tool integration, as well as new benchmarks
+that capture subsystem- and system-level complexity.
+REFERENCES
+[1] M. J. Flynn and W. Luk, Computer System Design: System-on-Chip.
+Hoboken, NJ, USA: Wiley, 2011.
+[2] W. J. Dally, Y . Turakhia, and S. Han, ‘‘Domain-specific hardware
+accelerators,’’ Commun. ACM, vol. 63, no. 7, pp. 48–57, Jun. 2020.
+[3] M. Shalan and T. Edwards, ‘‘Building OpenLANE: A 130nm openroad-
+based tapeout-proven flow,’’ in Proc. 39th Int. Conf. Comput.-Aided
+Design, Nov. 2020, pp. 1–6.
+[4] Synop. (2024). Fusion Compiler. Accessed: Sep. 13, 2025. [Online].
+Available: https://www.synopsys.com/implementation-and-signoff/
+physical-implementation/fusion-compiler.html
+[5] Siemens EDA. (2025). Aprisa. Accessed: Sep. 13, 2025. [Online].
+Available: https://eda.sw.siemens.com/en-U.S./ic/aprisa/rtl-to-gds/
+[6] T. Ajayi et al., ‘‘Toward an open-source digital flow: First learnings
+from the OpenROAD project,’’ in Proc. 56th Annu. Design Autom. Conf.,
+Jun. 2019, pp. 1–4.
+[7] A. Matarazzo and R. Torlone, ‘‘A survey on large language mod-
+els with some insights on their capabilities and limitations,’’ 2025,
+arXiv:2501.04040.
+[8] S. Schulhoff et al., ‘‘The prompt report: A systematic survey of prompt
+engineering techniques,’’ 2024, arXiv:2406.06608.
+[9] Y . Gao, Y . Xiong, X. Gao, K. Jia, J. Pan, Y . Bi, Y . Dai, J. Sun, H. Wang, and
+H. Wang, ‘‘Retrieval-augmented generation for large language models: A
+survey,’’ 2023,arXiv:2312.10997.
+[10] J. He, C. Treude, and D. Lo, ‘‘LLM-based multi-agent systems for software
+engineering: Literature review, vision, and the road ahead,’’ ACM Trans.
+Softw. Eng. Methodology, vol. 34, no. 5, pp. 1–30, Jun. 2025.
+[11] A. Bandi, B. Kongari, R. Naguru, S. Pasnoor, and S. V . Vilipala, ‘‘The
+rise of agentic AI: A review of definitions, frameworks, architectures,
+applications, evaluation metrics, and challenges,’’ Future Internet, vol. 17,
+no. 9, p. 404, Sep. 2025.
+[12] H. Y ang, Y . Zhang, J. Xu, H. Lu, P . A. Heng, and W. Lam, ‘‘Unveiling
+the generalization power of fine-tuned large language models,’’ 2024,
+arXiv:2403.09162.
+[13] C. Qu, S. Dai, X. Wei, H. Cai, S. Wang, D. Yin, J. Xu, and J.-R. Wen, ‘‘Tool
+learning with large language models: A survey,’’ Frontiers Comput. Sci.,
+vol. 19, no. 8, Aug. 2025, Art. no. 198343.
+[14] S. S. Srivastava and V . Aggarwal, ‘‘A technical survey of reinforcement
+learning techniques for large language models,’’ 2025, arXiv:2507.04136.
+[15] N. Pinckney, C. Batten, M. Liu, H. Ren, and B. Khailany, ‘‘Revisiting
+V erilogEval: A year of improvements in large-language models for
+hardware code generation,’’ ACM Trans. Design Autom. Electron. Syst.,
+vol. 30, no. 6, pp. 1–20, Nov. 2025.
+[16] Y . Lu, S. Liu, Q. Zhang, and Z. Xie, ‘‘RTLLM: An open-source benchmark
+for design RTL generation with large language model,’’ in Proc. 29th Asia
+South Pacific Design Autom. Conf. (ASP-DAC), Jan. 2024, pp. 722–727.
+[17] J. Pan, G. Zhou, C.-C. Chang, I. Jacobson, J. Hu, and Y . Chen, ‘‘A survey of
+research in large language models for electronic design automation,’’ACM
+Trans. Design Autom. Electron. Syst., vol. 30, no. 3, pp. 1–21, May 2025.
+[18] K. Xu, D. Schwachhofer, J. Blocklove, I. Polian, P . Domanski, D. Pflüger,
+S. Garg, R. Karri, O. Sinanoglu, J. Knechtel, Z. Zhao, U. Schlichtmann, and
+B. Li, ‘‘Large language models (LLMs) for electronic design automation
+(EDA),’’ 2025, arXiv:2508.20030.
+[19] Y . Wang, W. Y e, Y . He, Y . Chen, G. Qu, and A. Li, ‘‘MCP4EDA: LLM-
+powered model context protocol RTL-to-GDSII automation with backend
+aware synthesis optimization,’’ 2025, arXiv:2507.19570.
+[20] J. Li, S.-Z. Wong, G.-W. Wan, X. Wang, and J. Y ang, ‘‘EDA-debugger: An
+LLM-based framework for automated EDA runtime issue resolution,’’ in
+Proc. 26th Int. Symp. Quality Electron. Design (ISQED), Apr. 2025, pp. 1–
+7.
+[21] H. Wu, Z. He, X. Zhang, X. Y ao, S. Zheng, H. Zheng, and B. Y u,
+‘‘ChatEDA: A large language model powered autonomous agent for
+EDA,’’IEEE Trans. Comput.-Aided Design Integr . Circuits Syst., vol. 43,
+no. 10, pp. 3184–3197, Oct. 2024.
+VOLUME 14, 2026 28537
+
+[[page 17]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+[22] Y . Lu, H. I. Au, J. Zhang, J. Pan, Y . Wang, A. Li, J. Zhang, and Y . Chen,
+‘‘AutoEDA: Enabling EDA flow automation through microservice-based
+LLM agents,’’ 2025, arXiv:2508.01012.
+[23] S. Y ao, J. Zhao, D. Y u, N. Du, I. Shafran, K. Narasimhan, and Y . Cao,
+‘‘ReAct: Synergizing reasoning and acting in language models,’’ in Proc.
+Int. Conf. Learn. Represent. (ICLR), 2023.
+[24] L. Ouyang, J. Wu, X. Jiang, D. Almeida, C. L. Wainwright, P . Mishkin,
+C. Zhang, S. Agarwal, K. Slama, A. Ray, J. Schulman, J. Hilton, F. Kelton,
+L. E. Miller, M. Simens, A. Askell, P . Welinder, P . Christiano, J. Leike, and
+R. Lowe, ‘‘Training language models to follow instructions with human
+feedback,’’ in Proc. Adv. Neural Inf. Process. Syst., 2022, pp. 27730–
+27744.
+[25] B. Rozière, J. Gehring, F. Gloeckle, S. Sootla, I. Gat, X. E. Tan,
+Y . Adi, J. Liu, R. Sauvestre, T. Remez, J. Rapin, A. Kozhevnikov,
+I. Evtimov, J. Bitton, M. Bhatt, C. Canton Ferrer, A. Grattafiori, W. Xiong,
+A. Défossez, J. Copet, F. Azhar, H. Touvron, L. Martin, N. Usunier,
+T. Scialom, and G. Synnaeve, ‘‘Code Llama: Open foundation models for
+code,’’ 2023, arXiv:2308.12950.
+[26] A. Liu, ‘‘DeepSeek-v3 technical report,’’ 2024, arXiv:2412.19437.
+[27] R. Anil, ‘‘Gemini: A family of highly capable multimodal models,’’ 2023,
+arXiv:2312.11805.
+[28] J. Bai et al., ‘‘Qwen technical report,’’ 2023, arXiv:2309.16609.
+[29] M. Ul Islam, H. Sami, P .-E. Gaillardon, and V . Tenace, ‘‘AIVRIL:
+AI-driven RTL generation with verification in-the-loop,’’ 2024,
+arXiv:2409.11411.
+[30] Cadence Design Systems. (2024). Jasper F ormal Property V erification
+App. [Online]. Available: https://www.cadence.com/
+[31] W. Fang, M. Li, M. Li, Z. Y an, S. Liu, H. Zhang, and Z. Xie, ‘‘AssertLLM:
+Generating hardware verification assertions from design specifications
+via multi-LLMs,’’ in Proc. IEEE LLM Aided Design Workshop (LAD),
+Jun. 2024, pp. 614–621.
+[32] R. Qiu, G. L. Zhang, R. Drechsler, U. Schlichtmann, and B. Li,
+‘‘AutoBench: Automatic testbench generation and evaluation using LLMs
+for HDL design,’’ in Proc. ACM/IEEE 6th Symp. Mach. Learn. CAD
+(MLCAD), Sep. 2024, pp. 1–10.
+[33] S. Thakur, J. Blocklove, H. Pearce, B. Tan, S. Garg, and R. Karri,
+‘‘AutoChip: Automating HDL generation using LLM feedback,’’ 2023,
+arXiv:2311.04887.
+[34] M. Gao, J. Zhao, Z. Lin, W. Ding, X. Hou, Y . Feng, C. Li, and M.
+Guo, ‘‘AutoVCoder: A systematic framework for automated verilog code
+generation using LLMs,’’ in Proc. IEEE 42nd Int. Conf. Comput. Design
+(ICCD), Nov. 2024, pp. 162–169.
+[35] C. Li, C. Chen, Y . Pan, W. Xu, Y . Liu, K. Chang, Y . Wang, M. Wang, H.
+Li, Y . Han, and Y . Wang, ‘‘AutoSilicon: Scaling up RTL design generation
+capability of large language models,’’ACM Trans. Design Autom. Electron.
+Syst., vol. 30, no. 6, pp. 1–21, Nov. 2025.
+[36] (2025). Yosys Open Synthesis Suite (Yosys). [Online]. Available:
+https://github.com/Y osysHQ/yosys
+[37] Z. Pei, H.-L. Zhen, M. Y uan, Y . Huang, and B. Y u, ‘‘BetterV:
+Controlled V erilog generation with discriminative guidance,’’ 2024,
+arXiv:2402.03375.
+[38] L. Collini, S. Garg, and R. Karri, ‘‘C2HLSC: Leveraging large lan-
+guage models to bridge the software-to-hardware design gap,’’ ACM
+Trans. Design Autom. Electron. Syst., vol. 30, no. 6, pp. 1–24,
+Nov. 2025.
+[39] X. Wang, G.-W. Wan, S.-Z. Wong, L. Zhang, T. Liu, Q. Tian, and J. Y e,
+‘‘ChatCPU: An agile CPU design and verification platform with LLM,’’ in
+Proc. 61st ACM/IEEE Design Autom. Conf., Jun. 2024, pp. 1–6.
+[40] J. Blocklove, S. Garg, R. Karri, and H. Pearce, ‘‘Chip-chat: Challenges and
+opportunities in conversational hardware design,’’ in Proc. ACM/IEEE 5th
+Workshop Mach. Learn. CAD (MLCAD), Sep. 2023, pp. 1–6.
+[41] K. Chang, K. Wang, N. Y ang, Y . Wang, D. Jin, W. Zhu, Z. Chen, C. Li, H.
+Y an, Y . Zhou, Z. Zhao, Y . Cheng, Y . Pan, Y . Liu, M. Wang, S. Liang, Y .
+Han, H. Li, and X. Li, ‘‘Data is all you need: Finetuning LLMs for chip
+design via an automated design-data augmentation framework,’’ in Proc.
+61st ACM/IEEE Design Autom. Conf., Jun. 2024, pp. 1–6.
+[42] K. Chang, Z. Chen, Y . Zhou, W. Zhu, K. Wang, H. Xu, C. Li, M. Wang,
+S. Liang, H. Li, Y . Han, and Y . Wang, ‘‘Natural language is not enough:
+Benchmarking multi-modal generative AI for verilog generation,’’ inProc.
+43rd IEEE/ACM Int. Conf. Comput.-Aided Design, Oct. 2024, pp. 1–9.
+[43] M. Liu et al., ‘‘ChipNeMo: Domain-adapted LLMs for chip design,’’ 2023,
+arXiv:2311.00176.
+[44] R. Qiu, G. L. Zhang, R. Drechsler, U. Schlichtmann, and B. Li,
+‘‘CorrectBench: Automatic testbench generation with functional self-
+correction using LLMs for HDL design,’’ in Proc. Design, Autom. Test
+Eur . Conf. (DATE), Mar. 2025, pp. 1–7.
+[45] C. Xiong, C. Liu, H. Li, and X. Li, ‘‘HLSPilot: LLM-based high-level
+synthesis,’’ in Proc. 43rd IEEE/ACM Int. Conf. Comput.-Aided Design,
+Oct. 2024, pp. 1–9.
+[46] E. B. E. Reddy, S. Bhattacharyya, A. Sarmah, F. Nongpoh, K. Maddala,
+and C. Karfa, ‘‘LHS: LLM assisted efficient high-level synthesis of deep
+learning tasks,’’ ACM Trans. Design Autom. Electron. Syst., vol. 30, no. 6,
+pp. 1–27, Nov. 2025.
+[47] M. Orenes-V era, M. Martonosi, and D. Wentzlaff, ‘‘Using LLMs to
+facilitate formal verification of RTL,’’ 2023, arXiv:2309.09437.
+[48] Y . Zhao, H. Zhang, H. Huang, Z. Y u, and J. Zhao, ‘‘Mage: A multi-agent
+engine for automated RTL code generation,’’ in Proc. 62nd ACM/IEEE
+Design Automation Conference (DAC), Jun. 2024, pp. 1–7.
+[49] W. Sun, B. Li, G. L. Zhang, X. Yin, C. Zhuo, and U. Schlichtmann,
+‘‘Paradigm-based automatic HDL code generation using LLMs,’’ in Proc.
+26th Int. Symp. Quality Electron. Design (ISQED), Apr. 2025, pp. 1–8.
+[50] C. Batten, N. Pinckney, M. Liu, H. Ren, and B. Khailany, ‘‘PyHDL-eval:
+An LLM evaluation framework for hardware design using Python-
+embedded DSLs,’’ in Proc. ACM/IEEE 6th Symp. Mach. Learn. CAD
+(MLCAD), Sep. 2024, pp. 1–17.
+[51] S. Liu, W. Fang, Y . Lu, J. Wang, Q. Zhang, H. Zhang, and Z. Xie,
+‘‘RTLCoder: Fully open-source and efficient LLM-assisted RTL code
+generation technique,’’IEEE Trans. Comput.-Aided Design Integr . Circuits
+Syst., vol. 44, no. 4, pp. 1448–1461, Apr. 2025.
+[52] Y . Tsai, M. Liu, and H. Ren, ‘‘RTLFixer: Automatically fixing RTL syntax
+errors with large language model,’’ inProc. 61st ACM/IEEE Design Autom.
+Conf., Jun. 2024, pp. 1–6.
+[53] A. Allam and M. Shalan, ‘‘RTL-repo: A benchmark for evaluating LLMs
+on large-scale RTL design projects,’’ in Proc. IEEE LLM Aided Design
+Workshop (LAD), Jun. 2024, pp. 1–5.
+[54] H. Huang, Z. Lin, Z. Wang, X. Chen, K. Ding, and J. Zhao,
+‘‘Towards LLM-powered verilog RTL assistant: Self-verification and self-
+correction,’’ 2024, arXiv:2406.00115.
+[55] S. Thakur, B. Ahmad, H. Pearce, B. Tan, B. Dolan-Gavitt, R. Karri, and
+S. Garg, ‘‘V eriGen: A large language model for verilog code generation,’’
+ACM Trans. Design Autom. Electron. Syst., vol. 29, no. 3, pp. 1–31,
+May 2024.
+[56] K. Tasnia, A. Garcia, T. Farheen, and S. Rahman, ‘‘V eriOpt: PPA-aware
+high-quality verilog generation via multi-role LLMs,’’ inProc. IEEE/ACM
+Int. Conf. Comput. Aided Design (ICCAD), Oct. 2025, pp. 1–9.
+[57] Y . Wang, G. Sun, W. Y e, G. Qu, and A. Li, ‘‘V eriReason: Reinforcement
+learning with testbench feedback for reasoning-enhanced verilog genera-
+tion,’’ 2025, arXiv:2505.11849.
+[58] C.-T. Ho, H. Ren, and B. Khailany, ‘‘V erilogCoder: Autonomous verilog
+coding agents with graph-based planning and abstract syntax tree (AST)-
+based waveform tracing tool,’’ in Proc. AAAI Conf. Artif. Intell., 2025,
+vol. 39, no. 1, pp. 300–307.
+[59] S.-Z. Wong, G.-W. Wan, D. Liu, and X. Wang, ‘‘VGV: V erilog generation
+using visual capabilities of multi-modal large language models,’’ in Proc.
+IEEE LLM Aided Design Workshop (LAD), Jun. 2024, pp. 1–5.
+[60] S. Williams. (2023). Icarus V erilog. [Online]. Available: https://github.
+com/steveicarus/iverilog
+[61] Anthropic Team. (2024). Model Context Protocol (mcp). [Online].
+Available: https://github.com/modelcontextprotocol
+[62] (2025). V erilator: Fast V erilog/SystemV erilog Simulator. [Online]. Avail-
+able: https://github.com/verilator/verilator
+[63] Y osysHQ and contributors. (2025). SymbiYosys (sby). [Online]. Available:
+https://github.com/Y osysHQ/sby
+[64] LangChain-ai. (2024). Langgraph: A Library for Building Robust and
+Stateful Multi-Actor Applications With Langchain. [Online]. Available:
+https://github.com/langchain-ai/langgraph
+[65] S. Purini, S. Garg, M. Gaur, S. Bhat, S. Mupparapu, and A. Ravindran,
+‘‘ArchXBench: A complex digital systems benchmark suite for LLM
+driven RTL synthesis,’’ in Proc. ACM/IEEE 7th Symp. Mach. Learn. CAD
+(MLCAD), California. USA: ACM and IEEE, Sep. 2025, pp. 1–10.
+[66] S. Purini, S. Garg, M. Gaur, S. Bhat, S. Mupparapu, and A. Ravindran.
+(2025). ArchXBench: A Complex Digital Systems Benchmark Suite for
+LLM Driven RTL Synthesis. [Online]. Available: https://github.com/
+sureshpurini/ArchXBench
+28538 VOLUME 14, 2026
+
+[[page 18]]
+A. Ravindran et al.: Critical Review and Evaluation of LLMs for RTL Generation
+[67] V . Lifschitz, Answer Set Programming, vol. 3. Cham, Switzerland:
+Springer, 2019.
+[68] L. D. Moura and N. Bjørner, ‘‘Z3: An efficient SMT solver,’’ in Proc. Tools
+Algorithms Construct. Anal. Syst., 2008, pp. 337–340.
+[69] Anysphere, Inc. (2025). Cursor: The Best Way To Code With AI. [Online].
+Available: https://cursor.com/
+[70] GitHub. (2025). Github Copilot: Your AI Pair Programmer. [Online].
+Available: https://github.com/features/copilot
+[71] The AlphaEvolve team. (May 2025). Alphaevolve: A Gemini-Powered
+Coding Agent for Designing Advanced Algorithms. [Online]. Available:
+https://deepmind.google//blog/alphaevolve-a-gemini-powered-coding-
+agent-for-designing-advanced-algorithms/
+ARUN RAVINDRAN received the B.Eng. degree
+in electronics and instrumentation and the M.Eng.
+degree in microelectronics from the Birla Institute
+of Technology and Science, Pilani, India, in
+1996 and 1997, respectively, and the M.S. degree
+in physics and the Ph.D. degree in electrical
+engineering from The Ohio State University,
+Columbus, OH, USA, in 2000 and 2003, respec-
+tively.
+He is currently an Associate Professor with the
+Department of Electrical and Computer Engineering, University of North
+Carolina at Charlotte. His research interests include the application of
+generative AI in cybersecurity, electronic design automation, and education.
+ADITYA PATRA is currently a Senior with
+California High School, San Ramon, CA, USA.
+He has served as a Science and Engineering
+Apprenticeship Program (SEAP) Intern with the
+Naval Postgraduate School. His research interests
+include artificial intelligence, machine learning,
+and chip design.
+VAHID BABAEY (Graduate Student Member,
+IEEE) received the B.S. degree in software engi-
+neering from Azad University, Shahrekord, Iran,
+in 2019, and the M.S. degree in computer engineer-
+ing from Tarbiat Modares University, Tehran, Iran,
+in 2022. He is currently pursuing the Ph.D. degree
+in computer engineering with the University of
+North Carolina at Charlotte, Charlotte, NC, USA.
+His research interests include generative AI and
+agentic AI systems for cybersecurity.
+SURESH PURINI (Member, IEEE) received the
+B.Tech. degree in computer science and engineer-
+ing from Sri V enkateswara University, Tirupati,
+India, in 1999, the M.E. degree in computer
+science and automation from Indian Institute of
+Science, Bengaluru, India, in 2001, and the Ph.D.
+degree in computer science and engineering from
+the University of Maryland, Baltimore County,
+MD, USA, in 2008.
+He is currently an Associate Professor with the
+Department of Computer Science and Engineering, International Institute of
+Information Technology, Hyderabad, India. His research interests include
+parallel and distributed systems, compilers, computer architecture, and
+systems for AI, machine learning, and big data.
+VOLUME 14, 2026 28539

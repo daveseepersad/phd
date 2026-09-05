@@ -1,0 +1,689 @@
+[[page 1]]
+QBugLM: An Agentic Benchmarking Framework
+for LLM-based Quantum Software Debugging
+An B. B. Pham †1, Hoa T. Nguyen †2, and Muhammad Usman 2,3
+1The University of Melbourne, Parkville, 3052, Victoria, Australia
+2Data61, CSIRO, Clayton, 3168, Victoria, Australia
+3School of Physics, The University of Melbourne, Parkville, 3052, Victoria, Australia
+a.pham@unimelb.edu.au,{hoa.nguyen, muhammad.usman}@csiro.au
+Abstract—Quantum software bugs often yield silent, incorrect
+outputs rather than explicit errors, making them particularly dif-
+ficult to detect and repair with conventional techniques. Although
+large language models (LLMs) have shown strong performance
+on classical software engineering tasks, their ability to debug
+quantum code remains largely unexplored. To bridge this gap,
+we propose QBugLM, a multi-agent framework that automates
+the quantum software debugging pipeline, from taxonomy-driven
+bug injection to LLM-based detection and repair, and finally to
+simulation-based validation, for framework-agnostic OpenQASM
+3.0 programs. We further conduct a comprehensive case study
+using QBugLM to benchmark two LLMs, Claude 4.6 Sonnet
+and Qwen3 Coder Next, across different prompting strategies,
+bug categories, and quantum programs. Our results show that
+iterative feedback is critical, as a single retry raises Pass@1
+from below 25% to above 80%. Moreover, simpler structured
+prompting can even outperform Chain-of-Thought and ReAct for
+reasoning-capable models under fixed-resource constraints. Our
+work takes initial steps toward benchmarking LLM capabilities
+for debugging quantum programs and offers practical insights
+to support future efforts in automated quantum software repair.
+Index Terms—quantum software, quantum debugging, agentic
+quantum software, LLM for quantum, quantum bugs
+I. INTRODUCTION
+Quantum software engineering poses challenges that are
+qualitatively distinct from those of classical software devel-
+opment. The probabilistic nature of quantum computation
+and the absence of mature debugging toolchains make bugs
+in quantum programs exceptionally difficult to isolate and
+diagnose [1]. In contrast to classical program bugs, which
+typically manifest as explicit exceptions or system crashes,
+quantum-specific bugs often produce silent, incorrect outputs,
+substantially undermining the effectiveness of conventional de-
+bugging techniques [2], [3]. As quantum hardware matures and
+quantum software toolkits such as Qiskit, Cirq, and PennyLane
+scale up and become more complex, the demand for automated
+support mechanisms in quantum software engineering [4]
+continues to grow.
+In the meantime, large language models (LLMs) have shown
+strong performance on common software engineering tasks
+[5], [6], including code generation, fault localisation, and
+automated program repair. Early investigations assessed the
+capacity of general-purpose LLMs to generate quantum code.
+†These authors contributed equally.
+For instance, Henderson et al. [7] found that models such as
+GPT-4 performed well on generating simple discrete-variable
+quantum circuits in Qiskit, but struggle with continuous-
+variable tasks in Xanadu’s Strawberry Fields, frequently vi-
+olating hardware constraints and producing logically incor-
+rect circuits. To address these shortcomings, several domain-
+adapted models have been proposed. The Qiskit Code As-
+sistant [8], built upon IBM Granite model and fine-tuned
+on curated Qiskit scripts and notebooks, substantially out-
+performs general-purpose models in generating functionally
+correct Qiskit code. Similarly, PennyCoder [9] applies Low-
+Rank Adaptation (LoRA) to fine-tune LLaMA models on
+the PennyLang dataset, enabling efficient on-device quantum
+code generation for quantum machine learning and quantum
+reinforcement learning tasks using PennyLane. AGENT-Q
+[10] fine-tuned on over 14,000 optimised quantum circuits,
+excels at generating parameterised circuits for algorithms such
+as QAOA and VQE, producing initial parameters closer to
+optimal than random initialisation.
+Recent studies have also benchmarked LLM performance
+on quantum code generation tasks. For example, QuanBench
+[11] evaluates nine LLMs across 44 quantum programming
+tasks spanning algorithms, state preparation, gate decom-
+position, and quantum machine learning. It reports overall
+accuracy below 40% and highlights recurring failure modes,
+including circuit construction errors and flawed algorithm
+logic. QHackBench [12] evaluates LLMs on PennyLane-based
+quantum programming tasks drawn from real-world hackathon
+challenges, with the best-performing model achieving approx-
+imately 47 to 49% accuracy. Qiskit HumanEval [13] assesses
+the functional correctness of LLM-generated Qiskit code, with
+an emphasis on API usage and syntactic correctness.
+However, a critical gap remains in the use of LLMs
+for debugging quantum software. Although LLM-based code
+generation has attracted growing attention, the capacity of
+LLMs to detect and repair bugs in existing quantum programs,
+especially bugs in LLM-generated quantum code, has not yet
+been systematically investigated. Furthermore, several existing
+studies focus on specific software development kits (SDKs),
+such as Qiskit [14], [15], tightly coupling evaluation to
+framework-specific code rather than to the underlying logical
+quantum circuits. Consequently, LLMs’ ability to debug low-
+level languages such as OpenQASM [16] in a quantum SDK-
+arXiv:2606.07314v1 [cs.SE] 5 Jun 2026
+
+[[page 2]]
+TABLE I
+TAXONOMY OFCOMMONBUGS INQUANTUMSOFTWARE
+Category Example OpenQASM3 Example
+C1: Deprecated Syntax Errors Use deprecated OpenQASM 2.0 syntax in OpenQASM 3.0
+program or syntax errors
+include "stdgates.inc";→include
+"qelib1.inc";
+C2: Structural Errors in Circuit
+Construction
+Violate circuit construction rules, such as assigning identical
+indices to control and target qubits in CNOT gates
+cx q[0],q[1]→cx q[0],q[0]
+C3: Gate Overuse/Redundancy Duplicate a self-inverse quantum gate (e.g., X, Y , Z, H, CX)h q[0]→h q[0]; h q[0]; h q[0]
+C4: Semantic Deviation Substitute a gate with an incorrect gate of equal arityrx(0.5) q[0]→ry(0.5) q[0]
+Insert a spurious gate operation —→x q[2]
+Delete a required gate operationh q[1]→(removed)
+Change the phase value of a rotation gaterz(pi/4) q[0]→rz(-pi/4) q[0]
+Duplicate a measurement statement at an incorrect locationmeasure q[0](duplicated)
+Remove a required measurement statementmeasure q[2]→(removed)
+agnostic setting remains underexplored. This capability is
+equally crucial for agentic quantum software development
+workflows, in which an LLM agent must not only synthesise
+code but also iteratively diagnose failures and apply corrective
+edits until the resulting quantum program satisfies both syn-
+tactic and semantic correctness criteria. We address these gaps
+by proposing QBugLM, a novel multi-agent benchmarking
+framework that systematically evaluates the detection and
+repair capabilities of LLMs on common quantum software
+bugs.
+The main contributions of our paper are as follows:
+•We propose QBugLM, a multi-agent benchmarking
+framework that automates the quantum software de-
+bugging pipeline, facilitating LLM-based bug detection
+and repair, and simulation-based validation, operating on
+OpenQASM 3.0 quantum SDK-agnostic programs.
+•Within QBugLM, we also develop QBugGen, a mutation
+toolkit that systematically injects bugs, drawn from com-
+mon quantum bug taxonomy, into valid quantum circuits,
+yielding a controlled evaluation dataset with ground-truth
+annotations for reproducible benchmarking studies.
+•We conduct a comprehensive case study benchmarking
+Claude 4.6 Sonnet and Qwen3 Coder Next across dif-
+ferent prompting strategies, bug categories, and quantum
+circuits, yielding three key insights, including (1) a single
+retry raises Pass@1 from below 25% to above 80%,
+establishing iterative feedback as the dominant factor in
+repair success; (2) simpler structured prompting can even
+outperform Chain-of-Thought and ReAct for reasoning-
+capable models under fixed resource constraints; and (3)
+the open-source LLM achieves comparable accuracy at
+significant lower cost on most bug types in the case study.
+The rest of the paper is organised as follows. Section II
+introduces the proposed QBugLM framework for LLM-based
+quantum software debugging and a taxonomy of common bugs
+in quantum software. Section III provides a comprehensive
+case study of our framework and discusses the implications of
+our findings. Section IV reviews related work and highlights
+the research gaps our study addresses. Finally, Section V
+concludes the paper by summarising our contributions and
+outlining directions for future work.
+II. QBUGLM FRAMEWORK
+As illustrated in Figure 1, our proposed QBugLM frame-
+work comprises four main components that collectively form
+an end-to-end pipeline for evaluating LLM-based quantum
+software debugging:
+1) QBugGen:takes as input a corpus of syntactically and
+semantically valid OpenQASM 3.0 programs sourced from
+an well-known quantum circuit benchmark suite (e.g., MQT
+Bench [17]). Building on the literature on quantum bugs [2],
+[3], [18] and on failure-mode analyses of LLM-generated
+quantum code reported in prior benchmarking studies [11],
+we consolidate common quantum software bugs into a four-
+category taxonomy that facilitates QBugGen, with representa-
+tive examples in Table I. For each valid program, QBugGen
+systematically injects a single, well-defined bug drawn from
+the taxonomy presented. Each mutation is recorded as a
+structured specification that captures the mutation type, the
+affected source line, and the applied transformation.
+2) QBugFind:takes a buggy quantum program from
+QBugGen and invokes an LLM agent to generate a structured
+bug report. The agent is given the buggy source code, program
+specifications, and a prompt derived from a configurable
+strategy. It identifies the bug’s location (i.e., the affected line)
+and classifies it according to the bug taxonomy. QBugFind
+outputs a bug-report package containing the suspected fault
+location, predicted bug category, the original specifications and
+buggy program, which is then passed to QBugFix.
+3) QBugFix:receives the original buggy program alongside
+the bug report generated by QBugFind and delegates the repair
+task to a second LLM agent to produce a corrected version of
+the quantum program that resolves the identified bugs while
+preserving the intended algorithmic semantics. The agent is
+
+[[page 3]]
+Fig. 1. Overview of the QBugLM framework
+unconstrained in the repair operations it may apply, including
+substitution, insertion, removal of gates, instruction reordering,
+modification of rotation parameters, and adjustment of qubit
+indices. Separating detection and repair into distinct agents can
+enable independent evaluation of each capability and system-
+atic study of how detection quality affects repair outcomes.
+4) QBugCheck:operates as a deterministic validator that
+compares the behaviour of the LLM-fixed program against
+the original ground-truth circuit from the source dataset. We
+determine whether a repaired (fixed) program is functionally
+equivalent to the ground-truth (reference) program by compar-
+ing total variation distanceδin measurement distributions.
+δ(Pref,Pfixed ) = 1
+2
+X
+k
+|Pref (k)−P fixed (k)|(1)
+whereP ref andP fixed are probability distributions of the ref-
+erence program and fixed program, respectively, andkindexes
+each possible measurement outcome. Both the reference and
+fixed programs are executed on a noiseless quantum simulator
+to eliminate hardware noise, so any distributional divergence
+reflects logical differences between the programs. The fix is
+accepted if the total variation distance across all outcome
+probabilities satisfiesδ(P ref,Pfixed )≤ε δ, whereε δ is the
+accuracy threshold. We additionally compare gate counts at the
+same circuit transpilation optimisation level, and the structural
+check passes when|G ref−Gfixed|≤ε g, whereε g is the gate
+count tolerance,G ref andG fixed denote the transpiled gate
+counts of the reference and fixed programs, respectively.
+The end-to-end debugging pipeline of the proposed frame-
+work is illustrated in Algorithm 1. The algorithm accepts as
+input a set of valid quantum programsP, a collection of
+mutation operatorsM, two LLM agentsA find andA fix, a
+prompting strategyσ, a maximum number of attemptsK, a
+distribution toleranceε δ, and a gate count toleranceε g. The
+output is a result setRthat records, for every mutant, the
+final bug report, the final candidate fix, the repair outcome,
+the number of attempts consumed, and the validation verdict.
+Algorithm 1QBugLM End-to-End Workflow
+Require:Valid program setP, mutation operatorsM, LLM
+agentsA find andA fix, prompting strategyσ, max attempts
+K, tolerance thresholdsε δ andε g
+Ensure:Results setRwith per-instance repair
+1:R←∅
+2:foreach valid programp∈Pdo
+3:Stage 1: QBugGen
+4:B p←QBUGGEN(p,M)▷Generate mutants
+5:s p←SPEC(p)▷Program specification
+6:foreachp bug∈B p do
+7:history←∅;repaired←FALSE
+8:fork←1toKdo
+9:Stage 2: QBugFind
+10:r bug←A find(pbug, sp, σ,history)
+11:Stage 3: QBugFix
+12:p fix←A fix(pbug, rbug, sp, σ,history)
+13:Stage 4: QBugCheck
+14:v←QBUGCHECK(p, p fixed, εδ, εg)
+15:ifv.pass=TRUEthen
+16:repaired←TRUE
+17:break
+18:end if
+19:history←history∪{(r bug, pfixed, v)}
+20:end for
+21:R←R∪{(p bug, rbug, pfixed, k, v)}
+22:end for
+23:end for
+24:returnR
+III. CASESTUDY: QBUGLM BENCHMARKING
+To demonstrate the practical utility of the proposed frame-
+work, we conduct a comprehensive case study using QBugLM
+
+[[page 4]]
+to evaluate the performance of state-of-the-art LLMs in quan-
+tum software bug detection and repair.
+A. Research Questions
+We evaluate the capabilities of LLMs in quantum soft-
+ware bug detection and repair using our QBugLM framework
+through the following research questions (RQs):
+•RQ1: How does the choice of prompting strategy affect
+LLM performance in quantum software debugging?
+•RQ2: What is the current capability of LLMs in detecting
+and repairing different types of bugs in quantum programs
+under varying retry constraints?
+•RQ3: How cost-efficient are different LLMs for quantum
+software debugging?
+B. Experiment Setup
+We implement the proposed framework using Strands
+Agents1 as the multi-agent orchestration backbone. The
+pipeline is deployed on a single workstation, and all quantum
+circuit simulations are run via a noiseless quantum simulator
+using Qiskit Aer2. For each experimental configuration, we set
+the maximum number of attempts toK= 3(i.e., one initial
+attempt plus two retries). All simulation-based validations use
+N= 1,024shots, with a distribution tolerance ofε δ = 0.05
+and a gate count tolerance ofε g = 0.
+1) Quantum programs:We construct the ground-truth cor-
+pus from MQT Bench [17], selecting five representative 5-
+qubit OpenQASM 3.0 circuits, including Deutsch-Jozsa’s al-
+gorithm (dj), Grover’s algorithm (grover), Bernstein-Vazirani’s
+algorithm (bv), GHZ state (ghz) and W state (wstate).
+2) LLMs Selection:To assess the influence of model scale
+and provenance on debugging performance, we evaluate two
+representative LLMs: 1) a proprietary model with Claude Son-
+net 4.6 (Anthropic) and 2) an open-source, code-specialised
+model with Qwen3 Coder Next (Alibaba). For simplicity, we
+also refer to these as Sonnet 4.6 and Qwen3, respectively.
+3) Prompting Strategies:We evaluate three main com-
+mon prompting strategies to assess the impact of in-context
+guidance on detection and repair, including: 1)Structured
+(general), 2)Chain-of-Thought (CoT)[19], and 3)ReAct[20].
+Code Availability:All source code and prompting exam-
+ples of QBugLM are available at github.com/qachub/qbuglm.
+C. Evaluation Metrics
+We evaluate the framework along two main dimensions:
+correctness of the debugging and efficiency of the pipeline.
+Correctness metrics.To assess cross-run and overall re-
+liability, we adopt the unbiased Pass@kestimator following
+prior studies [11], [21], [22]. For each mutant, the pipeline is
+executedntimes independently, yieldingccorrect fixes. The
+Pass@kmetric estimates the probability that at least one ofk
+randomly chosen samples is correct:
+Pass@k= 1−
+ n−c
+k
+
+ n
+k
+ (2)
+1https://strandsagents.com (accessed January 2026)
+2https://github.com/Qiskit/qiskit-aer (accessed January 2026)
+wherenis the total number of independent runs per task,cis
+the number of runs that produce a correct fix (as verified by
+QBugCheck), andk≤nis the number of samples drawn.
+Efficiency metrics.To assess the operational cost of LLM-
+based debugging, we measure: 1)Token consumption.The
+total number of input and output tokens consumed by the
+QBugFind and QBugFix agents per mutant, reported in ag-
+gregate; 2)Wall-clock time.The elapsed time per mutant from
+pipeline start to final validation verdict; and 3)Monetary cost.
+The estimated average API cost per mutant, according to AWS
+Bedrock pricing (as of March 2026) 3.
+D. Experiment Results
+1) RQ1: How does the choice of prompting strategy affect
+LLM performance in quantum software debugging?
+Figure 2 presents the Pass@1 of both models across
+three prompting strategies on the Bernstein-Vazirani circuit.
+Structured prompting achieves the highest performance, with
+Claude Sonnet 4.6 reaching 97% and Qwen3 Coder Next
+reaching 95%. Both models perform worse under CoT and
+ReAct, with CoT reducing success rates to 90% and 45%,
+respectively, and ReAct to 95% and 63%, respectively. This
+result is contrary to the expectation that explicit reasoning
+scaffolds improve LLM performance. Both models are natively
+reasoning-capable and can perform internal deliberation with-
+out explicit instruction [23].
+Fig. 2. Pass@1 of Qwen3 Coder Next and Claude Sonnet 4.6 across
+three prompting strategies on the Bernstein-Vazirani (BV) circuit. Structured
+prompting achieves the highest Pass@1 for both models.
+Answer to RQ1
+Prompting strategy has a substantial impact on LLM-based
+quantum debugging, as structured prompting consistently
+outperforms CoT and ReAct across both models, challeng-
+ing the assumption that explicit reasoning scaffolds help
+capable LLMs and showing that, in resource-constrained
+pipelines, such scaffolds can even degrade overall debug-
+ging performance.
+3https://aws.amazon.com/bedrock/pricing/ (accessed March 2026)
+
+[[page 5]]
+Fig. 3. Pass@1 per bug category at zero and
+two retries for both LLMs on the BV circuit with
+structured prompting.
+Fig. 4. Average total token consumption (bars) and
+Pass@1 (dashed lines) per mutant per bug category
+at two retries for both LLMs.
+Fig. 5. Average wall-clock time per mutant per
+bug category at two retries for both LLMs.
+2) RQ2: What is the current capability of LLMs in detecting
+and repairing different types of bugs in quantum programs
+under varying retry constraints?
+Figure 3 shows Pass@1 per bug category at zero and two
+retries. Without retries, the Qwen3 model achieves 20% across
+semantic deviation, deprecated syntax, and gate overuse, while
+Sonnet 4.6 fails entirely on those three bug categories. Both
+models achieve 60% structural error, making it the only
+category in which single-shot debugging is partially reliable.
+After two retries, both models recover strongly across all
+categories, with Pass@5 reaching 100% in all cases. Sonnet
+4.6 reaches 100% on semantic deviation, deprecated syntax,
+and gate overuse, but improves only to 80% on structural
+error. Qwen3 reaches 100% on these first three bug categories,
+but achieves only 92% on semantic deviation. Each model,
+therefore, retains one unresolved weakness after two retries:
+Sonnet 4.6 for structural error and Qwen3 for semantic devi-
+ation. Both weaknesses persist despite full recovery across all
+other categories, suggesting that they represent model-specific
+limitations rather than artefacts of an insufficient retry budget.
+Answer to RQ2
+Iterative refinement with accumulated context is essential
+for LLM-based quantum program debugging, as the first
+retry yields the largest accuracy gain, while subsequent
+retries exhibit diminishing returns. A two-retry budget
+offers a favourable trade-off between accuracy and cost.
+3) RQ3: How cost-efficient are different LLMs for quantum
+software debugging?
+Figure 4 presents the average total token consumption and
+Pass@1 per bug category at two retries. Across structural error,
+deprecated syntax, and gate overuse, Qwen3 achieves equal or
+better Pass@1 than Sonnet 4.6 while consuming fewer tokens.
+In terms of monetary costs, Qwen3 Coder Next costs $0.042,
+$0.036, and $0.061 per mutant on these three categories,
+respectively, compared to $0.202, $0.327, and $0.496 for
+Sonnet 4.6, representing cost reductions by factors of 4.8, 9.1,
+and 8.1. Figure 5 further shows that Qwen3 is between 1.5
+and 4.6 times faster across those same categories, with the
+most notable gap on structural error, where Claude Sonnet 4.6
+takes 127.6 seconds on average compared to 28 seconds for
+Qwen3. Semantic deviation is the exception across all three
+dimensions. Qwen3 consumes approximately 350,000 tokens
+on average for this category compared to 91,000 for Sonnet
+4.6, incurring a cost of $0.198 versus $0.369. Despite this
+disproportionate token consumption, Qwen3 still achieves only
+92% Pass@1 compared to 100% for Sonnet 4.6. This is the
+only category in which Sonnet 4.6’s higher cost correlates
+with a meaningful gain in accuracy. Structural error shows
+the opposite trend: Sonnet 4.6 reaches only 80% Pass@1, is
+4.6 times slower, and costs 4.8 times more than Qwen3, which
+attains 100% Pass@1.
+Answer to RQ3
+Overall, Qwen3 is substantially more cost-efficient than
+Sonnet 4.6 across most bug categories except semantic
+deviations, delivering equal or better Pass@1 at 4 to 9
+times lower cost and 1.5 to 4.6 times faster wall-clock time.
+A cost-efficient deployment strategy should therefore be
+bug-type-aware, as Qwen3 may be preferable for structural
+errors, deprecated syntax, and gate overuse, while Sonnet
+4.6 is more reliable for semantic deviations in this case.
+E. Threat to Validity
+We identify two main threats to the validity of our case
+study. First, we focus on semantic bugs in quantum programs,
+which create a class imbalance because six mutation strategies
+produce semantic deviations. This makes category-level results
+for the first three bug categories (C1-C3) highly sensitive
+to single failures. We mitigate this by reporting results both
+per category and in aggregate. Additionally, we perform five
+independent runs per configuration and use the unbiased
+Pass@k estimator to account for sampling variance. Second,
+
+[[page 6]]
+we count infrastructure failures, such as network timeouts and
+per-agent context-window exhaustion, as unsuccessful fixes
+rather than excluding them; although this may understate raw
+LLM capability, it reflects realistic deployment conditions and
+yields a more conservative estimate.
+IV. RELATEDWORK
+Prior work on quantum software bug detection and repair
+spans several areas, including benchmark datasets, static and
+dynamic analysis, formal verification, and automated pro-
+gram repair (APR). First, evaluating quantum debugging tools
+requires curated datasets of reproducible bugs. QBugs [24]
+offers a complementary set of reproducible algorithmic bugs.
+Bugs4Q [3] provides a manually validated collection of Qiskit
+bugs sourced from GitHub and Stack Exchange, pairing each
+buggy program with its fix and a reproducing test case. Both
+benchmarks capture naturally occurring defects but remain
+framework-specific (primarily Qiskit), lack systematic cover-
+age of common quantum bug taxonomy, and are not designed
+to evaluate LLM-based debugging in controlled settings.
+Regarding bug detection, several static analysis tools anal-
+yse quantum programs without execution. For example,
+QChecker [25] uses Abstract Syntax Trees to identify re-
+curring patterns, including incorrect gate usage, measurement
+anomalies, and deprecated API calls. ScaffCC [26] tracks qubit
+entanglement via data-flow analysis, and abstract interpretation
+techniques support assertion-based checking. These methods
+handle well-defined syntactic and structural defects effectively
+but cannot detect semantic bugs in which programs are syntac-
+tically valid yet algorithmically incorrect. Dynamic approaches
+complement static analysis by injecting faults. Quito [27] and
+QuSBT [28] produce quantum-specific test suites through cov-
+erage criteria and search-based testing, respectively. Mutation
+analysis tools such as QMutPy [18] and Muskit [29] inject
+faults (gate additions, deletions, parameter perturbations) to
+assess test suite adequacy. However, these tools evaluate test
+effectiveness rather than performing end-to-end debugging,
+and none incorporate LLM-based reasoning. At a more foun-
+dational level, formal verification methods have been extended
+to the quantum domain. Quantum Hoare Logic (QHL) and its
+applied variant (aQHL) [30] enable formal correctness proofs,
+while projection-based runtime assertions support dynamic
+state checking without collapsing valid quantum states. Al-
+though rigorous, these approaches require manually specified
+correctness properties and are difficult to scale to the diverse,
+rapidly evolving codebases of modern quantum frameworks.
+Beyond bug detection, APR techniques aim to generate
+patches for buggy quantum code. Synthesis-based tools such as
+UnitAR [31] and HornBro [32] generate replacement unitary
+operations to restore correct behaviour, but they are limited
+to gate-level defects and often increase circuit depth. LLM-
+based repair offers more flexibility. For example, Guo et al.
+[33] show that ChatGPT fixed 29 of 38 Bugs4Q bugs, but only
+with multi-round, human-provided hints and error descriptions.
+Recent work [15] augments GPT-5 prompts with QMutPy mu-
+tation analysis results and stack traces, achieving 94.4% repair
+success on a Bugs4Q subset. However, this pipeline depends
+on external mutation analysis as a prerequisite, evaluates only
+single-turn repair, and is restricted to SDK-specific programs.
+Our QBugLM addresses these limitations with a self-
+contained, end-to-end agentic framework that unifies bug gen-
+eration, detection, repair, and validation. It differs from prior
+work in four key respects: (1) it operates on quantum SDK-
+agnostic OpenQASM 3.0 programs; (2) it employs a multi-
+agent LLM-based architecture with configurable prompting
+strategies and iterative feedback loops; (3) it can generate
+evaluation data automatically via a configurable, taxonomy-
+driven mutation generator (QBugGen), removing the reliance
+on pre-existing benchmarks; and (4) it validates repairs using
+simulation-based total variation distance, enabling fully auto-
+mated, human-out-of-the-loop evaluation.
+V. CONCLUSIONS ANDFUTUREWORK
+In this paper, we presented QBugLM, a multi-agent bench-
+marking framework for systematically evaluating LLM-based
+quantum software bug detection and repair. The framework in-
+tegrates four components, including taxonomy-driven mutation
+generation, LLM-based bug detection and repair agents, and
+simulation-based validation, forming a fully automated, end-
+to-end pipeline that operates on framework-agnostic Open-
+QASM 3.0 programs. Through a comprehensive case study
+benchmarking two state-of-the-art LLMs, Claude 4.6 Sonnet
+and Qwen3 Coder Next, across different prompting strategies,
+bug categories, and quantum circuits. Our results also reveal
+three key findings, including (1) iterative feedback is criti-
+cal, with a single retry raising Pass@1 from below 25% to
+above 80% for both LLMs, (2) simpler prompting strategies
+can outperform more elaborate alternatives (CoT, ReAct) for
+reasoning-capable models under fixed resource constraints;
+and (3) the open-source Qwen3 Coder Next achieves com-
+parable accuracy to the proprietary Claude 4.6 Sonnet at
+substantially lower cost, though performance gaps widen on
+semantically more complex quantum circuits.
+Several directions remain for future work. First, we plan
+to expand the mutation corpus by including multiple mutants
+per operator and incorporating multi-fault injection to improve
+statistical diversity and better approximate real-world bug
+distributions. Second, we aim to scale the evaluation to larger
+circuits and additional quantum frameworks to assess the
+generalisability of our findings across circuit complexities and
+programming paradigms. Third, we will explore hybrid agent
+configurations in which different models serve as the finder
+and fixer agents, and investigate techniques such as Retrieval-
+Augmented Generation and the use of framework documen-
+tation to improve repair accuracy for the most challenging
+semantic bugs. Furthermore, we will compare the LLM-based
+approach with other techniques to identify when agentic meth-
+ods outperform static, dynamic, and formal analyses. Finally,
+we will extend the framework to handle compound bugs and
+assess regression detection, where repairs introduce new de-
+fects, better reflecting iterative quantum software development.
+
+[[page 7]]
+REFERENCES
+[1] N. C. Leite Ramalho, H. Amario de Souza, and M. Lordello Chaim,
+“Testing and Debugging Quantum Programs: The Road to 2030,”ACM
+Trans. Softw. Eng. Methodol., vol. 34, pp. 155:1–155:46, May 2025.
+[2] M. Paltenghi and M. Pradel, “Bugs in Quantum computing platforms:
+an empirical study,”Proc. ACM Program. Lang., vol. 6, pp. 86:1–86:27,
+Apr. 2022.
+[3] P. Zhao, Z. Miao, S. Lan, and J. Zhao, “Bugs4Q: A benchmark
+of existing bugs to enable controlled testing and debugging studies
+for quantum programs,”Journal of Systems and Software, vol. 205,
+p. 111805, Nov. 2023.
+[4] A. Sarkar, “Automated quantum software engineering,”Automated Soft-
+ware Engineering, vol. 31, p. 36, Apr. 2024.
+[5] A. Fan, B. Gokkaya, M. Harman, M. Lyubarskiy, S. Sengupta, S. Yoo,
+and J. M. Zhang, “Large Language Models for Software Engineering:
+Survey and Open Problems,” inProceedings of the 2023 IEEE/ACM
+International Conference on Software Engineering: Future of Software
+Engineering (ICSE-FoSE), pp. 31–53, May 2023.
+[6] J. He, C. Treude, and D. Lo, “LLM-Based Multi-Agent Systems for
+Software Engineering: Literature Review, Vision, and the Road Ahead,”
+ACM Trans. Softw. Eng. Methodol., vol. 34, pp. 124:1–124:30, May
+2025.
+[7] E. R. Henderson, J. M. Henderson, J. Ange, and M. A. Thornton, “Pro-
+gramming quantum computers with large language models,” inQuantum
+Information Science, Sensing, and Computation XVII(M. Hayduk, M. L.
+Fanto, and C. M. T. Jr, eds.), vol. 13451, p. 1345104, SPIE, 2025.
+[8] N. Dupuis, L. Buratti, S. Vishwakarma, A. V . Forrat, D. Kremer, I. Faro,
+R. Puri, and J. Cruz-Benito, “Qiskit code assistant: training LLMs for
+generating quantum computing code,” May 2024. arXiv:2405.19495.
+[9] A. Basit, M. Shao, M. H. Asif, N. Innan, M. Kashif, A. Marchisio,
+and M. Shafique, “PennyCoder: Efficient Domain-Specific LLMs for
+PennyLane-Based Quantum Code Generation,” inProceedings of the
+2025 IEEE International Conference on Quantum Computing and En-
+gineering (QCE), pp. 229–234, Aug. 2025.
+[10] L. Jern, V . Uotila, C. Yu, and B. Zhao, “Agent-Q: Fine-Tuning Large
+Language Models for Quantum Circuit Generation and Optimization,”
+inProceedings of the 2025 IEEE International Conference on Quantum
+Computing and Engineering (QCE), vol. 01, pp. 1621–1632, Aug. 2025.
+[11] X. Guo, M. Wang, and J. Zhao, “QuanBench: Benchmarking Quantum
+Code Generation with Large Language Models,” inProceedings of the
+2025 40th IEEE/ACM International Conference on Automated Software
+Engineering (ASE), pp. 2657–2669, Nov. 2025. ISSN: 2643-1572.
+[12] A. Basit, M. Shao, M. H. Asif, N. Innan, M. Kashif, A. Marchisio, and
+M. Shafique, “QHackBench: Benchmarking Large Language Models for
+Quantum Code Generation Using PennyLane Hackathon Challenges,”
+inProceedings of the 2025 IEEE International Conference on Quantum
+Artificial Intelligence (QAI), pp. 316–322, Nov. 2025.
+[13] S. Vishwakarma, F. Harkins, S. Golecha, V . S. Bajpe, N. Dupuis,
+L. Buratti, D. Kremer, I. Faro, R. Puri, and J. Cruz-Benito, “Qiskit
+HumanEval: An Evaluation Benchmark For Quantum Code Generative
+Models,” June 2024. arXiv:2406.14712.
+[14] C. Campbell, H. M. Chen, W. Luk, and H. Fan, “Enhancing LLM-based
+Quantum Code Generation with Multi-Agent Optimization and Quantum
+Error Correction,” inProceedings of the 2025 62nd ACM/IEEE Design
+Automation Conference (DAC), pp. 1–7, June 2025.
+[15] C. Yoshida, Y . Ishimoto, O. Nourry, M. Kondo, M. Matsushita,
+Y . Kamei, and Y . Higo, “Leveraging Mutation Analysis for LLM-based
+Repair of Quantum Programs,” Jan. 2026. arXiv:2601.12273 [cs].
+[16] A. Cross, A. Javadi-Abhari, T. Alexander, N. De Beaudrap, L. S. Bishop,
+S. Heidel, C. A. Ryan, P. Sivarajah, J. Smolin, J. M. Gambetta, and B. R.
+Johnson, “OpenQASM 3: A Broader and Deeper Quantum Assembly
+Language,”ACM Transactions on Quantum Computing, vol. 3, pp. 1–
+50, 9 2022.
+[17] N. Quetschlich, L. Burgholzer, and R. Wille, “MQT Bench: Benchmark-
+ing Software and Design Automation Tools for Quantum Computing,”
+Quantum, vol. 7, p. 1062, July 2023.
+[18] D. Fortunato, J. Campos, and R. Abreu, “QMutPy: a mutation testing
+tool for Quantum algorithms and applications in Qiskit,” inProceedings
+of the 31st ACM SIGSOFT International Symposium on Software Testing
+and Analysis, pp. 797–800, ACM, July 2022.
+[19] J. Wei, X. Wang, D. Schuurmans, M. Bosma, B. Ichter, F. Xia, E. Chi,
+Q. Le, and D. Zhou, “Chain-of-Thought Prompting Elicits Reasoning in
+Large Language Models,” Jan. 2023. arXiv:2201.11903.
+[20] S. Yao, J. Zhao, D. Yu, N. Du, I. Shafran, K. Narasimhan, and Y . Cao,
+“ReAct: Synergizing Reasoning and Acting in Language Models,” Mar.
+2023. arXiv:2210.03629.
+[21] S. Kulal, P. Pasupat, K. Chandra, M. Lee, O. Padon, A. Aiken, and
+P. S. Liang, “SPoC: Search-based Pseudocode to Code,” inAdvances in
+Neural Information Processing Systems (NeurIPS 2019), vol. 32, Curran
+Associates, Inc., 2019.
+[22] M. Chen, J. Tworek, H. Jun, Q. Yuan, H. P. d. O. Pinto, J. Kaplan,
+H. Edwards, Y . Burda, N. Joseph, G. Brockman, A. Ray, R. Puri,
+G. Krueger, M. Petrov, H. Khlaaf, G. Sastry, P. Mishkin, B. Chan,
+S. Gray, N. Ryder, M. Pavlov, A. Power, L. Kaiser, M. Bavarian,
+C. Winter, P. Tillet, F. P. Such, D. Cummings, M. Plappert, F. Chantzis,
+E. Barnes, A. Herbert-V oss, W. H. Guss, A. Nichol, A. Paino, N. Tezak,
+J. Tang, I. Babuschkin, S. Balaji, S. Jain, W. Saunders, C. Hesse,
+A. N. Carr, J. Leike, J. Achiam, V . Misra, E. Morikawa, A. Rad-
+ford, M. Knight, M. Brundage, M. Murati, K. Mayer, P. Welinder,
+B. McGrew, D. Amodei, S. McCandlish, I. Sutskever, and W. Zaremba,
+“Evaluating Large Language Models Trained on Code,” July 2021.
+arXiv:2107.03374.
+[23] H. Hu, T. Fu, M. Jiang, A. H. Miller, Y . Bachrach, and J. N. Foerster,
+“Asking the Right Questions: Improving Reasoning with Generated
+Stepping Stones,” Feb. 2026. arXiv:2602.19069.
+[24] J. Campos and A. Souto, “ QBugs: A Collection of Reproducible
+Bugs in Quantum Algorithms and a Supporting Infrastructure to Enable
+Controlled Quantum Software Testing and Debugging Experiments ,”
+inProceedings of the 2021 IEEE/ACM 2nd International Workshop on
+Quantum Software Engineering (Q-SE), pp. 28–32, IEEE, June 2021.
+[25] P. Zhao, X. Wu, Z. Li, and J. Zhao, “QChecker: Detecting Bugs
+in Quantum Programs via Static Analysis,” inProceedings of the
+2023 IEEE/ACM 4th International Workshop on Quantum Software
+Engineering (Q-SE), pp. 50–57, May 2023.
+[26] A. JavadiAbhari, S. Patil, D. Kudrow, J. Heckey, A. Lvov, F. T. Chong,
+and M. Martonosi, “ScaffCC: a framework for compilation and analysis
+of quantum computing programs,” inProceedings of the 11th ACM
+Conference on Computing Frontiers, pp. 1–10, ACM, May 2014.
+[27] X. Wang, P. Arcaini, T. Yue, and S. Ali, “Quito: a Coverage-Guided
+Test Generator for Quantum Programs,” inProceedings of the 2021
+36th IEEE/ACM International Conference on Automated Software En-
+gineering (ASE), pp. 1237–1241, Nov. 2021.
+[28] X. Wang, P. Arcaini, T. Yue, and S. Ali, “QuSBT: search-based testing of
+quantum programs,” inProceedings of the ACM/IEEE 44th International
+Conference on Software Engineering: Companion Proceedings, ICSE
+’22, (New York, NY , USA), pp. 173–177, ACM, Oct. 2022.
+[29] E. Mendiluze, S. Ali, P. Arcaini, and T. Yue, “Muskit: a mutation
+analysis tool for quantum software testing,” inProceedings of the 36th
+IEEE/ACM International Conference on Automated Software Engineer-
+ing, pp. 1266–1270, IEEE, June 2022.
+[30] L. Zhou, N. Yu, and M. Ying, “An applied quantum Hoare logic,” in
+Proceedings of the 40th ACM SIGPLAN Conference on Programming
+Language Design and Implementation, PLDI 2019, pp. 1149–1162,
+ACM, June 2019.
+[31] Y . Li, H. Pei, L. Huang, B. Yin, and K.-Y . Cai, “Automatic Repair
+of Quantum Programs via Unitary Operation,”ACM Trans. Softw. Eng.
+Methodol., vol. 33, pp. 154:1–154:43, June 2024.
+[32] S. Tan, L. Lu, D. Xiang, T. Chu, C. Lang, J. Chen, X. Hu, and J. Yin,
+“HornBro: Homotopy-Like Method for Automated Quantum Program
+Repair,”Proc. ACM Softw. Eng., vol. 2, pp. FSE034:734–FSE034:756,
+June 2025.
+[33] X. Guo, J. Zhao, and P. Zhao, “On Repairing Quantum Programs Using
+ChatGPT,” inProceedings of the 5th ACM/IEEE International Workshop
+on Quantum Software Engineering, Q-SE 2024, pp. 9–16, ACM, Aug.
+2024.

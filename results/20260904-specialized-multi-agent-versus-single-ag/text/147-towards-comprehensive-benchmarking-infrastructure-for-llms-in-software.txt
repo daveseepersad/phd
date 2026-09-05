@@ -1,0 +1,658 @@
+[[page 1]]
+Towards Comprehensive Benchmarking Infrastructure for LLMs
+In Software Engineering
+Daniel
+Rodriguez-Cardenas
+dhrodriguezcar@wm.edu
+William & Mary
+Williamsburg, Virginia
+USA
+Xiaochang Li
+xli59@wm.edu
+William & Mary
+Williamsburg, Virginia
+USA
+Marcos Macedo
+marcos.macedo@queensu.ca
+Queen’s University
+Kingston, Ontario, Canada
+Antonio Mastropaolo
+amastropaolo@wm.edu
+William & Mary
+Williamsburg, Virginia
+USA
+Dipin Khati
+dkhati@wm.edu
+William & Mary
+Williamsburg, Virginia
+USA
+Yuan Tian
+y.tian@queensu.ca
+Queen’s University
+Kingston, Ontario, Canada
+Huajie Shao
+hshao@wm.edu
+William & Mary
+Williamsburg, Virginia
+USA
+Denys Poshyvanyk
+dposhyvanyk@wm.edu
+William & Mary
+Williamsburg, Virginia
+USA
+Abstract
+Large language models for code are advancing fast, yet our ability
+to evaluate them lags behind. Current benchmarks focus on narrow
+tasks and single metrics, which hide critical gaps in robustness,
+interpretability, fairness, efficiency, and real-world usability. They
+also suffer from inconsistent data engineering practices, limited soft-
+ware engineering context, and widespread contamination issues. To
+understand these problems and chart a path forward, we combined
+an in-depth survey of existing benchmarks with insights gathered
+from a dedicated community workshop. We identified three core
+barriers to reliable evaluation: the absence of software-engineering-
+rich datasets, overreliance on ML-centric metrics, and the lack of
+standardized, reproducible data pipelines. Building on these find-
+ings, we introduce BEHELM, a holistic benchmarking infrastruc-
+ture that unifies software-scenario specification with multi-metric
+evaluation. BEHELM provides a structured way to assess models
+across tasks, languages, input and output granularities, and key
+quality dimensions. Our goal is to reduce the overhead currently
+required to construct benchmarks while enabling a fair, realistic,
+and future-proof assessment of LLMs in software engineering.
+CCS Concepts
+•Software and its engineering→ Software development tech-
+niques;Software development techniques;•Computing method-
+ologies→Artificial intelligence.
+Keywords
+Large Language Models, Benchmarking Infraestructure, Software
+Engineering
+ACM Reference Format:
+Daniel Rodriguez-Cardenas, Xiaochang Li, Marcos Macedo, Antonio Mas-
+tropaolo, Dipin Khati, Yuan Tian, Huajie Shao, and Denys Poshyvanyk.
+This work is licensed under a Creative Commons Attribution 4.0 International License.
+FORGE ’26, Rio de Janeiro, Brazil
+©2026 Copyright held by the owner/author(s).
+ACM ISBN 979-8-4007-2477-0/2026/04
+https://doi.org/10.1145/3793655.3793716
+2026. Towards Comprehensive Benchmarking Infrastructure for LLMs
+In Software Engineering . In2026 IEEE/ACM Third International Confer-
+ence on AI Foundation Models and Software Engineering (FORGE ’26), April
+12–13, 2026, Rio de Janeiro, Brazil.ACM, New York, NY, USA, 6 pages.
+https://doi.org/10.1145/3793655.3793716
+1 Introduction
+Large Language Models for code (LLMc) are reshaping software
+engineering workflows. Their growing capabilities allow developers
+to rely on them for tasks such as code completion [4, 7, 9, 12, 51],
+summarization [13, 19, 31], code review assistance [28, 29, 43, 44],
+traceability [30], translation [33], test generation [37, 47, 52], code
+clode detection [ 50], and bug fixing [ 8, 10, 40–42, 49, 58]. Tools
+like GitHub Copilot [ 48] and Google’s CodeBot [ 39] show how
+these models can support everyday development at scale, from
+writing small snippets to generating full functions. As a result,
+LLMc now plays a concrete role in improving developer efficiency
+and accelerating software production.
+This rapid adoption has increased the need for a reliable and
+standardized evaluation of model performance [7, 24, 25, 53]. Cur-
+rent assessment methods are heavily focused on accuracy metrics
+[6, 26, 56] and robustness metrics [45]. However, these metrics re-
+veal little about important factors such asinterpretability, efficiency,
+fairness, bias, and resilience to real-world complexity. In practice,
+we still lack a clear understanding of how LLMc behaves in vari-
+ous software engineering scenarios [22]. Existing benchmarks do
+not capture the full range of properties that influence code quality,
+leaving critical blind spots in model evaluation.
+These limitations stem from several persistent challenges in
+building and maintaining evaluation resources for LLMc. Bench-
+mark creation often requires extensive data collection and cleaning,
+careful labeling, and ongoing maintenance to keep up with model
+progress. Many datasets focus on simplified or isolated tasks, and
+few offer the kind of rich context on which developers rely in real
+projects. The problems of data leakage, inconsistent preprocessing,
+and unclear provenance further complicate a meaningful compari-
+son between studies.
+To address these challenges, this article synthesizes community
+perspectives from a workshop developed to identify the main gaps
+arXiv:2601.21070v1 [cs.SE] 28 Jan 2026
+
+[[page 2]]
+FORGE ’26, April 12–13, 2026, Rio de Janeiro, Brazil Rodriguez-Cardenas et al.
+in LLMc evaluation and proposes a novel framework to address
+them. We highlight shortcomings in current datasets, metrics, and
+data engineering practices and provide recommendations for devel-
+oping a more robust, comprehensive benchmarking infrastructure
+tailored to fundamental software engineering needs.
+This paper contributes: (1) synthesis of workshop discussions
+identifying critical infrastructure gaps[1]; (2) comprehensive survey
+of current benchmarks in SE; (3) proposes a novel holistic bench-
+mark for LLMs in SE; (4) concrete recommendations for community
+infrastructure development.
+2 Current Benchmark Landscape
+From our survey, we focus on five main SE tasks (i.e.,(1) code
+generation, (2) bug-fixing, (3) vulnerability detection, (4) test gener-
+ation, (5) Agent and Multi-Task) and the most relevant benchmarks
+reported at the leading conferences (i.e.,ICSE, ASE, FSE, TOSEM).
+(1) Code Generation Benchmarks.HumanEval(164 problems)
+andMBPP(974 problems) remain widely used despite saturation:
+the top models now exceed 90% accuracy in HumanEval, making
+it ineffective for differentiating capabilities [7].APPSoffers harder
+competitive-programming tasks, but still focuses on algorithmic
+correctness rather than software engineering [12].
+LiveCodeBenchmitigates contamination by continuously col-
+lecting problems from LeetCode, AtCoder, and CodeForces (May
+2023–present) [15]. Its 511+ tasks evaluate generation, self-repair,
+execution, and test prediction. Crucially, performance drops 15–20%
+in problems released after model training cutoffs, revealing sub-
+stantial contamination effects.
+More realistic evaluations emerge inclass-levelandrepository-
+levelbenchmarks.ClassEval(100 tasks) tests the ability to generate
+full classes [11], whileEvoCodeBench(275 samples from 25 reposi-
+tories) reduces data leakage from 41.47% to 2.18% and reports only
+20.74% Pass@1 for the best models [21], underscoring the difficulty
+of real-world tasks.
+Multi-lingual benchmarks expand the evaluation beyond Python:
+HumanEval-XandMultiPL-Espan 5–18 languages [ 6, 57], whileDS-
+1000provides 1,000 data-science–oriented problems in Python [ 18].
+Workshop insight: Small benchmarks (≈200 examples) work
+well as “smoke tests” for identifying major failures—much like polls
+detect landslides—but are insufficient for fine-tuning or compre-
+hensive capability assessment.
+(2) Bug Fixing and Program Repair.SWE-benchmarks a major
+step forward with 2,294 real GitHub issues and ground-truth fixes
+from 12 Python repositories [17]. Concerns about infeasible cases
+prompted curated subsets such asSWE-bench Verified(500 human-
+validated instances) andSWE-bench Lite(300 curated tasks) [ 36].
+Yet top models that achieve over 70% on SWE-bench Verified drop
+to just 23% on SWE-bench Pro, which uses private commercial
+codebases and recent issues [ 3]. This 47-point decline strongly
+indicates memorization rather than genuine repair capability.
+Several extensions attempt to broaden or strengthen evaluation.
+SWE-bench Javaadds 500+ Java issues [ 55],SWE-bench Multimodal
+incorporates 617 JavaScript tasks with visual components [5], and
+OSS-benchgenerates tasks dynamically from recent pull requests
+to mitigate leakage [16]. Beyond these,SWT-benchintroduces dual
+evaluation—reproducing issues via generated tests and validating
+fixes with test-based filtering—which can double the precision of
+repair agents [32].
+A key insight from the workshop is that data leakage persists
+even in “live” benchmarks because code is frequently copied be-
+tween projects. World of Code analysis show that roughly 65%
+of Python packages provide a repository, meaning that partial or
+duplicated code can reappear in multiple contexts [27]. Temporal
+filtering alone cannot prevent leakage; comprehensive supply-chain
+analysis is required in software.
+(3) Vulnerability Detection and Repair.CVEfixescompiles
+5,867 historical C/C++ CVEs (1999–2024) for statement-level vul-
+nerability localization but lacks executable exploits to confirm real-
+world exploitability [2].SecBench.JSaddresses this gap with 600
+JavaScript vulnerabilities paired with working proof-of-concept
+exploits and test oracles [20]. Its two-sided design—providing both
+vulnerable and fixed versions—revealed 18 incorrect patches during
+validation, underscoring its utility for assessing patch quality.SEC-
+benchfurther automates benchmark creation using multi-agent
+pipelines [20]. From 898 seed CVEs, it generated 200 fully verified
+instances with reproducible exploits and validated fixes at only
+$0.87per instance. Even the best LLMs remain limited, achieving
+just 49% success in PoC generation and 34% in patching.
+(4) Test Generation Benchmarks.TestGenEvalprovides 68,647
+tests spanning 1,210 code–test pairs from 11 Python repositories,
+enabling evaluation of initial test authoring, suite completion, and
+coverage improvement in real codebases [ 14].ULToffers 3,909
+high-complexity Python functions with strong contamination con-
+trols [35]. The high correlation between test-generation and code-
+generation performance (𝑟= 0.79, 𝑝= 0.002) suggests that test
+generation may serve as a reliable proxy for general coding ability.
+Complementing these,SWT-benchshows that code-repair agents
+can outperform dedicated test-generation tools [32]. With an LLM-
+optimized diff format, Pass@1 improves from 3.3% to 9.4% (and
+to 20.3% at Pass@5), although reliably reproducing failure tests
+remains a major challenge.
+(5) Agent and Multi-Task Benchmarks.CodeXGLUEoffers
+14 datasets covering 10 tasks in code-to-code, text-to-code, code-to-
+text, and text-to-text settings [26], but its scenarios and metrics re-
+main limited for modern SE needs. More specialized efforts include
+CrossCodeBench, which evaluates cross-task generalization [ 34];
+ReCode, which targets robustness [45]; andGaleras, which studies
+interpretability through causal analysis [38]. Holistic evaluations,
+such as Yuan et al. ’s study of 10 instruction-tuned LLMs across code-
+understanding and generation tasks [54], still assess only narrow
+slices of model behavior using basic metrics.
+Workshop discussions emphasized that existing benchmarks fail
+to capture real usage of modern AI-assisted development tools (e.g.,
+Cursor, Copilot, Gemini CLI). Evaluating agentic systems requires
+process-aware milestone-based assessments that track progress
+through development stages rather than relying solely on binary
+success or failure.
+3 Critical Gaps in Benchmarking Infrastructure
+This section emphasizes the identified gaps according to our paper
+survey and the viewpoint of the workshop participants’.
+
+[[page 3]]
+Towards Comprehensive Benchmarking Infrastructure for LLMs In Software Engineering FORGE ’26, April 12–13, 2026, Rio de Janeiro, Brazil
+Gap 1: Lack of Specialized SE Datasets.Most LLM datasets
+focus on source code, input/output examples, and natural language,
+while neglecting essential software engineering attributes. For pro-
+gram synthesis evaluation, researchers construct datasets from
+model input/output cases but ignore SE-specific attributes that
+are crucial for realistic evaluation. Below, we list the missing SE
+attributes:
+• Software artifacts: Repository structure, build configura-
+tions, dependency manifests
+• Process metadata: Commit histories, code review com-
+ments, issue discussions, pull request interactions
+• Quality metrics: Code complexity, maintainability indices,
+technical debt indicators
+• Context information: Project documentation, API specifi-
+cations, architectural constraints
+Natural language and source code dominate evaluation datasets,
+while software artifacts and repository metadata—containing rich
+contextual information essential for realistic code generation—are
+seldom considered. This narrow focus produces benchmarks that
+evaluate syntactic correctness without assessing whether generated
+code integrates properly into real software projects.
+Workshop participants emphasized that benchmarks should in-
+corporate the full software development lifecycle (SDLC), not just
+isolated code generation. Real developers work with existing code-
+bases, navigate complex dependencies, and follow project-specific
+conventions—none of which current benchmarks adequately cap-
+ture [27].
+Gap 2: ML Metrics vs. SE-Specific EvaluationCurrent evalua-
+tion relies heavily on machine learning metrics (accuracy, precision,
+recall, F1) and text similarity measures (BLEU, CodeBLEU) that fail
+to capture software engineering quality.
+Metric Category Common Metrics SE Limitations
+ClassificationAccuracy, Precision, Recall, F1 Binary success/failure ignores partial
+correctness and intermediate progress
+Text SimilarityBLEU, CodeBLEU Word overlap doesn’t capture semantic
+equivalence or multiple valid solutions
+Test-BasedAvgPassRatio, Test Pass Rate Passing tests doesn’t guarantee code
+quality, security, or maintainability
+Embedding-BasedBERTScore, CodeBERTScore Similarity in embedding space doesn’t
+ensure functional correctness
+CorrelationKendall-Tau, Spearman, Pearson Statistical correlation doesn’t capture
+causal relationships or interpretability
+Table 1: Limitations of current evaluation metrics for code
+generation
+Test passing alone is insufficient for evaluating model perfor-
+mance. Many problems admit multiple valid solutions, yet most
+benchmarks provide only a single reference implementation. The
+“SWE-bench Illusion” study shows that models can reach 76% context-
+free accuracy with high 𝑛-gram overlap, suggesting they rely on
+memorization rather than genuine reasoning [23]. Moreover, perfor-
+mance rankings closely follow benchmark curation—SWE Verified
+(34.9%) > SWE Full (28.7%) > SWE Extra (18.2%)—which further
+indicates that models may be learning curated solution patterns
+instead of developing broad problem-solving ability [23].
+We identify several evaluation dimensions that are largely miss-
+ing from current SE benchmarks, includinginterpretabilityto
+understand and justify a model’s code-generation process,effi-
+ciencyfor resource usage, runtime behavior, and algorithmic com-
+plexity,bias and fairnesswhether the model produces biased or
+inequitable code,robustnessto measure the performance under
+distribution shift, adversarial inputs, or rare edge cases,maintain-
+abilityfor readability, modularity, and adherence to best practices,
+andsecurityincluding vulnerability patterns, unsafe API usage,
+and injection risks.
+Workshop participants emphasized the need for intent-based
+evaluation, which acknowledges semantically equivalent solutions
+that differ syntactically [27]. When benchmarks rely on a single
+reference solution—as most currently do—models are incentivized
+to overfit to specific forms and patterns rather than demonstrating
+genuine generalization.
+Gap 3: Lack of Standardized Data Engineering Pipelines
+Existing benchmarks are constructed in highly heterogeneous ways,
+making it difficult to compare results fairly and creating substantial
+overhead. As Watson et al. argue, standardized workflows should
+explicitly document the data source, data type, and all preprocessing
+steps for both training and testing sets [46]. In practice, however,
+each research group builds its own benchmark from scratch, leading
+to duplicated infrastructure work, uneven quality standards, limited
+reproducibility due to undocumented preprocessing, and significant
+resource costs—often 50–75% of a paper’s effort is spent solely on
+dataset construction[27].
+Workshop participants repeatedly highlighted that this burden of
+benchmark construction is becoming unsustainable. The SecBench
+automation study found that 75% of project time was consumed
+by dataset creation [20]. Such inefficiency suppresses diversity and
+innovation: researchers are forced to choose between developing
+new evaluation methods or reusing existing but often inadequate
+benchmarks. Participants emphasized the need for data provenance
+tracking (to know where each datapoint originates and whether it
+appeared in training), rigorous quality-control workflows (includ-
+ing inter-rater reliability checks, expert review, and contamination
+detection), and automated pipelines for extraction, cleaning, dedu-
+plication, and validation. They also stressed the importance of stan-
+dardized data formats—covering schemas, evaluation scripts, and
+result-reporting conventions—as well as robust versioning mech-
+anisms that allow benchmarks to evolve without compromising
+reproducibility.
+4 Benchmarking Infrastructure Development
+In this section, we first discuss our findings from the workshop and
+survey results, then we formulate an infrastructure for a holistic
+evaluation framework for LLMs in SE.
+The workshop discussions revealed a clear need for a holistic
+next-generation benchmark ecosystem for SE-focused LLMs. The
+participants agreed that the current benchmarks are fragmented,
+narrow in scope, and insufficient to evaluate modern AI-driven
+development workflows. Four gaps emerged as the central motiva-
+tion.
+First, thecommunity lacks standardized data pipelines: re-
+searchers need aunified platformthat provides consistent dataset
+formats, robust provenance tracking, contamination detection, and
+high-quality annotation workflows. Second,evaluation must ex-
+pand beyond accuracyto a multi-metric framework that cap-
+tures interpretability, robustness, fairness, efficiency, security, and
+partial progress—while supporting lifecycle and milestone-based
+
+[[page 4]]
+FORGE ’26, April 12–13, 2026, Rio de Janeiro, Brazil Rodriguez-Cardenas et al.
+Software Scenario
+Clone
+Detection
+Software
+Task
+Input
+Granularity
+Output
+Granularity I/OPL
+Bug Fixing
+Code
+Generation
+Code
+Translation
+Words
+Tokens
+Incomplete
+Snippet
+Prompt
+Identifier
+Lines of Code
+Method
+File
+code-code
+code-text
+text-code
+prompt-code
+Python
+C#
+Java
+C/C++
+Scala
+CodeXGLUE
+Galeras
+HumanEval
+?
+Summarization
+Accuracy
+Interpretability
+Efficiency
+Bias
+Fairness
+Robustness
+Multi-Metric
+BEHELMCurrent Evaluation System
+Benchmark
+CodeXGLUE
+HumanEval
+Galeras
+IdBench
+Recode
+Accuracy
+Interpretability
+Metric
+Robustness
+Figure 1: Current Evaluation System vs. Infrastructure for Holistic Evaluation of LLMc.
+assessment for agentic systems. Third,sustainable benchmark-
+ingrequires an automated infrastructure, including provenance
+resources, semantic deduplication, and RL-driven mechanisms to
+generate diverse solutions and prevent overfitting. Finally, par-
+ticipants stressed the importance ofcommunity coordination,
+shared standards, and collaborative development to avoid redun-
+dant efforts and ensure that benchmarks remain relevant, diverse,
+and grounded in real-world SE practice.
+Together, these points motivate the construction of a compre-
+hensive community-driven benchmark capable of evaluating LLMs
+across the full spectrum of software engineering tasks, metrics, and
+development stages.
+BEHELM Infrastructure for Holistic Evaluation
+The BEHELM (Benchmarking for Holistic Evaluation of Large Lan-
+guage Models for Code) framework represents a comprehensive
+infrastructure designed to evaluate Large Language Models for
+code (LLMc) beyond traditional accuracy metrics. The framework,
+illustrated in Figure 1, comprises two main components: the current
+evaluation system and the proposed BEHELM infrastructure.
+The left side of the figure depicts the capabilities (and limita-
+tions) of existing benchmarking approaches. Traditional bench-
+marks such as CodeXGLUE, HumanEval, IdBench, Recode, and
+Galeras are shown mapping to narrow evaluation metrics. Specifi-
+cally, CodeXGLUE and HumanEval primarily focus onaccuracy
+metrics, IdBench is limited to accuracy evaluation, Recode empha-
+sizesrobustnessassessment, and Galeras addressesinterpretabil-
+ity. This approach demonstrates that current evaluation systems
+typically measure a single metric, failing to account for how mod-
+els perform across multiple dimensions. Each benchmark operates
+independently with its own canonical metric, lacking a unified
+framework that enables comprehensive, multi-faceted evaluation
+of LLMc capabilities across diverse software engineering scenarios.
+The right side of the Figure 1 presents BEHELM’s innovative
+approach through two interconnected components:Software Sce-
+nariospecification (labeled as 1 ) andMulti-Metricevaluation
+(labeled as 2 ).
+TheSoftware Scenariocomponent introduces a systematic
+taxonomy for defining evaluation contexts. Each scenario is decom-
+posed into five fundamental properties that control and standardize
+the evaluation environment:Software Task, which includes ac-
+tivities such as summarization, code generation, bug fixing, clone
+detection, and code translation;Programming Language (PL),
+supporting multiple languages, including Python, Java, C#, C/C++,
+and Scala;Input Granularity, which categorizes the level of de-
+tail in the input representation (incomplete snippet, tokens, words,
+or prompt);Output Granularity, defining the expected level of
+output detail (identifier, lines of code, method, or file); andI/O
+type, specifying the interaction modality between input and out-
+put (code-to-code, text-to-code, code-to-text, or prompt-to-code).
+This structured decomposition enables researchers to explicitly
+state what software properties require evaluation based on real-
+world use cases, ensuring that each LLMc is assessed in identical
+controlled settings for fair comparison.
+TheMulti-Metricevaluation component represents BEHELM’s
+holistic assessment approach, measuring six critical dimensions:
+accuracy,efficiency,interpretability,bias,fairness, andro-
+bustness. Unlike traditional benchmarks that evaluate a single
+metric in isolation, BEHELM creates a comprehensive evaluation
+space defined by the Cartesian product of software scenarios and
+metrics. This multidimensional framework enables practitioners to
+understand not only whether a model generates correct code, but
+also whether it does so efficiently, transparently, equitably, and re-
+liably across diverse conditions. The figure illustrates how specific
+benchmarks (CodeXGLUE, HumanEval, Galeras) can be positioned
+within this framework, with some scenarios lacking comprehensive
+metric coverage (indicated by question marks), highlighting gaps
+that BEHELM addresses through its unified infrastructure.
+5 Conclusions and Future Work
+The workshop identified threecritical gapsthat hinder compre-
+hensive LLM evaluation for software engineering: first, the lack
+of specialized SE datasets that incorporate software artifacts and
+process metadata; second, inadequate metrics that overemphasize
+accuracy while neglecting interpretability, efficiency, fairness, and
+
+[[page 5]]
+Towards Comprehensive Benchmarking Infrastructure for LLMs In Software Engineering FORGE ’26, April 12–13, 2026, Rio de Janeiro, Brazil
+robustness; and third, the absence of standardized data engineering
+pipelines for benchmark creation.
+We formulated a holistic framework to addressthree critical
+research questions: (1) How to create realistic code editing/refac-
+toring benchmarks? (2) How to perform intent-based evaluation
+beyond test-passing? (3) How to benchmark modern AI-assisted
+development tools in real usage scenarios?
+We plan for BEHELM to bring current benchmarks together
+while enabling the creation of new ones, offering a coordinated
+framework for evaluating LLMs in software engineering. As a cen-
+tral hub, BEHELM will provide standardized tools for profiling,
+comparing, and debugging model behavior across SE tasks.
+6 Acknowledgments
+We want to thank the workshop participants for their active en-
+gagement, insightful discussions, and constructive feedback. Their
+perspectives greatly enriched the ideas presented in this work and
+helped shape several of the directions we explore.
+References
+[1] [n. d.]. Benchmarking repository. https://anonymous.4open.science/status/
+benchmarking-repo-70FA. Accessed: 2025-11-24.
+[2] Md Basim Uddin Ahmed, et al. 2025. SecVulEval: Benchmarking LLMs for Real-
+World C/C++ Vulnerability Detection. arXiv:cs.SE/2505.19828 https://arxiv.org/
+abs/2505.19828
+[3] Scale AI. 2025. SWE-Bench Pro (Public Dataset). https://scale.com/leaderboard/
+swe_bench_pro_public. Accessed: 2025-11-21.
+[4] Jacob Austin, et al . 2021. Program Synthesis with Large Language Models.
+arXiv:cs.PL/2108.07732
+[5] SWE bench Team. 2024. SWE-bench Multimodal. https://www.swebench.com.
+Accessed: 2025-11-21.
+[6] Federico Cassano, et al. 2022. MultiPL-E: A Scalable and Extensible Approach to
+Benchmarking Neural Code Generation. arXiv:cs.LG/2208.08227 https://arxiv.
+org/abs/2208.08227
+[7] Mark Chen, et al. 2021. Evaluating Large Language Models Trained on Code.
+arXiv preprint arXiv:2107.03374(2021). https://arxiv.org/abs/2107.03374
+[8] Zimin Chen, et al. 2021. SequenceR: Sequence-to-Sequence Learning for End-
+to-End Program Repair.IEEE Transactions on Software Engineering47, 9 (2021).
+https://doi.org/10.1109/TSE.2019.2940179
+[9] Matteo Ciniselli, et al. 2022. An Empirical Study on the Usage of Transformer
+Models for Code Completion.IEEE Transactions on Software Engineering48, 12
+(2022). https://doi.org/10.1109/TSE.2021.3128234
+[10] A. Connor, et al. 2022. Can We Automatically Fix Bugs by Learning Edit Opera-
+tions?. In2022 IEEE International Conference on Software Analysis, Evolution and
+Reengineering (SANER). https://doi.org/10.1109/SANER53432.2022.00096
+[11] Xueying Du, et al. 2023. ClassEval: A Manually-Crafted Benchmark for Evaluating
+LLMs on Class-level Code Generation. arXiv:cs.CL/2308.01861
+[12] Dan Hendrycks, et al . 2021. Measuring Coding Challenge Competence With
+APPS.NeurIPS(2021).
+[13] Yasir Hussain, et al. 2020. Deep Transfer Learning for Source Code Modeling.
+Int. J. Softw. Eng. Knowl. Eng.30 (2020).
+[14] Kush Jain, et al. 2025. TestGenEval: A Real World Unit Test Generation and Test
+Completion Benchmark. arXiv:cs.SE/2410.00752 https://arxiv.org/abs/2410.00752
+[15] Naman Jain, et al. 2024. LiveCodeBench: Holistic and Contamination Free Eval-
+uation of Large Language Models for Code.arXiv preprint arXiv:2403.07974
+(2024).
+[16] Yuancheng Jiang, et al. 2025. OSS-Bench: Benchmark Generator for Coding LLMs.
+arXiv:cs.SE/2505.12331 https://arxiv.org/abs/2505.12331
+[17] Carlos E. Jimenez, et al. 2024. SWE-bench: Can Language Models Resolve Real-
+World GitHub Issues? arXiv:cs.CL/2310.06770 https://arxiv.org/abs/2310.06770
+[18] Yuhang Lai, et al. 2022. DS-1000: A Natural and Reliable Benchmark for Data
+Science Code Generation.ArXivabs/2211.11501 (2022).
+[19] Alexander LeClair, et al. 2021. Ensemble Models for Neural Source Code Sum-
+marization of Subroutines. http://arxiv.org/abs/2107.11423 arXiv:2107.11423
+[cs].
+[20] Hwiwon Lee, et al. 2025. SEC-bench: Automated Benchmarking of LLM Agents
+on Real-World Software Security Tasks. arXiv:cs.LG/2506.11791 https://arxiv.
+org/abs/2506.11791
+[21] Jia Li, et al. 2024. EvoCodeBench: an evolving code generation benchmark with
+domain-specific evaluations. InProceedings of the 38th International Conference
+on Neural Information Processing Systems (NIPS ’24). Article 1837, 23 pages.
+[22] Percy Liang, et al. 2022. Holistic Evaluation of Language Models. http://arxiv.
+org/abs/2211.09110 arXiv:2211.09110 [cs].
+[23] Shanchao Liang, et al. 2025. The SWE-Bench Illusion: When State-of-the-Art
+LLMs Remember Instead of Reason. arXiv:cs.AI/2506.12286 https://arxiv.org/
+abs/2506.12286
+[24] Chao Liu, et al . 2023. Improving ChatGPT Prompt for Code Generation.
+arXiv:cs.SE/2305.08360
+[25] Jiawei Liu, et al . 2023. Is Your Code Generated by ChatGPT Really Cor-
+rect? Rigorous Evaluation of Large Language Models for Code Generation.
+arXiv:cs.SE/2305.01210
+[26] Shuai Lu, et al. 2021. CodeXGLUE: A Machine Learning Benchmark Dataset for
+Code Understanding and Generation. arXiv:cs.SE/2102.04664 https://arxiv.org/
+abs/2102.04664
+[27] Yuxing Ma, et al. 2021. World of code: Enabling a research workflow for min-
+ing and analyzing the universe of open source vcs data.Empirical Software
+Engineering26, 2 (2021).
+[28] Antonio Mastropaolo, et al . 2023. Using Transfer Learning for Code-Related
+Tasks.IEEE Transactions on Software Engineering49, 4 (2023). https://doi.org/10.
+1109/TSE.2022.3183297
+[29] Antonio Mastropaolo, et al. 2021. Studying the Usage of Text-To-Text Transfer
+Transformer to Support Code-Related Tasks. arXiv:cs.SE/2102.02017 https:
+//arxiv.org/abs/2102.02017
+[30] Kevin Moran, et al . 2020. Improving the effectiveness of traceability link re-
+covery using hierarchical bayesian networks. InProceedings of the ACM/IEEE
+42nd International Conference on Software Engineering (ICSE ’20). 13. https:
+//doi.org/10.1145/3377811.3380418
+[31] Kevin Moran, et al . 2022. An Empirical Investigation into the Use of Image
+Captioning for Automated Software Documentation. https://doi.org/10.1109/
+SANER53432.2022.00069
+[32] Niels Mündler, et al. 2025. SWT-Bench: Testing and Validating Real-World Bug-
+Fixes with Code Agents. arXiv:cs.SE/2406.12952 https://arxiv.org/abs/2406.12952
+[33] Anh Tuan Nguyen, et al. 2015. Graph-based statistical language model for code
+(ICSE ’15). 11.
+[34] Changan Niu, et al. 2023. CrossCodeBench: Benchmarking Cross-Task General-
+ization of Source Code Models. arXiv:cs.SE/2302.04030 https://arxiv.org/abs/
+2302.04030
+[35] SP Oh, et al. 2022. Unit Level Traceability (ULT) Development and Implementation
+For High Level Tracebility In Semicon Assembly & Test Manufacturing. In2022
+IEEE 39th International Electronics Manufacturing Technology Conference (IEMT).
+https://doi.org/10.1109/IEMT55343.2022.9969493
+[36] OpenAI, et al. 2024. Introducing SWE-bench Verified. https://openai.com/index/
+introducing-swe-bench-verified/. Accessed: 2025-11-21.
+[37] Veselin Raychev, et al. 2014. Code completion with statistical language models. In
+Proceedings of the 35th ACM SIGPLAN Conference on Programming Language De-
+sign and Implementation (PLDI ’14). 10. https://doi.org/10.1145/2594291.2594321
+[38] Daniel Rodriguez-Cardenas, et al. 2023. Benchmarking Causal Study to Interpret
+Large Language Models for Source Code. In2023 IEEE International Confer-
+ence on Software Maintenance and Evolution (ICSME). https://doi.org/10.1109/
+ICSME58846.2023.00040
+[39] Doug Rosenberg, et al. 2020. CodeBots: Teaching Software Engineering with
+Autonomous Coding Agents. InIEEE/ACM 42nd International Conference on
+Software Engineering: Software Engineering Education and Training (ICSE-SEET).
+https://doi.org/10.1145/3377811.3380416
+[40] Michele Tufano, et al. 2019. On learning meaningful code changes via neural
+machine translation. InProceedings of the 41st International Conference on Software
+Engineering (ICSE ’19). 12. https://doi.org/10.1109/ICSE.2019.00021
+[41] Michele Tufano, et al. 2019. An Empirical Study on Learning Bug-Fixing Patches
+in the Wild via Neural Machine Translation.ACM Trans. Softw. Eng. Methodol.
+28, 4, Article 19 (sep 2019), 29 pages. https://doi.org/10.1145/3340544
+[42] M. Tufano, et al. 2019. Learning How to Mutate Source Code from Bug-Fixes.
+In2019 IEEE International Conference on Software Maintenance and Evolution
+(ICSME). https://doi.org/10.1109/ICSME.2019.00046
+[43] Rosalia Tufano, et al. 2022. Using pre-trained models to boost code review automa-
+tion. InProceedings of the 44th International Conference on Software Engineering
+(ICSE ’22). 12. https://doi.org/10.1145/3510003.3510621
+[44] Rosalia Tufano, et al . 2021. Towards Automating Code Review Activities. In
+Proceedings of the 43rd International Conference on Software Engineering (ICSE
+’21). 12. https://doi.org/10.1109/ICSE43902.2021.00027
+[45] Shiqi Wang, et al. 2022. ReCode: Robustness Evaluation of Code Generation
+Models. http://arxiv.org/abs/2212.10264 arXiv:2212.10264 [cs].
+[46] Cody Watson, et al. 2022. A Systematic Literature Review on the Use of Deep
+Learning in Software Engineering Research.ACM Trans. Softw. Eng. Methodol.
+31, 2, Article 32 (March 2022), 58 pages. https://doi.org/10.1145/3485275
+[47] Cody Watson, et al. 2020. On learning meaningful assert statements for unit test
+cases. InProceedings of the ACM/IEEE 42nd International Conference on Software
+Engineering (ICSE ’20). 12. https://doi.org/10.1145/3377811.3380429
+
+[[page 6]]
+FORGE ’26, April 12–13, 2026, Rio de Janeiro, Brazil Rodriguez-Cardenas et al.
+[48] Michel Wermelinger. 2023. Using GitHub Copilot to Solve Simple Programming
+Problems. InProceedings of the 54th ACM Technical Symposium on Computer
+Science Education (SIGCSE). https://doi.org/10.1145/3545945.3569830
+[49] Martin White, et al. 2019. Sorting and Transforming Program Repair Ingredients
+via Deep Learning Code Similarities . In2019 IEEE 26th International Conference
+on Software Analysis, Evolution and Reengineering (SANER). https://doi.org/10.
+1109/SANER.2019.8668043
+[50] Martin White, et al . 2016. Deep learning code fragments for code clone de-
+tection. In2016 31st IEEE/ACM International Conference on Automated Software
+Engineering (ASE).
+[51] Martin White, et al. 2015. Toward deep learning software repositories. InPro-
+ceedings of the 12th Working Conference on Mining Software Repositories (MSR
+’15). 12.
+[52] Robert White, et al. 2020. ReAssert: Deep Learning for Assert Generation. http:
+//arxiv.org/abs/2011.09784 arXiv:2011.09784 [cs].
+[53] Frank F. Xu, et al. 2022. A Systematic Evaluation of Large Language Models of
+Code. http://arxiv.org/abs/2202.13169 arXiv:2202.13169 [cs].
+[54] Zhiqiang Yuan, et al. 2023. Evaluating Instruction-Tuned Large Language Models
+on Code Comprehension and Generation. arXiv:cs.CL/2308.01240 https://arxiv.
+org/abs/2308.01240
+[55] Daoguang Zan, et al. 2024. SWE-bench-java: A GitHub Issue Resolving Bench-
+mark for Java. arXiv:cs.SE/2408.14354 https://arxiv.org/abs/2408.14354
+[56] Wojciech Zaremba, et al. 2021. OpenAI Codex. https://openai.com/blog/openai-
+codex/
+[57] Qinkai Zheng, et al. 2023. CodeGeeX: A Pre-Trained Model for Code Generation
+with Multilingual Benchmarking on HumanEval-X. InProceedings of the 29th
+ACM SIGKDD Conference on Knowledge Discovery and Data Mining.
+[58] Yaqin Zhou, et al . 2019. Devign: Effective Vulnerability Identification by
+Learning Comprehensive Program Semantics via Graph Neural Networks.
+arXiv:cs.SE/1909.03496 https://arxiv.org/abs/1909.03496

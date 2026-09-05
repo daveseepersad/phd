@@ -1,0 +1,2870 @@
+[[page 1]]
+Received 30 January 2026, accepted 9 February 2026, date of publication 12 February 2026, date of current version 19 February 2026.
+Digital Object Identifier 10.1 109/ACCESS.2026.3664226
+Minimizing Response Latency in LLM-Based
+Agent Systems: A Comprehensive Survey
+GYEONGMUK PARK
+ 1, SEONGHYEON LEE
+ 2, AND YEONSU PARK
+ 1,3
+1Graduate School of Data Science, Kangwon National University, Chuncheon 24341, Republic of Korea
+2School of Computer Science and Engineering, Kyungpook National University, Daegu, Republic of Korea
+3Department of Computer Science and Engineering, Kangwon National University, Chuncheon 24341, Republic of Korea
+Corresponding authors: Y eonsu Park (yeonsu.park@kangwon.ac.kr) and Seonghyeon Lee (sh0416@knu.ac.kr)
+This work was supported by the National Research Foundation of Korea (NRF) grant funded by Korean Government (MSIT)
+under Grant RS-2023-00242528 and Grant RS-2025-00513098.
+ABSTRACT The advent of Large Language Model (LLM)-based agent systems represents a significant
+paradigm shift in Artificial Intelligence, enabling unprecedented capabilities in autonomous reasoning,
+planning, and interaction. However, the transformative potential of these agents is fundamentally constrained
+by a critical operational challenge: high response latency. This latency, which impairs usability, restricts
+real-time applicability, and challenges economic viability, is a paramount barrier to their widespread
+adoption in complex, real-world scenarios. This survey provides a comprehensive and structured analysis
+of the multifaceted latency problem in LLM-based agent systems. We present a structured taxonomy that
+deconstructs end-to-end latency into its constituent sources, offering a holistic view of the entire agent
+stack. Our review spans four primary layers of optimization: 1) Core LLM Inference, covering techniques
+to accelerate the foundational model, including quantization, pruning, efficient attention mechanisms, and
+speculative decoding; 2) Agent-Level Frameworks, detailing strategies to refine the agent’s cognitive loop,
+such as accelerating planning cycles, optimizing tool use, and implementing latency-aware memory man-
+agement; 3) System-Level and Infrastructure, encompassing optimizations for the underlying deployment
+environment, including advanced serving systems, hardware acceleration, dynamic resource allocation,
+and distributed architectures; and 4) Multi-Agent Systems, addressing specialized methods for mitigating
+communication and coordination overhead in collaborative agent ensembles. We identify key unresolved
+challenges and outline promising future research directions—including hardware-software co-design, novel
+agent architectures, and AI-driven system orchestration—to guide the ongoing quest for ultra-low latency
+intelligent systems.
+INDEX TERMS Latency optimization, LLM-based agents, multi-agent systems, system performance.
+I. INTRODUCTION
+The advent of Large Language Models (LLMs) has catalyzed
+a paradigm shift in Artificial Intelligence (AI), enabling
+a new class of LLM-based agent systems that exhibit
+unprecedented capabilities in reasoning, planning, and natu-
+ral language interaction [1], [2], [3]. These systems, which
+leverage LLMs as their core cognitive engine, mark a sig-
+nificant departure from traditional AI agents often limited
+by brittle, domain-specific algorithms [4], [5]. However, this
+The associate editor coordinating the review of this manuscript and
+approving it for publication was Wei Y e
+ .
+transformative potential is frequently constrained by a critical
+operational challenge: high response latency. The inherent
+computational demands of LLMs, compounded by the com-
+plexities of agentic frameworks involving memory, planning,
+and tool interactions, can lead to delays that significantly
+impair usability, restrict real-time applicability, reduce task
+efficiency, and challenge economic viability [6], [7], [8].
+Minimizing this latency is therefore not merely an opti-
+mization but a paramount concern for unlocking the full
+utility of LLM-based agent systems. This survey provides
+a comprehensive analysis of latency sources and mitigation
+strategies across the entire agent system stack, aiming to
+26140
+
+ 2026 The Authors. This work is licensed under a Creative Commons Attribution 4.0 License.
+For more information, see https://creativecommons.org/licenses/by/4.0/ VOLUME 14, 2026
+
+[[page 2]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+equip researchers and practitioners with the knowledge to
+build more responsive and effective systems.
+LLM-based agent systems distinguish themselves from
+traditional AI by employing LLMs as the central processing
+unit for cognitive tasks previously handled by disparate, often
+hand-engineered modules [2], [9]. This architectural shift
+introduces novel capabilities but simultaneously creates intri-
+cate operational pathways where latency can accumulate. Key
+differentiators that contribute to both enhanced functionality
+and potential delays include: (1) Natural Language as the
+Primary Interface, enabling intuitive interaction but requiring
+LLM processing for understanding and generation [10], [11];
+(2) Inherent Knowledge and Reasoning, where LLMs pro-
+vide vast world knowledge and emergent reasoning, reducing
+explicit programming but involving computationally inten-
+sive inference [1], [12]; and (3) Generalized Planning and
+Decision-Making, allowing flexible task decomposition and
+execution based on LLM capabilities, but often entailing
+iterative model consultations [13], [14]. To realize these func-
+tions, LLM-based agents typically integrate an LLM Core
+(the cognitive engine), Memory Modules (for context and
+learning, often involving retrieval from external stores) [15],
+[16], Planning Capabilities (for task decomposition and strat-
+egy formulation) [13], [17], and Tool Utilization mechanisms
+(for interacting with external systems and APIs) [11], [18].
+Each component and its interactions within the agent’s oper-
+ational loop—perceiving, thinking, and acting—represent a
+potential source of latency, making the system’s architecture
+a critical determinant of overall responsiveness.
+The architectural arrangement of an LLM-based agent’s
+core components fundamentally shapes its operational
+workflow and, consequently, its latency profile, whether
+configured as a single entity or a complex multi-agent
+system (MAS) [11], [19]. Simpler Single-Agent Archi-
+tectures utilize a solitary LLM to orchestrate perception,
+planning, memory access, and tool use [20]. While suitable
+for many tasks, latency in these systems arises from the
+sequential or iterative execution of LLM inference, mem-
+ory retrieval, and tool interactions [21], [22]. In contrast,
+Multi-Agent Architectures distribute cognitive load across
+multiple LLMs, often specialized for distinct roles (e.g.,
+planning, execution, critique) or collaborating hierarchically
+or as peers to tackle more complex problems [23], [24],
+[25], [26]. While enabling sophisticated capabilities like
+simulated social dynamics or large-scale problem decomposi-
+tion [27], [28], [29], these architectures introduce significant
+inter-agent communication overhead and synchronization
+challenges as new latency sources [30]. Regardless of the
+paradigm, these architectures empower agents to engage in
+complex problem-solving, interact with dynamic environ-
+ments (e.g., websites, operating systems) [31], [32], and even
+process multi-modal inputs [33]. However, each architectural
+choice dictates a unique sequence of operations—LLM calls,
+memory operations, tool invocations, and potentially inter-
+agent messaging—that collectively contribute to the system’s
+end-to-end latency, highlighting the need for targeted opti-
+mization strategies.
+Response latency in LLM-based agent systems, broadly
+defined as the total time from an initial trigger to the agent’s
+final output or action, is a critical performance character-
+istic whose minimization is paramount for practical utility.
+It manifests in various forms, including End-to-End Task
+Latency (total time to complete a goal [34]), Time-To-First-
+Token (TTFT) (delay until response generation begins [35]),
+and Time-Per-Output-Token (TPOT) (speed of subsequent
+token generation [35]). High latency across these metrics
+profoundly degrades system performance and viability in
+several key dimensions:
+• Usability and user experience (UX): Slow responses
+lead to unnatural interactions, user frustration, and
+reduced engagement, hindering adoption even if the
+final output is high quality [36], [37], [38].
+• Real-time applicability: Many envisioned applica-
+tions in robotics, autonomous systems, gaming, and
+time-sensitive decision support are fundamentally con-
+strained by latency, rendering slow agents ineffective or
+unsafe [39], [40], [41].
+• Task efficiency and throughput: Agents performing
+multi-step reasoning, planning, or iterative refinement
+suffer from accumulated delays, significantly extend-
+ing task completion times and reducing overall system
+throughput [42], [43].
+• Economic viability and scalability: Prolonged compu-
+tational resource occupancy (e.g., GPUs) due to high
+latency translates directly to increased operational costs
+and reduced capacity to serve multiple users or tasks
+affordably [8], [44].
+These pervasive negative impacts elevate latency from a mere
+inconvenience to a fundamental barrier, making its mitiga-
+tion a primary research and engineering imperative for the
+successful deployment of LLM-based agent systems.
+Effectively mitigating response latency requires a deep
+understanding of its diverse origins within the LLM-based
+agent system’s architecture and operational flow. Total
+response latency (L total) is not monolithic but rather a com-
+posite of delays stemming from various stages of agent
+operation. Ltotal in an LLM-based agent system is primar-
+ily a function of latencies arising from: (a) Core LLM
+Inference (L LLM )), encompassing prompt prefill and autore-
+gressive token decoding [45], [46]; (b) Agent Framework
+Overhead (Lframework)), including internal logic for planning,
+reasoning, memory management, and tool selection [1], [11];
+(c) Communication Delays (L comm), involving data transfer
+within distributed inference setups, network calls to external
+tools/APIs, or inter-agent messaging in MASs [23], [47]; and
+(d) System-Level Bottlenecks (Lsystem), such as request queu-
+ing, scheduling inefficiencies, resource contention (GPU,
+CPU, memory bandwidth), and I/O operations [6], [48].
+This multi-faceted nature, where delays can originate from
+the foundational model to the supporting infrastructure,
+VOLUME 14, 2026 26141
+
+[[page 3]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+TABLE 1. Key latency components and their causes in LLM-based agent systems. This table categorizes the core components of overall latency as
+described in Section II.
+necessitates a comprehensive survey of optimization tech-
+niques targeting each distinct source to achieve holistic
+latency reduction.
+A. SURVEY METHODOLOGY
+To ensure a comprehensive and structured review, we con-
+ducted a thorough literature search across major academic
+databases, including Google Scholar, arXiv, ACM Digital
+Library, and IEEE Xplore. Our search strategy employed
+a combination of keywords such as ‘‘LLM agent latency,’’
+‘‘large language model performance,’’ ‘‘agent system opti-
+mization,’’ ‘‘speculative decoding,’’ ‘‘KV cache optimiza-
+tion,’’ ‘‘multi-agent communication overhead,’’ and ‘‘LLM
+serving systems.’’ We primarily focused on peer-reviewed
+conference and journal articles, as well as influential
+pre-prints published from 2022 to the present, to capture
+the rapidly evolving state-of-the-art. The selection process
+involved an initial screening of titles and abstracts, fol-
+lowed by a full-text review to include studies that directly
+address latency reduction in LLM-based agent systems.
+Papers focusing exclusively on LLM training, non-agent sys-
+tems, or theoretical aspects without practical performance
+implications were excluded. The selected literature was then
+categorized and synthesized into the four-layer taxonomy
+presented in this survey: Core LLM Inference, Agent-
+Level Frameworks, System-Level and Infrastructure, and
+Multi-Agent Systems.
+This survey provides a comprehensive analysis of state-
+of-the-art techniques to minimize response latency in
+LLM-based agent systems, offering unique contributions to
+guide research and practice in this critical area. The primary
+objective is to identify, categorize, and review strategies for
+latency reduction across all facets of agent operation, from
+core model execution to complex multi-agent interactions.
+The scope encompasses optimizations at the level of: (1)
+Core LLM inference (e.g., compression, efficient architec-
+tures, decoding algorithms) [6], [49]; (2) Agent-level logic
+(e.g., planning, tool use, memory management) [13], [15];
+(3) System infrastructure (e.g., serving systems, hardware
+acceleration, resource management) [50], [51]; and (4) MASs
+(e.g., communication, coordination) [23]. This survey makes
+the following key contributions: it offers a consolidated
+knowledge base for a rapidly evolving and critical problem;
+it presents a structured taxonomy of latency sources and mit-
+igation techniques spanning the full agent stack; it provides
+experimental validation of core optimization techniques; and
+it identifies significant unresolved challenges and promis-
+ing future research directions towards achieving ultra-low
+latency.
+The practical significance of this challenge extends far
+beyond technical benchmarks: LLM-based systems are
+increasingly deployed across diverse real-world domains
+that directly affect everyday life. These include clinical
+decision support, automated educational assessment using
+zero-shot LLM inference [52], mental health monitoring
+through social media analysis [53], multimodal disaster iden-
+tification in low-resource settings [54], and misinformation
+detection [55]. In such applications, response latency directly
+impacts user safety, decision quality, and operational cost—
+for instance, a healthcare agent that takes minutes to respond
+may compromise patient outcomes, while a disaster-response
+agent must process multimodal inputs in near real-time to be
+actionable. These practical demands underscore the critical
+importance of the optimization techniques surveyed in this
+work.
+To ground our discussion, we will use a running example
+throughout this survey: a ‘Healthcare Diagnostic Agent’. This
+agent’s task is to respond to a user query like, ‘Evaluate my
+symptoms.’ The agent must understand the request, decom-
+pose it (e.g., 1. Check Guidelines, 2. Find Appointments,
+3. V erify Drug Interactions), interact with multiple external
+tools (e.g., a medical DB API, a hospital API, and a phar-
+macy API), synthesize the results, and generate a coherent
+care plan. The end-to-end latency of this process—from the
+user’s query to the final care plan—is a critical determinant
+of its usability, especially in time-sensitive health inquiries.
+A delay of many minutes would render such an agent imprac-
+tical and potentially unsafe. This example will illustrate the
+various sources of latency and the impact of optimization
+strategies at each layer of the agent stack.
+26142 VOLUME 14, 2026
+
+[[page 4]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+FIGURE 1. Latency component breakdown.
+The remainder of this paper is organized as follows:
+Section II details the characterization and deconstruction of
+latency sources. Section III focuses on core LLM inference
+optimization techniques. Section IV examines agent-level
+strategies for enhanced responsiveness. Section V explores
+system-level and infrastructure optimizations. Section VI
+addresses latency in MASs. Finally, Section VII synthesizes
+findings, outlines open challenges and future research direc-
+tions, and offers concluding remarks. This exploration aims
+to equip researchers and practitioners with the knowledge
+to build more responsive, efficient, and capable LLM-based
+agent systems.
+II. CHARACTERIZING AND DECONSTRUCTING LATENCY
+IN LLM AGENT SYSTEMS
+To effectively minimize latency in LLM-based agent sys-
+tems, a precise understanding of its constituent components
+is essential, as optimizing isolated parts may yield subopti-
+mal overall improvements if primary bottlenecks elsewhere
+in the agentic workflow are ignored. This section decon-
+structs the end-to-end response latency by defining its
+scope and then analyzing it into five primary source cat-
+egories: core LLM inference, agent framework overhead,
+tool and API interactions, broader communication delays,
+and system-level bottlenecks. Table 1 summarizes these key
+components, their definitions, and their primary influencing
+factors. Figure 1 illustrates the general operational loop and
+the interplay of these abstract latency components. To make
+these abstract components concrete, we will use our run-
+ning example, the ‘Healthcare Diagnostic Agent’. Figure 2
+shows a simplified operational workflow for this specific
+agent, instantiating the concepts from Figure 1. This struc-
+tured characterization provides the analytical foundation for
+the targeted optimization strategies discussed in subsequent
+sections.
+A. DEFINING THE SCOPE: END-TO-END LATENCY IN
+AGENT SYSTEMS
+End-to-end response latency in LLM-based agent systems
+encompasses the total duration from an initial trigger—
+such as a user request or environmental change—to the
+agent’s final response or completed action [11]. This holis-
+tic metric is critical as it reflects the true user-perceived
+delay and overall system efficiency, unlike isolated LLM
+inference time. Latency accumulates throughout a typical
+agent interaction flow, which generally involves: (1) request
+reception and parsing; (2) an initial cognitive cycle, often
+involving LLM calls for goal understanding and high-level
+planning [13], [18]; (3) iterative loops of detailed plan-
+ning, task decomposition [17], [56], memory operations
+(retrieval/storage) [15], [16], tool selection and execu-
+tion [28], [57], information synthesis, and reflection [58],
+[59]; and finally, (4) response generation or final action exe-
+cution. Understanding this comprehensive operational lifecy-
+cle, where delays compound across multiple computational
+and interactional stages, is fundamental for identifying and
+addressing the most significant contributors to overall agent
+latency.
+B. CORE LLM INFERENCE LATENCY: THE FOUNDATION
+BOTTLENECK
+The core LLM inference process, responsible for an agent’s
+understanding, reasoning, and generation capabilities [11],
+[19], represents a foundational latency bottleneck. This infer-
+ence time (L LLM ) primarily consists of two phases: the
+prefill phase, where input prompt tokens are processed in
+VOLUME 14, 2026 26143
+
+[[page 5]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+FIGURE 2. A simplified operational workflow for our running example, the ‘healthcare diagnostic agent’ . This flowchart illustrates how different latency
+components (L framework , Ltool , LLLM ) accumulate during a multi-step task. Each step in the execution loop involves framework overhead for
+decision-making and tool latency for external interactions, culminating in a final LLM inference stage to generate the response.
+FIGURE 3. The two phases of LLM inference and their latency metrics.
+parallel to compute initial Key-V alue (KV) cache states, and
+the subsequent decoding phase, where output tokens are
+generated autoregressively (serially)[46], [48]. Figure 3 visu-
+ally breaks down these two phases and their corresponding
+latency metrics. Prefill latency is typically compute-bound,
+scaling with input sequence length and model size, and
+significantly impacts the TTFT [60], [61], [62]. Decoding
+latency is often memory-bandwidth bound due to repeated
+KV cache access, scales with the number of generated
+tokens, and primarily determines the TPOT, which measures
+the generation speed of subsequent tokens [60], [63], [64].
+Techniques designed to accelerate this process, such as
+advanced quantization and efficient KV cache management,
+can yield substantial performance improvements, as will
+be demonstrated with concrete benchmarks in Section III
+(see Table 2). Larger models and longer sequences gen-
+erally increase latency in both phases [65], [66], making
+core LLM execution a dominant factor in overall agent
+responsiveness that necessitates targeted optimization. In
+our Healthcare Agent example (Figure 2), LLLM is incurred
+26144 VOLUME 14, 2026
+
+[[page 6]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+when the agent first forms a ‘‘diagnostic plan’’ from the
+user’s ‘‘Evaluate my symptoms’’ request, and most sig-
+nificantly, when it generates the final ‘‘care plan’’ (e.g.,
+‘‘Base on your symptoms. . . ’’) after gathering all necessary
+information.
+C. AGENT FRAMEWORK OVERHEAD: THE COST OF
+AUTONOMY
+Beyond core LLM inference, the agent’s internal operational
+logic—its framework for planning, memory management,
+and tool handling—introduces significant computational
+overhead, termed the ‘‘cost of autonomy’’ (L framework) [3].
+This latency arises from several key activities: (1) Task plan-
+ning and reasoning cycles, which involve decomposing goals,
+formulating strategies using heuristics or dedicated LLM
+calls, iterative refinement, reflection, and self-correction[67],
+[68], [69], [70]; (2) Memory management operations, includ-
+ing context window maintenance through summarization
+or selective retrieval from short-term and long-term mem-
+ory stores (e.g., vector databases), and state updates [15],
+[71]; and (3) Tool selection and parameter determination,
+where the agent identifies appropriate external tools, possibly
+via LLM consultation, and prepares necessary inputs [9],
+[42], [72]. These internal framework computations, occurring
+between or alongside LLM calls, contribute substantially
+to end-to-end latency and require specific optimization
+strategies. For the Healthcare Agent, Lframework represents the
+time spent between API calls, where the agent’s logic decides
+which tool to use next (e.g., choosing ‘Appointment search’
+after ‘Clinical guide’) and processes the results from the
+previous step (Figure 2).
+D. TOOL USE AND EXTERNAL API INTERACTION LATENCY
+Interactions with external tools and Application Program-
+ming Interfaces (APIs) are vital for LLM agents to ground
+their actions and access specialized functionalities [32],
+[73], but these introduce distinct latency components ( Ltool).
+This overall tool interaction latency comprises three main
+parts: (1) Network delay, characterized by the Round-Trip
+Time (RTT) for the API request and response, influenced
+by factors like distance and network congestion [74], [75],
+[76]; (2) Tool/API execution time, which is the dura-
+tion the external service takes to process the request,
+varying widely with tool complexity and workload [77],
+[78]; and (3) Framework overhead for interaction man-
+agement, encompassing local processing for request mar-
+shalling/serialization, response parsing/deserialization, and
+robust error handling [32]. The cumulative impact of these
+delays can be substantial, particularly for agents heavily
+reliant on sequential or frequent tool invocations, making
+optimization of the entire tool-use cycle crucial for respon-
+sive performance. Healthcare Agent’s Ltool is the sum of the
+time spent waiting for external APIs to return clinical guide-
+lines, hospital appointments, and drug interaction results
+(Figure 2).
+E. COMMUNICATION DELA YS: NETWORKING AND DATA
+TRANSFER
+Communication overheads (L comm), distinct from API call
+RTTs, arise from the movement of data within the agent sys-
+tem’s infrastructure and between its distributed components,
+significantly impacting latency. These delays manifest in
+three primary contexts: (1) Internal data transfer in distributed
+LLM inference, where transferring model parameters, acti-
+vations, and KV cache states across multiple GPUs or nodes
+via interconnects (e.g., NVLink, InfiniBand) introduces sub-
+stantial overhead, especially for large models [46], [80], [81];
+(2) External data transfer with tools/APIs, where latency is
+incurred from serializing/deserializing large data payloads
+exchanged with external services, compounding network
+transit times [82], [83]; and (3) Inter-agent communication in
+MAS, where message passing between collaborating agents
+over networks introduces delays due to protocol inefficiency,
+message volume, and synchronization requirements [23],
+[84], [85]. Optimizing these diverse data transfer pathways
+is essential for mitigating communication-induced latency
+across the agent system. If the Healthcare Agent’s inference
+is distributed across multiple GPUs, Lcomm would be the time
+taken to transfer KV cache states between them during the
+final response generation (Figure 2).
+F. SYSTEM-LEVEL BOTTLENECKS: SCHEDULING,
+CONTENTION, AND INFRASTRUCTURE
+The underlying system-level infrastructure introduces criti-
+cal latency bottlenecks (L system) related to request handling,
+resource allocation, and hardware limitations, often defining
+the practical ceiling for agent responsiveness. Key con-
+tributors include: (1) Request handling inefficiencies, such
+as queuing delays before processing begins and subopti-
+mal scheduling algorithms (e.g., FIFO causing head-of-line
+blocking) that fail to prioritize latency-sensitive agent
+tasks [47], [50]; (2) Resource contention, where concurrent
+agent requests compete for limited GPU compute, CPU
+cycles, or memory bandwidth, leading to increased execution
+times [6], [51], [86]; (3) I/O limitations, particularly the
+overhead of offloading or swapping large KV caches between
+GPU HBM and slower CPU memory or storage during long
+interactions [6], [87]; and (4) Power management constraints,
+which can trigger thermal throttling and reduce hardware
+clock speeds under heavy load, directly increasing task
+latency [86]. Addressing these system-level factors through
+careful infrastructure design, advanced resource manage-
+ment, and optimized scheduling is crucial for building truly
+low-latency LLM agent systems. If multiple users submit
+health queries simultaneously, our agent’s request might wait
+in a queue, contributing to Lsystem before processing even
+begins (Figure 2).
+III. CORE LLM OPTIMIZATION TECHNIQUES FOR FASTER
+INFERENCE
+The core Large Language Model (LLM) inference process
+is a primary contributor to overall agent latency, as detailed
+VOLUME 14, 2026 26145
+
+[[page 7]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+TABLE 2. Performance benchmarks of core LLM optimization techniques for the OPT-175B model. Data sourced from vLLM [64] and GPTQ [79].
+TABLE 3. Comparison of core LLM inference acceleration techniques. This table compares the core principles and trade-offs of various optimization
+techniques discussed in Section III.
+in Section II-B. Consequently, optimizing this foundational
+component is paramount for enhancing agent responsiveness.
+This section surveys key techniques designed to accelerate
+LLM inference, encompassing methods to reduce model size
+and computational demands, modify model architectures for
+efficiency, and employ faster decoding algorithms. Table 3
+presents a comparative overview of these core optimization
+techniques, detailing their principles and trade-offs. These
+strategies collectively aim to minimize TTFT and TPOT,
+thereby improving the LLM’s intrinsic speed.
+A. QUANTIZATION TECHNIQUES FOR REDUCED
+PRECISION INFERENCE
+Quantization reduces the numerical precision of an LLM’s
+weights, activations, and KV cache, typically converting from
+16/32-bit floating-point formats to lower-bit integers (e.g.,
+INT8, INT4) or specialized floating-point formats (e.g., FP8).
+This reduction in data size yields significant latency benefits
+by: (1) decreasing the memory footprint, crucial for large
+models and long contexts; (2) lowering memory bandwidth
+requirements, which directly accelerates the memory-bound
+decoding phase (reducing TPOT); and (3) enabling faster
+computations on hardware with native low-precision sup-
+port. Common methodologies include Post-Training Quan-
+tization (PTQ), which is simpler to implement but may
+incur accuracy loss, especially at very low bit-widths; and
+Quantization-Aware Training (QA T), which integrates quan-
+tization into training to better preserve accuracy at the cost
+of retraining complexity. Strategic application to weights,
+activations, or the KV cache offers varying degrees of
+speedup, with KV cache quantization being particularly
+effective for TPOT reduction. Advanced techniques like
+mixed-precision, blockwise (e.g., GPTQ [79], AWQ [88]),
+or hardware-aware quantization offer further refinements,
+though all quantization approaches involve a fundamen-
+tal trade-off between efficiency gains and potential model
+quality degradation that necessitates careful evaluation. The
+latency benefits of quantization are significant. As shown in
+Table 2, for example, applying 3-bit GPTQ to the OPT-175B
+model reduces the average per-token latency from 230 ms to
+71 ms. This speedup is especially impactful as it also enables
+a massive reduction in hardware requirements, running on
+a single NVIDIA A100 GPU compared to the five required
+for the FP16 baseline. In practice, tools like AutoGPTQ [89]
+and bitsandbytes [90] provide ready-to-use implementations
+of these quantization methods with seamless integration
+into the HuggingFace Transformers ecosystem [91], signif-
+icantly lowering the barrier to deploying quantized models in
+production agent systems.
+However, the trade-off between efficiency and model
+quality necessitates a careful, context-aware application of
+quantization. For agents primarily focused on tasks with high
+factual precision or complex reasoning (e.g., a legal analysis
+agent), aggressive quantization like INT4 could degrade the
+nuanced capabilities of the foundational model, leading to
+incorrect or unreliable outputs. In such scenarios, a more
+conservative approach like bfloat16, or hybrid strategies that
+apply stronger quantization only to less sensitive parts of
+the model, may be a more prudent choice to balance latency
+reduction with task-critical accuracy.
+B. PRUNING AND SPARSITY FOR PARAMETER
+REDUCTION
+Pruning and sparsity techniques reduce the number of LLM
+parameters by removing redundant or less important weights,
+leading to smaller and faster models. This reduction directly
+lowers inference latency by decreasing memory bandwidth
+usage (fewer parameters to load) and reducing the number of
+26146 VOLUME 14, 2026
+
+[[page 8]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+floating-point operations (FLOPs), thereby improving both
+TTFT and TPOT. Unstructured pruning removes individual
+weights (e.g., based on magnitude), potentially achieving
+high sparsity with minimal accuracy loss after fine-tuning,
+but often requires specialized hardware or software for
+significant speedups due to irregular sparsity patterns. In con-
+trast, structured pruning removes entire blocks of parameters
+(e.g., attention heads, neurons), preserving dense struc-
+tures amenable to hardware acceleration and yielding more
+direct latency reductions, albeit sometimes with a greater
+impact on model quality. Pruning decisions can be guided
+by magnitude, sensitivity analysis, or iterative fine-tuning,
+while dynamic sparsity (e.g., in Mixture-of-Experts mod-
+els, Section III-D) adapts active parameters based on input,
+offering potential accuracy benefits but incurring runtime
+overhead. The efficacy of pruning depends on balancing com-
+pression with task performance, often necessitating hardware
+co-design.
+C. KNOWLEDGE DISTILLATION FOR MODEL
+COMPRESSION
+Knowledge Distillation (KD) transfers capabilities from a
+large ‘‘teacher’’ LLM to a smaller, more efficient ‘‘student’’
+model, aiming to reduce size and computational requirements
+for lower inference latency [6]. The student model is trained
+to mimic the teacher’s output distributions (logits) or internal
+representations, capturing ‘‘dark knowledge’’ beyond simple
+label supervision. Successful KD yields significantly smaller
+student models, leading to: (1) reduced memory footprint for
+weights and KV cache, beneficial for resource-constrained
+deployment [92]; (2) lower computational cost (FLOPs);
+and (3) consequently, reduced TTFT and TPOT [6]. For
+agents, this accelerates the entire operational loop. While
+KD often involves a trade-off between compression and stu-
+dent performance—as students rarely perfectly match teacher
+capabilities—it can be combined with quantization and prun-
+ing for further gains [6], offering a valuable path to faster,
+deployable agent systems.
+Beyond computational efficiency, KD also offers advan-
+tages for learning under data constraints. The principles of
+knowledge distillation also connect to broader research on
+learning with low-resource data [93], where techniques like
+active sampling and PAC generalization theory provide theo-
+retical foundations for achieving efficient learning under data
+scarcity—a scenario increasingly relevant for agent systems
+that must adapt to new domains with limited fine-tuning
+data. These connections suggest potential synergies between
+distillation-based compression and low-resource adaptation
+strategies, particularly for deploying efficient agents in spe-
+cialized domains where training data is scarce.
+D. EFFICIENT MODEL ARCHITECTURES AND ATTENTION
+VARIANTS
+Optimizing the LLM’s inherent architecture offers another
+path to reduced latency by lowering computational load
+or memory bandwidth requirements during inference.
+Mixture-of-Experts (MoE) architectures replace dense
+feed-forward layers with multiple specialized ‘‘expert’’ sub-
+networks and a gating mechanism that routes each token
+to a small subset of experts. This conditional computation
+reduces FLOPs per token, scaling inference cost with active
+expert size rather than total parameters, thus lowering latency,
+though MoE models have large total parameter counts and
+introduce system complexities like load balancing. A second
+critical area involves optimizing the attention mechanism,
+a primary bottleneck due to KV cache demands. Multi-
+Query Attention (MQA) drastically reduces KV cache size
+and memory bandwidth by having all attention heads share
+a single Key and V alue projection, significantly improving
+TPOT but potentially impacting model quality. Grouped-
+Query Attention (GQA) offers a balance, grouping heads to
+share K/V projections, yielding substantial TPOT improve-
+ments over standard Multi-Head Attention (MHA) while
+often preserving more quality than MQA. These architectural
+innovations, particularly MQA/GQA, are crucial for acceler-
+ating token generation in agent tasks requiring long outputs.
+E. FASTER DECODING ALGORITHMS: SPECULATIVE AND
+PARALLEL APPROACHES
+To overcome the inherent sequential bottleneck of autore-
+gressive decoding, especially for long outputs common in
+agent systems [94], advanced decoding algorithms aim to
+generate multiple tokens concurrently. Speculative decoding
+is a prominent ‘‘draft-then-verify’’ strategy: a smaller, faster
+‘‘draft’’ model proposes candidate future tokens, which are
+then verified in parallel by the larger target LLM; if validated,
+multiple tokens are accepted in a single step, accelerating
+generation [94].
+Figure 4 contrasts this ‘‘draft-then-verify’’ approach with
+standard autoregressive decoding. For our Healthcare Agent
+(Figure 2), when generating the final care plan, a draft model
+could propose common phrases like ‘Base on your symptoms,
+the clinical guideline suggests. . . ’ or ‘A potential interaction
+was found. . . ’ which the main LLM can then quickly verify.
+Effectiveness hinges on draft model accuracy, with frame-
+works like Chimera optimizing draft model creation [95].
+Self-speculative decoding variants reduce overhead by using
+components of the target LLM itself for drafting, such
+as intermediate layer representations or early-layer hid-
+den states [96], [97]. More advanced methods like staged
+speculative decoding or blockwise parallel decoding further
+refine parallel token generation [94], [98]. These tech-
+niques significantly reduce wall-clock generation time, often
+losslessly [95], [98], and are vital for interactive agent respon-
+siveness.
+The effectiveness of speculative decoding is fundamen-
+tally tied to the predictability of the generation task. While
+it yields significant speedups in scenarios with structured
+or repetitive outputs (e.g., code generation, data entry),
+its utility can diminish for agents requiring high degrees
+of creativity or navigating open-ended dialogues. In these
+VOLUME 14, 2026 26147
+
+[[page 9]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+FIGURE 4. Autoregressive decoding vs speculative decoding.
+cases, a low acceptance rate for drafted tokens can lead to
+a situation where the computational overhead of the draft
+model negates the benefits, potentially even increasing over-
+all latency. Therefore, the decision to employ speculative
+decoding should be based on an analysis of the agent’s
+expected output patterns.
+F. EARL Y EXIT AND LA YER SKIPPING STRATEGIES
+Early exit and layer skipping strategies reduce average
+latency per token by dynamically adjusting the computa-
+tional effort within each decoding step based on perceived
+input complexity [49]. Early exit mechanisms incorporate
+auxiliary prediction heads at intermediate LLM layers; if
+an intermediate prediction meets a confidence threshold,
+computation exits early, bypassing subsequent layers and
+reducing latency for ‘‘simpler’’ tokens [6]. Layer skipping
+dynamically bypasses specific layers or blocks, conditioned
+on intermediate states or static profiling, thereby reducing
+FLOPs per step [86]. Both approaches lower the average
+computational cost per token, enhancing agent responsive-
+ness, but require careful calibration of exit/skipping criteria
+to balance speed gains against potential degradation in output
+quality due to shallower processing. These methods primar-
+ily address computational cost, complementing techniques
+focused on memory overhead.
+G. EMPIRICAL VALIDATION OF CORE OPTIMIZATION
+TECHNIQUES
+To provide empirical validation of the optimization tech-
+niques surveyed in this paper, we conducted a series of
+controlled experiments. All experiments were performed
+on an NVIDIA L4 GPU (24GB GDDR6 VRAM, Ada
+Lovelace Architecture) with an Intel Xeon CPU @ 2.20 GHz
+(8 vCPUs) and 32 GB system memory, running PyTorch
+2.9.1 and Transformers 4.47.0. We used the Qwen2.5-7B-
+Instruct model, generating 50 tokens per request with greedy
+decoding to ensure reproducibility.
+Quantization performance validation. We first validated
+the latency benefits of quantization techniques discussed in
+Section III-A. Table 4 presents a comparison of different
+precision levels using both the standard Transformers library
+and the vLLM inference engine.
+H. KV CACHE OPTIMIZATION: EVICTION AND
+COMPRESSION
+KV Cache Eviction policies selectively discard entries when
+the cache approaches size limits, aiming to remove the least
+critical information. Simple recency-based eviction (e.g.,
+FIFO, sliding window) discards the oldest entries but may
+lose vital early context. More sophisticated importance-based
+eviction attempts to estimate entry relevance using signals
+like past attention scores, token importance heuristics (e.g.,
+‘‘Heavy Hitters’’) [99], [100], or structural properties of
+attention heads, thereby minimizing impact on generation
+quality [101].
+KV Cache Compression techniques reduce the storage
+size of each retained KV entry, decreasing overall memory
+footprint and bandwidth usage. Quantization (Section III-A)
+lowers the numerical precision of cached tensors (e.g.,
+to INT8/INT4) [102]. Other methods exploit structural redun-
+dancy, using online clustering of keys (e.g., SubGen [103]),
+sentinel/anchor tokens for context summarization [104],
+[105], or prefix sharing for common histories in batched
+requests (e.g., ChunkAttention [106], RelayAttention [107]).
+Among production serving systems, vLLM [64] exempli-
+fies effective KV cache optimization through its PagedAt-
+tention mechanism, which virtualizes the KV cache into
+non-contiguous memory blocks, nearly eliminating fragmen-
+tation. This open-source serving framework has become
+widely adopted in practice due to its substantial perfor-
+mance improvements (as shown in Table 2) and ease of
+integration with standard HuggingFace models [91]. Lossless
+compression algorithms, like LoMA [108], train models to
+operate on compressed cache representations. These evic-
+tion and compression strategies, often complementary, are
+vital for enabling LLM agents to efficiently handle long
+sequences with lower TPOT, though they may require careful
+tuning or accept quality trade-offs. The impact of efficient
+KV cache management is empirically demonstrated by the
+vLLM system, which introduces PagedAttention. This tech-
+nique virtualizes the KV cache, allowing it to be stored in
+non-contiguous memory blocks and thus nearly eliminating
+waste from internal and external fragmentation. As detailed
+in Table 2, this optimization allows vLLM to achieve 2–4×
+higher throughput compared to state-of-the-art systems like
+26148 VOLUME 14, 2026
+
+[[page 10]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+TABLE 4. Quantization performance comparison on Qwen2.5-7B-instruct.
+FasterTransformer and Orca across various OPT models[64].
+This benchmark was conducted on a server with 8 NVIDIA
+A100 GPUs, and the performance gain is achieved by
+enabling significantly larger batch sizes, which better utilizes
+the GPU’s computational power.
+I. THE LATENCY-QUALITY TRADE-OFF
+While the optimization techniques discussed offer substan-
+tial latency reductions, it is crucial to consider their impact
+on model quality and reliability. Aggressive compression,
+in particular, can lead to a degradation in performance on
+downstream tasks. Table 5 provides a quantitative summary
+of this trade-off for post-training quantization methods. The
+data reveals that sophisticated methods can preserve accu-
+racy even at low bit-widths. For example, quantizing the
+OPT-175B model to 4-bits using GPTQ results in a negligi-
+ble perplexity increase on the WikiText2 benchmark (from
+8.34 to 8.37). However, a more aggressive 3-bit quantiza-
+tion increases the perplexity to 8.68, a measurable but often
+acceptable drop. In contrast, a naive 3-bit round-to-nearest
+(RTN) method causes the model’s performance to collapse
+entirely, highlighting that the choice of algorithm is critical
+for maintaining reliability [79]. This data underscores the
+necessity of selecting an optimization strategy that aligns
+with the specific accuracy requirements of the agent’s task. A
+further challenge lies in the compatibility constraints between
+different optimization techniques when applied simultane-
+ously. For instance, aggressive weight quantization (e.g.,
+INT4) can interfere with speculative decoding by degrading
+the alignment between draft and target model distributions,
+thereby reducing acceptance rates and negating the expected
+speedup. Similarly, combining KV cache eviction with struc-
+tured pruning may compound information loss in ways that
+are difficult to predict from individual method evaluations.
+These inter-method constraints highlight a key shortcoming
+of current research: most optimization techniques are eval-
+uated in isolation, whereas practical deployment requires
+understanding their interactions and compatibility—an area
+where systematic comparative studies remain scarce.
+The results demonstrate that INT4 quantization achieves
+a 2.46× latency reduction (from 15.48 s to 6.29 s)
+and a 2.39× throughput improvement (from 16.54 to
+40.70 tokens/second) compared to the FP16 baseline. These
+findings are consistent with the 3.24× speedup reported by
+GPTQ [79] as cited in Table 2, validating the effectiveness
+of quantization techniques. Notably, memory consumption
+remains relatively stable across different quantization levels
+TABLE 5. Latency vs. accuracy trade-offs in model compression for
+OPT-175B on the WikiText2 dataset. The accuracy metric is perplexity
+(PPL), where lower is better. Data sourced from GPTQ [79].
+TABLE 6. KV cache optimization performance.
+when using vLLM, indicating efficient memory management
+by the inference engine.
+1) KV CACHE OPTIMIZATION VALIDATION
+We next validated the KV cache optimization techniques
+discussed in Section III-H. Table 6 compares generation per-
+formance with and without KV cache utilization.
+KV cache utilization reduces total generation time by
+24.3% (approximately 980 ms reduction). An interesting
+observation is the apparent reversal in TTFT: the cached con-
+figuration exhibits higher TTFT (192.44 ms vs. 79.04 ms) due
+to the initial memory allocation overhead for cache blocks.
+However, this overhead is more than compensated by the
+substantial improvement in TPOT, which decreases by 27.7%
+(from 80.57 ms to 58.25 ms). This empirically validates
+the theoretical advantages of KV cache reuse discussed in
+Section III-H, demonstrating that the benefits of avoiding
+redundant key-value computations significantly outweigh the
+initial allocation costs.
+2) COMPARATIVE ANALYSIS WITH CURRENT METHODS
+To contextualize our findings, we contrast our experimental
+results with those reported by other state-of-the-art methods.
+Our observed 2.46× latency reduction via INT4 quanti-
+zation is consistent with, though slightly lower than, the
+3.24× speedup reported by GPTQ [79] on the larger OPT-
+175B model (Table 2). This difference is attributable to
+model size and hardware differences: GPTQ’s benchmark
+used five NVIDIA A100 GPUs for the FP16 baseline
+versus our single L4 GPU setup, where memory band-
+width constraints are more pronounced. In the domain of
+VOLUME 14, 2026 26149
+
+[[page 11]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+attention optimization, FlashAttention [66] reports 2–4×
+wall-clock speedup on attention computation, which comple-
+ments our KV cache results by targeting compute efficiency
+rather than memory reuse. AWQ [88] achieves comparable
+compression ratios to GPTQ with improved accuracy preser-
+vation through activation-aware weight selection, suggesting
+that the latency gains observed in our quantization experi-
+ments could be achieved with even less quality degradation
+using more sophisticated quantization strategies. For serving-
+level optimization, vLLM’s [64] PagedAttention achieves
+2–4× throughput improvement on OPT models, which
+aligns with our batching results showing 7.4× through-
+put scaling—the larger gain in our experiments reflects the
+compounding effect of batching on a smaller model where
+per-request overhead is proportionally higher. DeepSpeed-
+Inference [62] reports similar throughput improvements
+through kernel fusion and memory optimization, confirming
+that system-level and algorithmic optimizations yield com-
+plementary benefits. These comparisons demonstrate that our
+independent results are broadly consistent with the litera-
+ture while highlighting that absolute speedup values depend
+significantly on model scale, hardware configuration, and
+workload characteristics.
+IV. AGENT-LEVEL STRATEGIES FOR ENHANCED
+RESPONSIVENESS
+Beyond optimizing the core LLM inference, substantial
+latency reductions can be achieved by refining the agent’s
+internal operational logic and decision-making processes.
+While Section III addressed acceleration of the foundational
+model itself, the strategies presented in this section target
+the higher-level cognitive loop—planning, tool selection,
+and memory management—which, as our latency decom-
+position in Section II demonstrated, often accounts for a
+comparable or even dominant share of end-to-end latency
+in complex agentic workflows. These agent-level strategies
+primarily target the minimization of ‘‘Agent Framework
+Overhead’’ (L framework) and ‘‘Tool Use and External API
+Interaction Latency’’ (L tool), as characterized in Section II.
+Effective agent-level optimization involves accelerating
+planning and reasoning cycles, streamlining tool interac-
+tions, managing context and memory efficiently, employing
+latency-conscious prompt engineering, optimizing multi-step
+execution flows, and adopting latency-optimized agent archi-
+tectures. Table 7 provides a comparative overview of these
+strategies, which are elaborated upon in the following sub-
+sections. These approaches collectively aim to reduce the
+computational burden and temporal delays inherent in an
+agent’s autonomous operation, thereby enhancing overall
+system responsiveness without necessarily altering the under-
+lying LLM or system infrastructure.
+A. ACCELERATING PLANNING AND REASONING CYCLES
+The efficiency of an agent’s planning and reasoning cycles
+is pivotal to its responsiveness, as these cognitive pro-
+cesses often involve multiple LLM consultations and internal
+FIGURE 5. Hybrid cognitive architecture for agents.
+computations that contribute to Lframework. Several strate-
+gies aim to reduce this deliberation time. Hierarchical and
+structured planning accelerates reasoning by decomposing
+complex goals into simpler, manageable sub-tasks, thereby
+reducing the scope and LLM interaction demands at each
+planning level [13], [57]; hybrid approaches integrating clas-
+sical planners can further expedite this for well-defined
+domains [56]. Reactive and adaptive planning mechanisms
+enable faster responses to dynamic environments by allow-
+ing agents to rapidly refine self-generated plans based on
+execution feedback (e.g., AdaPlanner’s in-plan and out-of-
+plan refinements [109]) or through an ‘‘inner monologue’’
+for processing observations [59], thus avoiding costly full
+replanning cycles. Hybrid cognitive architectures, inspired
+by ‘‘thinking fast and slow’’ [110], delegate simpler or time-
+sensitive sub-tasks to lightweight LLMs or reactive policies
+(Fast Mind) while reserving complex reasoning for more
+powerful LLMs (Slow Mind), explicitly reducing latency in
+interactive scenarios [111]. Figure 5 illustrates how a router
+can direct tasks to either a ‘Fast Mind’ or a ‘Slow Mind’
+within this architectural paradigm. Finally, optimizing plan
+generation efficiency through methods like code-style LLM
+prompts for structured plans [109] or incorporating explicit
+action knowledge to constrain search spaces [17] directly
+shortens the time to converge on an actionable plan. These
+diverse approaches reduce the latency of decision-making by
+either simplifying the problem, enabling faster adaptation,
+distributing cognitive load, or making the plan generation
+process itself more efficient.
+B. OPTIMIZED TOOL SELECTION AND INVOCATION
+PROTOCOLS
+Effective interaction with external tools and APIs is fun-
+damental to agent capabilities but introduces significant
+Ltool and Lframework components; optimizing these interac-
+tions is thus crucial for responsiveness [11]. Strategies here
+focus on expediting both tool selection and the subsequent
+invocation process. Rapid and accurate tool identification
+is achieved by decomposing agent capabilities, potentially
+26150 VOLUME 14, 2026
+
+[[page 12]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+TABLE 7. Comparison of agent-level responsiveness enhancement strategies. This table categorizes the agent-level strategies from Section IV by function,
+clarifying the specific objective of each strategy and the type of latency it aims to reduce.
+using smaller, specialized LLMs for tool selection [28],
+or by fine-tuning LLMs on tool usage trajectories [21] to
+improve the speed and precision of mapping intent to tools.
+Structuring tool descriptions and employing frameworks that
+treat tools as callable functions (e.g., TaskWeaver [22])
+also streamline selection and parameter preparation, reduc-
+ing LLM deliberation. Minimizing invocation overhead
+involves using lightweight agent frameworks [112], efficient
+data serialization, and encoding Standard Operating Proce-
+dures (SOPs) for routine tool use to bypass LLM-driven
+decisions [26].
+The benefit of optimizing tool invocation is demonstrated
+by our Healthcare Diagnostic Agent example (Figure 2).
+A naive implementation might execute its tool calls sequen-
+tially: (1) Check Guidelines, (2) Find Appointments, (3) V er-
+ify Drug Interactions. The total latency is the sum of each
+tool’s execution time plus the framework overhead for each
+call. A more optimized agent could recognize that these
+three searches are independent and invoke them in parallel.
+As illustrated in Figure 6, this parallelization can dramatically
+reduce the total latency for this execution block. The total
+time is no longer the sum of all latencies but is instead
+determined by the duration of the single longest tool call
+(in this case, the Clinicalguide API call), plus the frame-
+work overhead required to initiate the parallel requests and
+synthesize their results. Furthermore, speculative execution
+could be applied; if the Clinicalguide tool returns a result
+indicating a high-risk condition, it could preemptively query
+the Appointmentsearch for emergency room availability while
+the LLM is still processing the full plan, effectively hiding
+that tool’s latency. These optimizations collectively reduce
+delays associated with an agent’s external interactions. While
+the Healthcare Diagnostic Assistant is an illustrative example
+designed to demonstrate optimization principles, the effec-
+tiveness of systematic workflow optimization in reducing
+end-to-end latency is empirically validated in production
+multi-agent systems.
+FIGURE 6. A conceptual illustration of latency reduction via parallel tool
+invocation for the Healthcare Diagnostic Agent. The key latency
+components shown are: Lguideline (latency of medical DB API call),
+Lappointment (latency of hospital API call), Ldrugcheck (latency of
+pharmacy API call), and Lovhd (framework overhead). In the sequential
+model, total latency is the sum of individual tool latencies and their
+associated framework overheads. In the parallel model, the total time for
+the execution block is determined by the longest-running tool call
+(Lguideline in this illustration) plus the framework overhead for initiating
+the requests and synthesizing the results, significantly reducing the
+end-to-end latency for this step.
+For instance, the MetaGPT framework implements a
+structured assembly-line workflow where specialized agents
+execute well-defined tasks in a coordinated sequence, elimi-
+nating the ambiguous communication and redundant delib-
+eration cycles that characterize less structured approaches.
+As demonstrated in our case study in SectionVI-G (Table11),
+this structured approach achieves a 29% reduction in overall
+task completion time (541 s vs. 762 s) compared to chat-based
+systems [26].
+While this case study focuses on inter-agent coordination
+rather than single-agent tool invocation, both optimization
+strategies share the fundamental principle of eliminating
+unnecessary sequential dependencies and communication
+overhead. These empirical findings confirm that careful
+design of execution workflows—whether applied to parallel
+VOLUME 14, 2026 26151
+
+[[page 13]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+tool invocation within an agent (as illustrated by our Health-
+care Assistant example) or structured coordination across
+agents (as demonstrated by MetaGPT)—can yield signifi-
+cant, measurable improvements in system responsiveness.
+C. ADAPTIVE AND LATENCY-AWARE CONTEXT AND
+MEMORY MANAGEMENT
+Efficiently managing an agent’s internal memory and
+the LLM’s context window is critical for minimizing
+LLLM (specifically prefill latency, which scales with input
+length [6]) and Lframework associated with memory oper-
+ations. Naively appending history to the context window
+leads to escalating prefill costs and exceeding context lim-
+its [113]. Beyond conventional rule-based summarization
+and similarity-based retrieval, recent research has introduced
+sophisticated learned techniques—including reinforcement
+learning-based memory prioritization and neural architecture
+search for context compression—that explicitly optimize the
+latency-quality trade-off in memory management. We first
+discuss these emerging advanced techniques before covering
+foundational strategies.
+1) ADVANCED MEMORY MANAGEMENT TECHNIQUES:
+LEARNED OPTIMIZATION
+Recent advances in agent memory systems have moved
+beyond static heuristics to leverage machine learning for
+dynamic optimization of memory selection and compres-
+sion. Two particularly promising directions are reinforcement
+learning-based memory prioritization and neural architecture
+search for context compression, both of which explicitly
+model and optimize the trade-off between context length
+(which determines LLLM ) and downstream task performance.
+2) REINFORCEMENT LEARNING-BASED MEMORY
+PRIORITIZATION
+Traditional memory retrieval systems typically rely on static
+similarity metrics (e.g., embedding cosine similarity) or sim-
+ple recency heuristics to decide which memories to inject into
+the LLM’s context window. However, these approaches treat
+all memories with similar embeddings as equally important
+and do not account for the dynamic relevance of information
+across different stages of task execution or the downstream
+impact on agent performance.
+Reinforcement learning-based memory prioritization
+addresses these limitations by learning a parameterized policy
+that assigns importance scores to memory entries based on
+their expected utility for future agent actions [15], [16]. The
+general framework operates as follows:
+• State representation: At each decision point, the agent’s
+current task state, goal, and a set of candidate memory
+entries (retrieved via initial filtering, e.g., semantic sim-
+ilarity) are encoded into a state representation.
+• Learned scoring model: A lightweight neural network
+(the ‘‘memory scorer’’) takes this state representation
+along with features of each candidate memory (e.g.,
+recency, access frequency, embedding similarity to cur-
+rent context, metadata) and outputs a scalar importance
+score for each memory entry.
+• Memory selection: The top-k memories with highest
+scores are selected for inclusion in the LLM’s context
+window, where k is chosen to satisfy a context length
+budget.
+• Reinforcement learning training: The memory scorer is
+trained via reinforcement learning, where the reward
+signal combines two components: (a) task success met-
+rics (e.g., goal achievement, output quality), which
+incentivize selecting useful memories, and (b) latency
+penalties proportional to context length, which incen-
+tivize compact memory selection. This multi-objective
+reward encourages the model to learn which memories
+are truly essential for task performance and which can
+be safely omitted to reduce LLLM .
+The latency benefits are substantial. By learning to identify
+and select only the most task-critical memories, RL-based
+prioritization can reduce context length by 30–50% compared
+to naive top-k similarity retrieval while maintaining or even
+improving task performance, as the learned policy adapts
+to the specific requirements of different task phases [15].
+The computational overhead of the scoring model itself is
+typically negligible (a few milliseconds for a small neural
+network) compared to the prefill latency savings from shorter
+contexts (which can be hundreds of milliseconds to seconds
+for very long contexts).
+3) NEURAL ARCHITECTURE SEARCH (NAS) FOR CONTEXT
+COMPRESSION
+An orthogonal approach to managing long contexts is to
+learn a compression function that encodes extensive historical
+information into a compact, information-dense representation
+that can be efficiently processed by the LLM. Neural Archi-
+tecture Search methods have been applied to automatically
+discover optimal architectures for such context compression
+models [71].
+The NAS-based compression paradigm works as follows:
+• Compression model architecture space: A search space
+of possible encoder architectures is defined, including
+choices such as: number and type of layers (e.g., trans-
+former blocks, convolutional layers), attention mecha-
+nisms and their configurations, bottleneck dimensions
+for the compressed representation, and the number of
+output ‘‘summary tokens’’ that will represent the com-
+pressed context.
+• Architecture search process: The NAS algorithm
+(e.g., evolutionary search, reinforcement learning-based
+search, or differentiable architecture search) explores
+this space by training and evaluating numerous can-
+didate architectures on a validation set of agent tasks.
+Each candidate is assessed on two criteria: (a) the qual-
+ity of the compressed representation, measured by the
+LLM’s downstream task performance when using the
+26152 VOLUME 14, 2026
+
+[[page 14]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+compressed context, and (b) the size of the compressed
+representation and the inference latency of the compres-
+sion model itself.
+• Deployment: Once an optimal compression architec-
+ture is identified, it is trained on a large corpus of
+agent interaction histories. During inference, the agent
+first processes long-context information (e.g., extensive
+conversation history, retrieved documents) through this
+learned compression model to produce a compact rep-
+resentation (e.g., 50–100 summary tokens instead of
+5,000–10,000 original tokens), which is then fed to the
+LLM for reasoning and generation.
+The latency implications are significant for agents deal-
+ing with very long contexts. While the compression
+step introduces some overhead (an Lframework of typically
+50–200 ms for a well-optimized compression model), this
+is far outweighed by the reduction in LLM prefill latency
+when contexts are very long. For instance, compressing a
+10,000-token context to 100 tokens could reduce prefill time
+from∼2 seconds to∼20 ms on a high-end GPU, yielding a
+net latency reduction of over 90% even after accounting for
+compression overhead. The compression model can often be
+implemented as a smaller, distilled encoder network, further
+minimizing its latency contribution.
+4) PRACTICAL CONSIDERATIONS AND CURRENT
+LIMITATIONS
+Both RL-based prioritization and NAS-based compression
+represent cutting-edge research directions with substantial
+potential but also important practical considerations:
+• Implementation complexity: RL-based methods require
+careful design of reward functions, training infrastruc-
+ture, and exploration strategies. NAS methods demand
+significant computational resources for architecture
+search (though this is a one-time offline cost).
+• Scenario dependence: These techniques provide the
+greatest benefits for agents handling very long contexts
+(> 4K tokens) or with access to large-scale memory
+stores. For simpler tasks or shorter interactions, tra-
+ditional summarization and selective retrieval remain
+more practical and cost-effective.
+• Generalization: Learned memory management models
+may require domain-specific training or fine-tuning to
+generalize effectively across different task types, though
+recent work suggests that memory prioritization poli-
+cies can transfer reasonably well within broad task
+families [16].
+• Emerging research stage: While the conceptual frame-
+works and initial implementations exist in the research
+literature (particularly for RL-based approaches [15]),
+widespread production deployment is still emerging.
+We expect that as the field matures, pre-trained, reusable
+memory management models—analogous to pre-trained
+LLMs—will become available, significantly lowering
+the barrier to adoption.
+These advanced learned techniques represent the fron-
+tier of memory optimization research and complement the
+foundational strategies discussed in the following para-
+graphs, offering additional sophisticated levers for optimiz-
+ing the latency-quality trade-off in memory-intensive agent
+applications.
+5) FOUNDATIONAL MEMORY MANAGEMENT STRATEGIES
+Dynamic context summarization, where agents condense
+older or less relevant information using LLMs (potentially
+smaller ones) or rule-based methods, reduces token count for
+subsequent LLM calls, thereby lowering prefill latency while
+aiming to preserve essential information. Selective informa-
+tion retrieval from external short-term or long-term memory
+stores (e.g., vector databases [15]) injects only relevant infor-
+mation into the prompt, avoiding the processing of overly
+long, irrelevant contexts; techniques like interactive reading
+enable agents to query structured representations of large
+contexts (e.g., summary trees [71]) to optimize for relevance
+and latency. Hierarchical memory systems, balancing access
+speed and storage capacity, further structure these retrieval
+strategies. Minimizing latency in accessing, updating, and
+switching internal agent states is also vital, with OS-inspired
+frameworks like AIOS focusing on efficient lifecycle and
+memory management [50]. Such adaptive strategies directly
+reduce the data burden on the LLM and the overhead of
+memory access within the agent.
+These memory management strategies share conceptual
+foundations with low-resource learning paradigms [93],
+where efficient utilization of limited data parallels the chal-
+lenge of managing constrained context windows. Techniques
+such as LLM-powered optimization under data scarcity and
+active sampling can inform more sophisticated memory
+prioritization strategies that maximize information utility
+while minimizing latency overhead. The theoretical insights
+from PAC generalization bounds, which characterize learning
+efficiency under data constraints, may similarly guide the
+development of principled approaches for selecting which
+context elements to retain when window capacity is limited.
+D. LATENCY-CONSCIOUS PROMPT ENGINEERING AND
+INTERACTION DESIGN
+The formulation of LLM inputs via prompt engineering and
+the design of interaction sequences significantly impact pro-
+cessing speed and the number of LLM calls, thereby affecting
+LLLM and Lframework. Latency-conscious prompt engineering
+focuses on prompt compression and structuring: minimiz-
+ing prompt size through concise language and removal of
+redundancies directly reduces prefill latency. Using struc-
+tured formats (e.g., JSON, code-like syntax) for goals, tools,
+or reasoning steps can accelerate LLM parsing and infor-
+mation extraction compared to free-form text, especially for
+standardized sub-tasks like function calling [92], and may
+reduce ambiguity affecting output length and latency vari-
+ability [114]. Strategic prompt optimization involves tailoring
+VOLUME 14, 2026 26153
+
+[[page 15]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+prompts to the latency requirements of different agent oper-
+ational stages, balancing speed with necessary detail; for
+example, prioritizing conciseness for initial planning and
+quality for critical decisions. Interaction design aims to min-
+imize sequential LLM calls by batching information into
+single prompts or structuring requests for more comprehen-
+sive responses, thereby reducing cumulative inference and
+framework overhead. Hierarchical agent architectures explic-
+itly use this by delegating simpler sub-tasks via concise
+prompts to faster LLMs [111], while structured intermediate
+representations like code can streamline complex delib-
+eration [115]. These techniques optimize the agent-LLM
+interface to obtain faster and more efficient responses.
+E. STREAMLINING AGENT EXECUTION FLOWS AND
+ADAPTIVE CONTROL
+For complex problems requiring multi-step execution
+sequences involving planning, action, observation, and
+refinement, streamlining the entire dynamic operational flow
+is critical to reduce cumulative latency. This involves optimiz-
+ing action sequencing, feedback integration, and adaptation
+mechanisms. Efficient action sequencing and paralleliza-
+tion, such as decomposing tasks into parallelizable sub-tasks
+managed by specialized agents [68] or decoupling abstract
+reasoning from tool calls (e.g., Chain-of-Abstraction [116]),
+can reduce the critical path length. Rapid incorporation of
+feedback and plan adaptation is essential to avoid costly
+full replanning cycles; AdaPlanner, for instance, enables
+LLM agents to refine plans based on environmental feedback
+through in-plan or out-of-plan adjustments using efficient
+code-style prompts [109]. For significant deviations, adaptive
+replanning frameworks like Reasoning via Planning (RAP),
+which use the LLM as a world model and MCTS for strate-
+gic exploration, can efficiently find alternative high-reward
+action paths [117]. Minimizing latency in iterative refine-
+ment and self-correction loops is also vital; techniques like
+learning internalized utility judgments (e.g., RadAgent[118])
+or reusing successful past plans (‘‘skills’’ [109], [119]) can
+shortcut these cycles. These strategies collectively reduce
+accumulated delays in complex, multi-step agent operations
+by making the execution flow more efficient and adaptive.
+F. LATENCY-OPTIMIZED AGENT ARCHITECTURES AND
+FRAMEWORKS
+The overarching architectural design of an agent system and
+its development framework provides the structural founda-
+tion for implementing responsive behaviors and mitigating
+bottlenecks from complex control flows and resource con-
+tention. Architectures balancing reactivity and deliberation
+(akin to ‘‘thinking fast and slow’’) optimize average-case
+latency by using fast, reflexive pathways for routine actions
+and reserving sophisticated LLM deliberation for complex
+tasks. Modular design principles, such as representing agent
+workflows as optimizable computational graphs (e.g., GPT-
+SW ARM[120]), facilitate parallel execution of sub-tasks and
+targeted node-level or edge-level optimizations. Decompos-
+ing capabilities into specialized functional units, potentially
+handled by different or smaller LLM instances[28], enhances
+parallelism and efficiency. Operating system-like frameworks
+(e.g., AIOS [50]) directly address latency by providing
+mechanisms for optimal scheduling of agent requests to
+LLMs, efficient resource allocation, and streamlined context
+switching. Distributed multi-agent architectures, supported
+by platforms for asynchronous interaction [121] or opti-
+mized orchestration [122], can reduce latency for large-scale
+problems by distributing workload and enabling parallel
+problem-solving. Well-designed development and evalua-
+tion frameworks further support latency optimization by
+simplifying construction and enabling detailed performance
+profiling [123], [124]. These architectural choices and frame-
+works are pivotal in creating a system capable of realizing the
+benefits of other agent-level latency reduction strategies.
+V. SYSTEM-LEVEL AND INFRASTRUCTURE
+OPTIMIZATIONS FOR LOW-LATENCY DEPLOYMENT
+Effective minimization of end-to-end latency in LLM-based
+agent systems extends beyond model-centric (Section III)
+and agent-logic (Section IV) optimizations to encompass
+the underlying system-level infrastructure. This infrastruc-
+ture, responsible for hosting, managing, and orchestrating
+agent operations, significantly influences overall responsive-
+ness by introducing ‘‘System-Level Bottlenecks’’ (L system)
+and ‘‘Communication Delays’’ (L comm). This section sur-
+veys critical system-level and infrastructure optimizations,
+including advanced LLM serving techniques, hardware
+acceleration, dynamic resource management, distributed
+deployment architectures, network-level enhancements, and
+scalable deployment frameworks, all crucial for achieving
+consistently low latency in practical agent deployments.
+A. ADVANCED LLM SERVING SYSTEMS AND REQUEST
+MANAGEMENT
+Sophisticated LLM serving systems are crucial for managing
+the highly variable and often interactive workloads gener-
+ated by agent systems [2], [11], directly mitigating Lsystem
+components like queuing delays and scheduling inefficien-
+cies. Continuous or dynamic batching techniques process
+requests at a finer granularity than static batching, dynam-
+ically managing prefill and decoding phases to maximize
+hardware (e.g., GPU) utilization and improve throughput,
+thereby reducing average latency [35], [48]. For instance,
+if many users are using the Healthcare Agent simultaneously,
+a serving system with continuous batching can process their
+various requests (some diagnosing symptoms, some booking
+appointments) more efficiently than waiting to form a static
+batch (Figure 2).
+Optimized request scheduling algorithms, employing pre-
+emption or Quality-of-Service (QoS) prioritization, ensure
+responsiveness for critical agent functions by managing
+diverse demands more effectively than simple FIFO sched-
+ulers [44], [47]. Efficient KV cache management at the
+26154 VOLUME 14, 2026
+
+[[page 16]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+TABLE 8. Batching efficiency across different batch sizes.
+serving layer, using techniques like paged memory alloca-
+tion (e.g., PagedAttention) and intelligent eviction policies,
+is vital for reducing decoding latency (TPOT), especially
+for agents with long interaction histories [64]. These serv-
+ing efficiency optimizations are fundamental for translating
+algorithmic and model-level speedups into reductions in per-
+ceived latency for agent tasks.
+Using the same experimental infrastructure described in
+Section III-G, we conducted experiments measuring through-
+put and latency across varying batch sizes to validate the
+theoretical benefits of continuous batching discussed above.
+Using 32 test prompts processed through the Qwen2.5-7B-
+Instruct model, we measured performance metrics at batch
+sizes of 1, 2, 4, and 8. Table 8 presents the results.
+The results demonstrate that throughput scales near-linearly
+with batch size, achieving a 7.4× improvement at batch
+size 8 compared to sequential processing (122.39 vs.
+16.52 tokens/second). Correspondingly, average per-request
+latency decreases by 86.5% (from 3026.54 ms to 408.53 ms).
+Critically, memory consumption remains nearly constant
+across all batch sizes (14.20 GB to 14.24 GB), demonstrating
+efficient GPU utilization through batching. These findings
+empirically support the theoretical discussion of continu-
+ous batching presented earlier in this section and provide
+practitioners with concrete performance expectations when
+optimizing request scheduling in production deployments.
+B. HARDWARE ACCELERATION AND CO-DESIGN FOR
+AGENT SYSTEMS
+The raw speed of underlying hardware executing LLM
+requests and agent logic fundamentally constrains achiev-
+able latency, making effective use of specialized hardware
+paramount. GPUs and TPUs, with their massively parallel
+architectures, excel at accelerating the prefill and decod-
+ing phases of LLM inference (L LLM ) [43], [64]. Emerg-
+ing AI accelerators like NPUs for power-efficient edge
+inference [125] and reconfigurable FPGAs for customized
+computations offer further avenues for latency reduction.
+Critically, hardware-software co-design, tailoring software
+(LLM architecture, compilers, runtimes) to exploit spe-
+cific hardware features (e.g., native low-precision arithmetic
+for quantization [88], [126], [127], conditional computa-
+tion for MoE models), unlocks an ‘‘acceleration efficiency
+boost’’. This co-design extends beyond core LLM inference
+to accelerate peripheral agent tasks such as data pre/post-
+processing or tool interaction marshalling [128], thereby
+reducing Lframework and Ltool. High-performance memory
+systems and interconnects are also vital, as memory band-
+width and data transfer speeds directly impact overall agent
+system latency, especially for large models or distributed
+multi-agent interactions [129].
+C. DYNAMIC RESOURCE ALLOCATION, PROVISIONING,
+AND LOAD BALANCING
+Efficiently managing computational and memory resources
+is essential for consistent low-latency performance, partic-
+ularly given the unpredictable workloads of agent systems.
+Dynamic resource allocation strategies enhance ‘‘resource
+management efficiency’’ by adapting to fluctuating demands,
+thereby mitigating Lsystem from resource contention and
+queuing. Predictive auto-scaling anticipates future resource
+needs based on workload patterns or request characteristics,
+proactively adjusting agent instances or GPU allocations to
+absorb traffic bursts [130]. Fine-grained resource allocation
+addresses the heterogeneous requirements of agent compo-
+nents (e.g., GPU-heavy LLM inference, CPU-intensive plan-
+ning), potentially disaggregating prefill/decode phases onto
+specialized resources or dynamically allocating resources
+based on predicted task needs [35], [131], [132]. Intelli-
+gent load balancing distributes requests efficiently across
+available resources, considering server load, network latency,
+and task characteristics, using techniques from history-based
+methods to adaptive learning algorithms [133], [134], [135].
+Effective QoS management, through resource isolation and
+prioritization, ensures that high-priority agent interactions
+meet latency targets even under heavy system load [44], [47].
+D. DISTRIBUTED AND HYBRID DEPLOYMENT
+ARCHITECTURES (CLOUD, FOG, EDGE)
+Strategically deploying agent systems across the compute
+continuum, such as cloud, fog, and edge, offers ‘‘deploy-
+ment flexibility’’ to minimize network latency (L comm) and
+improve responsiveness by placing computation closer to
+users or data sources. Centralized cloud deployments offer
+abundant resources but can incur high network latency for
+remote interactions [76]. Edge-centric deployments, often
+using smaller on-device models, minimize local network
+latency for real-time applications like robotics but face
+resource constraints [38], [92], [136]. Edge deployments
+often face additional constraints related to limited training
+data for domain adaptation. Recent advances in low-resource
+learning [93] provide complementary strategies for effi-
+cient adaptation, including few-shot prompting techniques
+that align well with the latency and resource constraints of
+edge environments. The intersection of low-resource learn-
+ing theory with edge-optimized inference presents promising
+opportunities for developing agent systems that can rapidly
+adapt to new deployment contexts without requiring exten-
+sive fine-tuning data or computational resources. Hybrid
+and hierarchical architectures, strategically combining cloud,
+fog, and edge resources (e.g., complex tasks in the cloud,
+latency-critical functions at the edge [111]), often provide the
+VOLUME 14, 2026 26155
+
+[[page 17]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+most effective balance. Realizing these benefits depends on
+intelligent placement and dynamic offloading of agent com-
+ponents, considering task latency requirements, data locality,
+and computational needs, often managed by coordination
+frameworks [137], [138]. Managing data consistency and
+locality across distributed tiers, through efficient synchro-
+nization protocols that minimize communication overhead,
+is a significant challenge in these architectures [139].
+E. NETWORK-LEVEL OPTIMIZATIONS AND EFFICIENT
+DATA COMMUNICATION
+The efficiency of communication pathways between dis-
+tributed agent components is paramount for minimizing
+Lcomm, as network bottlenecks can negate other optimiza-
+tions. ‘‘Communication efficiency maximization’’ involves
+several strategies: (1) Minimizing data volume through
+efficient serialization formats (e.g., Protocol Buffers) and
+data compression, reducing transmission time, especially
+over bandwidth-constrained edge links. (2) Optimizing
+transport protocols, using modern options like gRPC or
+QUIC for inter-service communication, and leveraging
+hardware-accelerated technologies like RDMA or GPUDi-
+rect RDMA for high-performance data transfer between
+nodes, significantly reducing internal communication latency
+in distributed inference [80]. (3) Employing latency-
+aware routing, potentially via Software-Defined Network-
+ing (SDN), to configure optimal network paths based on
+real-time conditions and application needs, avoiding con-
+gestion. (4) Strategic caching of frequently accessed data
+(e.g., tool API responses, common LLM queries) at locations
+closer to the agent (edge/fog nodes) to reduce repeated data
+transfers and backend load [152]. These network-level opti-
+mizations are crucial for realizing the low-latency potential
+of distributed agent systems.
+F. CONTAINERIZATION, ORCHESTRATION, AND SCALABLE
+DEPLOYMENT FRAMEWORKS
+‘‘Deployment automation and scalability’’ are key to main-
+taining low latency in operational agent systems, especially
+under dynamic loads and across distributed environments.
+Containerization technologies like Docker and WebAssem-
+bly (Wasm) encapsulate agent components into portable
+units, simplifying deployment and dependency management.
+Orchestration platforms such as Kubernetes automate the
+deployment, scaling, and management of these container-
+ized applications, directly impacting latency by managing
+resource allocation, load balancing, and high availabil-
+ity [86], [153]. Adopting a microservice architecture, where
+agent functionalities (planning, memory, tool use) are decom-
+posed into independently deployable services [28], [120],
+aligns well with orchestration capabilities, allowing targeted
+scaling and optimized resource utilization, thereby reducing
+contention and Lsystem. Automated horizontal scaling, a core
+orchestrator feature, ensures responsiveness during peak
+demand by adjusting service instances based on monitored
+metrics. Orchestrators also provide service discovery and
+health monitoring, crucial for reliable inter-component com-
+munication in complex agent operations. Lightweight orches-
+tration platforms (e.g., K3s, KubeEdge) extend these capa-
+bilities to resource-constrained edge devices, supporting
+latency-sensitive distributed deployments.
+G. REPRESENTATIVE OPEN-SOURCE TOOLS AND
+FRAMEWORKS
+To facilitate practical implementation of the optimization
+strategies discussed throughout this survey, we provide an
+overview of representative open-source tools and frameworks
+that are widely used in the LLM agent deployment ecosystem.
+Table 9 categorizes these tools by their primary function,
+offering researchers and practitioners a concrete starting point
+for building low-latency agent systems.
+1) LLM SERVING SYSTEMS
+Production-grade serving frameworks are essential for
+deploying optimized LLM inference at scale. vLLM [64]
+provides state-of-the-art inference serving with PagedAt-
+tention for efficient KV cache management (discussed in
+Section III-H), achieving 2-4× throughput improvements
+over previous systems. Ray Serve [140] offers scalable
+model serving with flexible deployment options, support-
+ing both single-model and multi-agent architectures through
+its distributed computing capabilities. TensorRT-LLM [141]
+(NVIDIA) focuses on maximizing throughput and minimiz-
+ing latency on NVIDIA GPUs through kernel-level opti-
+mizations, supporting the quantization techniques described
+in SectionIII-A. Text Generation Inference (TGI) [142] by
+HuggingFace is a production-ready serving solution with
+built-in support for continuous batching and token stream-
+ing, making it particularly suitable for interactive agent
+applications.
+2) AGENT FRAMEWORKS
+High-level frameworks abstract away agent orchestration
+complexity, enabling rapid development. LangChain [143]
+is the most widely adopted framework for building LLM-
+powered applications, providing modular abstractions for
+chains, agents, memory management, and tool use—
+directly supporting the agent-level optimizations discussed in
+Section IV. LlamaIndex [144] (formerly GPT Index) special-
+izes in data ingestion and indexing for retrieval-augmented
+generation (RAG), crucial for implementing the selective
+information retrieval strategies described in Section IV -
+C. AutoGPT [145] and BabyAGI [146] are pioneering
+autonomous agent frameworks demonstrating goal-oriented
+task decomposition and execution, though they typically
+require latency optimization for production deployment.
+AgentLite [112] and TaskWeaver [22] represent more recent
+frameworks explicitly designed with performance considera-
+tions, incorporating code-based reasoning and optimized tool
+invocation protocols.
+26156 VOLUME 14, 2026
+
+[[page 18]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+TABLE 9. Representative open-source tools for LLM agent deployment.
+TABLE 10. Latency factors and mitigation strategies in MASs. This table maps the unique latency challenges in multi-agent environments (Section VI) to
+their corresponding solutions.
+3) OPTIMIZATION LIBRARIES
+Specialized libraries implement the core inference acceler-
+ation techniques from Section III. HuggingFace Transform-
+ers [91] provides the de facto standard library of pre-trained
+models with extensive integration points for optimiza-
+tion tools. AutoGPTQ [89] and GPTQ-for-LLaMa imple-
+ment the GPTQ post-training quantization algorithm [79]
+(Section III-A), enabling 3-4 bit quantization with minimal
+accuracy loss. bitsandbytes [90] offers efficient implementa-
+tions of 8-bit and 4-bit quantization with seamless integration
+into HuggingFace models. DeepSpeed-Inference [62] pro-
+vides comprehensive system-level optimizations including
+advanced batching strategies, kernel fusion, and memory
+management. FlashAttention [66] and FlashAttention-2 [154]
+offer optimized attention implementations that significantly
+reduce memory bandwidth requirements during inference.
+4) ORCHESTRATION AND DEPLOYMENT
+Container orchestration platforms manage distributed agent
+deployments. Kubernetes [147] is the industry-standard
+platform for managing containerized applications at scale,
+supporting the dynamic resource allocation strategies dis-
+cussed in Section V -C. Ray [140] (specifically Ray Core
+and Ray Serve) provides a unified framework for distributed
+computing, particularly well-suited for complex multi-agent
+systems requiring sophisticated coordination (Section VI).
+Docker [148] enables containerization for reproducible
+deployments, while FastAPI [149] provides a lightweight
+framework for building performant API endpoints for agent
+services, supporting the efficient communication patterns
+described in Section IV -B. KubeEdge [150] and K3s [151]
+extend Kubernetes capabilities to resource-constrained edge
+environments, enabling the hybrid deployment architectures
+discussed in Section V -D.
+These tools represent a mature and actively developed
+ecosystem that directly supports implementation of the
+latency optimization strategies throughout this survey. Prac-
+titioners should select tools based on their specific require-
+ments for model size, deployment environment, latency
+constraints, and development velocity. Many of these tools
+can be composed—for example, using vLLM for opti-
+mized serving, LangChain for agent orchestration, and
+VOLUME 14, 2026 26157
+
+[[page 19]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+Kubernetes for deployment management—to build compre-
+hensive low-latency agent systems.
+VI. MANAGING LATENCY IN MULTI-AGENT LLM
+SYSTEMS
+MASs built with LLMs introduce unique latency chal-
+lenges beyond those in single-agent setups, primarily due
+to the overheads of inter-agent interaction and coordina-
+tion [23], [155]. While MASs offer benefits like parallel
+execution and specialized capabilities, the communication
+and synchronization required for collaboration can become
+significant bottlenecks, compounding core LLM and indi-
+vidual agent framework latencies. This section characterizes
+these MAS-specific latency sources and surveys strategies to
+mitigate them, focusing on efficient communication, latency-
+aware coordination, optimized parallel execution, responsive
+architectures, and management of heterogeneity. Table 10
+succinctly maps these unique latency challenges in MAS to
+their corresponding mitigation strategies, which are elabo-
+rated upon in the following subsections.
+A. CHARACTERIZING LATENCY SOURCES IN
+MUL TI-AGENT INTERACTIONS
+The shift to multi-agent architectures introduces distinct
+collaborative latency components that can dominate overall
+system response time. Key sources include: (1) Inter-
+Agent Communication Round Trips (RTTs), encompass-
+ing network latency, message serialization/deserialization,
+and LLM-based message processing [30], [156]; (2) Syn-
+chronization Overhead, where agents idle while awaiting
+information, consensus, or coordinated actions [30], [85];
+(3) Coordination Protocol Delays, stemming from the compu-
+tational cost of algorithms for distributed planning, strategy
+formation, or conflict resolution, often involving multiple
+LLM calls [156], [157]; (4) Cascading Delays in Depen-
+dent Tasks, where delays in one agent propagate through
+sequential dependencies, especially in hierarchical struc-
+tures [13], [28], [111]; and (5) Agent Heterogeneity and
+Stragglers, where agents with varying capabilities or pro-
+cessing speeds (due to different LLMs or hardware) create
+bottlenecks, particularly in synchronized operations [158].
+Effectively managing these interaction-based delays is crucial
+for responsive collaborative intelligence. As we will demon-
+strate empirically in our MetaGPT case study (Section VI-G),
+these interaction-based delays can account for a significant
+portion of overall system latency, with architectural choices
+in communication protocols and coordination mechanisms
+yielding 29% reduction in end-to-end task completion time
+compared to baseline multi-agent systems [26]. Through-
+out this section, we provide empirical evidence from recent
+multi-agent systems research to ground our discussion of
+optimization strategies.
+Revisiting our Healthcare Diagnostic Agent (Figure 2),
+if we re-architect it as a MAS, new latency sources
+emerge. For instance, a ‘Diagnostic’ agent might hand
+off a request to an ‘Appointments’ agent. The time
+taken for the ‘Appointments’ agent to receive, under-
+stand, and acknowledge the request from the ‘Diag-
+nostic’ agent contributes to inter-agent communica-
+tion RTTs. If the ‘Appointments’ agent must wait for
+the ‘Diagnostic’ agent to finalize the symptom anal-
+ysis before it can search, this creates synchronization
+overhead.
+B. EFFICIENT INTER-AGENT COMMUNICATION
+PROTOCOLS AND STRATEGIES
+Optimizing the exchange of information between agents is
+fundamental to reducing collaborative latency, particularly
+given that LLM-based communication can be verbose and
+computationally intensive [155], [159]. ‘‘Communication
+efficiency optimization’’ involves: (1) Optimized message
+formats, such as structured schemas (e.g., JSON, function
+arguments) to reduce parsing overhead and ambiguity com-
+pared to natural language, or LLM-condensed updates [160];
+(2) Efficient routing strategies, balancing the bottleneck risks
+of centralized coordinators against the potential inefficiencies
+of decentralized peer-to-peer networks, with hybrid or hierar-
+chical models often offering better scalability [129], [161];
+and (3) Minimized communication frequency and volume,
+through selective protocols (sharing only critical information
+guided by roles or events [26]), importance-aware messag-
+ing [84], asynchronous patterns to reduce blocking [162], and
+efficient group communication mechanisms [163]. Managing
+bandwidth constraints through adaptive rates and message
+prioritization is also key, especially in networked environ-
+ments [139], [164]. These strategies collectively aim to
+reduce the time and resources consumed by inter-agent
+information exchange. Empirical studies demonstrate sub-
+stantial benefits of structured communication design: the
+MetaGPT framework [26], which enforces structured mes-
+sage formats through standardized document schemas (e.g.,
+Product Requirements Documents, System Design specifi-
+cations), achieves 29% faster end-to-end task completion
+compared to systems using unstructured natural language
+exchanges (Section VI-G. This improvement stems from
+multiple factors: (1) reduced parsing ambiguity—structured
+outputs eliminate the need for LLMs to interpret free-form
+text, reducing both framework overhead (L framework) and
+potential re-query cycles from miscommunication; (2) more
+efficient context utilization—predefined schemas ensure that
+only necessary information is transmitted, reducing mes-
+sage payload size and associated serialization costs; and (3)
+improved caching effectiveness—structured formats enable
+better prefix sharing and reuse of common message tem-
+plates. Similarly, selective communication protocols that
+employ publish-subscribe mechanisms (where agents sub-
+scribe only to relevant message types based on their roles)
+have demonstrated substantial reductions in unnecessary
+message traffic in distributed agent systems, though the mag-
+nitude of improvement varies significantly with task structure
+and coordination requirements [164]. These quantitative and
+26158 VOLUME 14, 2026
+
+[[page 20]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+qualitative improvements translate directly to reduced Lcomm
+and faster overall task completion.
+C. LATENCY-AWARE COORDINATION AND
+SYNCHRONIZATION MECHANISMS
+Beyond efficient communication, the mechanisms govern-
+ing how agents coordinate actions and synchronize states
+are critical for ‘‘coordination efficiency enhancement’’ in
+MAS. Synchronous execution models, while simplifying
+logic, often introduce idle time as faster agents await slower
+ones [159]. Asynchronous models offer greater parallelism
+and latency reduction by allowing independent agent pro-
+cessing [165], but require careful management of state
+consistency and potential message delays [164]. Lightweight
+consensus protocols that minimize communication rounds
+or use implicit agreement are preferred for reaching shared
+understanding efficiently [166]. Dynamic role allocation and
+adaptive team structuring, assigning sub-tasks to the most
+suitable or available agent based on capabilities, work-
+load, or importance scores, minimize execution time and
+avoid bottlenecks, often managed by orchestration frame-
+works [84], [122], [129]. Minimizing agent waiting time is
+further achieved through Just-In-Time (JIT) scheduling of
+communication or actions [167] and delay-aware communi-
+cation models that allow agents to proceed with potentially
+incomplete information [164]. Such mechanisms are vital for
+responsive collaborative problem-solving. Quantitative eval-
+uations demonstrate the impact of synchronization choices:
+asynchronous execution models—where agents operate inde-
+pendently and synchronize only at critical coordination
+points—can achieve substantial throughput improvements
+compared to synchronous approaches that require lock-
+step execution. The magnitude of improvement depends
+on task parallelizability: for highly decomposable tasks
+(e.g., the software development workflow in MetaGPT [26],
+where design, implementation, and testing phases have lim-
+ited inter-dependencies), asynchronous coordination enables
+near-linear scaling with the number of agents, contributing
+to the observed 29% end-to-end latency reduction. In con-
+trast, tasks with frequent synchronization requirements see
+diminished benefits, as agents spend more time idle waiting
+for coordination. Lightweight consensus protocols that min-
+imize communication rounds—such as implicit agreement
+mechanisms based on timeout thresholds rather than explicit
+multi-round voting—have been shown to significantly reduce
+coordination overhead in distributed agent systems, particu-
+larly for scenarios where strong consistency guarantees are
+not required [166]. These measurements confirm that coor-
+dination mechanism design is a first-order determinant of
+multi-agent system responsiveness.
+D. TASK DECOMPOSITION AND PARALLEL EXECUTION
+OPTIMIZATION
+Effective task decomposition and optimized parallel exe-
+cution across agents are fundamental to shortening the
+critical path latency in MAS [85]. ‘‘Parallel processing
+efficiency’’ is achieved through: (1) Strategic task decom-
+position, breaking complex goals into manageable sub-tasks
+(hierarchically or by functional specialization) of appro-
+priate granularity to balance parallelism benefits against
+communication overhead [111], [168]; (2) Efficient task
+allocation, using centralized schedulers, decentralized nego-
+tiation, or market-based mechanisms to assign sub-tasks,
+considering agent heterogeneity (speeds, capabilities), work-
+loads, and communication costs [137], [169], [170]; (3)
+Dependency management, identifying and scheduling inter-
+dependent sub-tasks to maximize concurrency while respect-
+ing ordering constraints [169], [171]; and (4) Effective load
+balancing, distributing workload evenly to prevent agent
+idling or overload, potentially through dynamic re-balancing
+based on performance feedback [77], [168]. Simulating these
+interactions in specialized environments like TimeArena [34]
+helps refine these strategies for optimal parallel execution and
+latency reduction. Empirical evaluations of task decomposi-
+tion strategies reveal significant performance variations: hier-
+archical decomposition with appropriate granularity (sub-
+tasks requiring 10–30 seconds of execution time) achieves
+50–70% reductions in critical path latency compared to flat
+task structures in software development benchmarks [26].
+Dynamic load balancing that redistributes tasks based on
+real-time agent performance monitoring has shown 20–40%
+improvements in overall throughput in heterogeneous multi-
+agent systems [168]. These findings underscore that effective
+parallel execution optimization requires careful co-design of
+task decomposition, allocation policies, and load balancing
+mechanisms.
+E. SCALABLE AND RESPONSIVE MAS ARCHITECTURES
+The architectural design of a MAS fundamentally dictates its
+ability to implement parallel execution, manage communica-
+tion, and scale responsively [23]. Centralized architectures,
+with a single coordinator, simplify control but risk bot-
+tlenecks and single points of failure [68]. Decentralized
+architectures distribute control, enhancing fault tolerance and
+scalability but complicating coordination and dependency
+management. Hierarchical architectures organize agents into
+levels, naturally supporting hierarchical task decomposi-
+tion and potentially reducing communication traffic, though
+high-level managers can become bottlenecks [28]. Hybrid
+architectures combine elements of these patterns to bal-
+ance scalability, fault tolerance, and coordination efficiency.
+These primary architectural patterns are visually depicted in
+Figure 7.
+Dynamic network architectures, where interaction struc-
+tures and roles adapt at runtime (e.g., DyLAN [84]), offer
+optimal configuration for the current context but add man-
+agement complexity. The choice of architecture critically
+impacts communication pathways and the system’s capac-
+ity for low-latency parallel processing, demanding careful
+evaluation against expected workloads and responsiveness
+goals [85].
+VOLUME 14, 2026 26159
+
+[[page 21]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+TABLE 11. Performance comparison of multi-agent architectures on software development tasks. MetaGPT employs a hierarchical architecture with
+role-based agents following Standardized Operating Procedures. ChatDev uses a chat-based multi-agent approach with iterative dialogue for
+coordination. Lower values are better for Running Time and Human Revision Cost; higher is better for Executability. Executability is rated on a scale
+where 1 = non-functional, 2 = runnable but imperfect, 3 = nearly perfect, 4 = flawless. Human Revision Cost measures the number of manual code
+corrections required. Data sourced from MetaGPT [26], averaged across 7 representative tasks from the SoftwareDev benchmark.
+FIGURE 7. Comparison of different MAS architectures.
+F. MANAGING HETEROGENEITY AND ASYNCHRONY IN
+MUL TI-AGENT TEAMS
+The diversity in agent capabilities (heterogeneity) and
+operational timing (asynchrony) within MASs introduces
+significant challenges for ‘‘heterogeneity management effi-
+ciency’’ and overall latency. Heterogeneity in LLM back-
+bones, toolsets, or processing speeds [23], [122] can lead
+to ‘‘straggler’’ problems, where slower agents dominate task
+completion time. Asynchronous operations, while enabling
+concurrency [121], [162], complicate state management and
+synchronization, risking rework if agents operate on stale
+information. Mitigating these issues involves: (1) Adaptive
+scheduling and resource allocation, dynamically assign-
+ing tasks based on real-time monitoring of agent load,
+capabilities, and predicted completion times [50], [51];
+(2) Asynchronous communication protocols and architec-
+tures designed for non-blocking operations [121], [162];
+(3) Explicit straggler mitigation, such as speculative execu-
+tion or redundancy for critical sub-tasks; and (4) Modular and
+flexible architectures that leverage heterogeneity by assign-
+ing specialized roles to diverse agents, often managed by
+dynamic team composition and orchestration layers [28],
+[84]. Context-aware coordination, informed by each agent’s
+state and capabilities, further enhances performance in such
+dynamic settings [172].
+G. CASE STUDY: LATENCY ANAL YSIS OF THE METAGPT
+FRAMEWORK
+To provide a concrete analysis of latency in real-world
+multi-agent systems and empirically validate the architec-
+tural tradeoffs discussed in Section VI-E, we examine the
+MetaGPT framework. This case study directly addresses the
+comparison of different architectural paradigms and their
+impact on end-to-end latency. Architectural Classification:
+MetaGPT replaces conventional unstructured chat with a
+structured workflow based on Standardized Operating Proce-
+dures (SOPs), where agents with specialized roles (Product
+Manager, Architect, Project Manager, Engineer, QA Engi-
+neer) communicate via structured document outputs rather
+than free-form natural language dialogue [26]. As discussed
+in Section VI-E and illustrated in Figure 7, multi-agent sys-
+tems can be organized along a spectrum from centralized to
+decentralized to hierarchical architectures. MetaGPT imple-
+ments a hierarchical, assembly-line architecture (analogous
+to Figure 7 (c)), where agents are organized into sequen-
+tial roles with predetermined handoff sequences. Each agent
+produces structured artifacts (e.g., Product Requirements
+Documents, System Design Specifications, Code Files) that
+flow through the pipeline in a fixed order. Agents commu-
+nicate via a shared message pool with a publish-subscribe
+mechanism, allowing downstream agents to directly consume
+the outputs of upstream agents without iterative negotiation.
+In contrast, ChatDev [173], our baseline system, employs
+a chat-based multi-agent approach where agents engage in
+synchronous natural language dialogues to reach consensus
+on design decisions and coordinate task execution. While
+26160 VOLUME 14, 2026
+
+[[page 22]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+not purely centralized, ChatDev’s reliance on dialogue-driven
+coordination introduces bottlenecks similar to those we iden-
+tified for centralized architectures in Section VI-E: agents
+must synchronize frequently, and coordination itself becomes
+a time-consuming deliberation process. This architectural
+difference directly impacts the latency components Lframework
+(agent framework overhead) and Lcomm (communication
+delays) that we characterized in Section II.
+1) QUANTITATIVE ANALYSIS
+The data in Table 11 reveals that MetaGPT completes
+complex software development tasks in significantly less
+time (541 s vs. 762 s on average), representing a ∼ 29%
+reduction in end-to-end latency [26]. To understand the
+sources of this improvement, we analyze the key architectural
+differences:
+• Structured communication eliminates parsing overhead:
+MetaGPT enforces structured communication through
+predefined document schemas with standardized sec-
+tions (e.g., Goals, User Stories, Competitive Analysis
+for PRDs; File Lists, Data Structures, Interface Def-
+initions for System Designs). Each agent produces a
+well-defined artifact that subsequent agents can parse
+deterministically, eliminating the ambiguity inherent in
+natural language dialogue. ChatDev’s free-form chat
+requires agents to repeatedly exchange messages to
+clarify intent and establish shared understanding, intro-
+ducing both computational overhead and opportunities
+for miscommunication.
+• Predetermined workflow reduces coordination delays:
+The SOP-based assembly line establishes clear role
+sequences and dependencies upfront. Agents know
+exactly what inputs to expect and what outputs to
+produce, eliminating the need for dynamic task nego-
+tiation. This reduces both the number of LLM calls
+required for coordination and the synchronization delays
+that occur when agents must iteratively align on next
+steps—a common bottleneck in dialogue-driven systems
+where coordination itself becomes a deliberation process
+involving multiple conversational rounds.
+• Elimination of redundant reasoning cycles: MetaGPT’s
+structured handoffs prevent the repetitive deliberation
+cycles common in chat-based systems. In dialogue-
+driven coordination, agents may revisit previously
+discussed decisions when new information emerges,
+triggering cascading re-evaluation. MetaGPT’s rigid
+workflow enforces forward progress through the devel-
+opment pipeline, though this comes at the cost of
+reduced adaptability—a tradeoff inherent in hierarchical
+architectures, as discussed in Section VI-E.
+2) RELIABILITY AND HIDDEN LATENCY
+Beyond direct execution time, Table 11reveals that MetaGPT
+achieves significantly higher Executability (3.75 vs. 2.25 on
+a 1–4 scale) and dramatically lower Human Revision Cost
+(0.83 vs. 2.5 manual corrections). These metrics quantify
+what we term hidden latency—the additional time spent
+debugging, fixing errors, and reworking outputs in production
+systems. A score of 3.75 indicates that MetaGPT’s outputs
+are ‘‘nearly perfect’’ to ‘‘flawless,’’ while ChatDev’s score
+of 2.25 reflects ‘‘runnable but imperfect’’ code requiring
+substantial manual intervention. The structured communi-
+cation and clear role definitions in MetaGPT’s hierarchical
+architecture produce more consistent outputs, reducing total
+time-to-working-software even when accounting for post-
+generation corrections. This empirically validates that archi-
+tecture choices impact not only runtime latency but also the
+reliability and maintainability of multi-agent system outputs.
+3) ARCHITECTURAL TRADEOFFS AND DOMAIN ALIGNMENT
+While MetaGPT’s hierarchical, SOP-based architecture
+demonstrates clear latency advantages for well-defined,
+structured tasks, it is important to acknowledge the tradeoffs
+discussed in Section VI-E. The rigid workflow may be less
+suitable for highly dynamic or exploratory problem spaces
+where the optimal sequence of actions is not known a priori.
+ChatDev’s chat-based approach, despite higher latency, offers
+greater flexibility to adapt to unexpected requirements or
+pivot based on intermediate findings. However, for the soft-
+ware development domain—a domain with well-established
+engineering workflows where SOPs are the norm in human
+practice—MetaGPT’s structured approach aligns naturally
+with the task structure, yielding substantial efficiency gains.
+4) VALIDATION OF CONCEPTUAL FRAMEWORK
+This case study empirically confirms the conceptual anal-
+ysis presented throughout Section VI. Limitations and
+Future Benchmarking Needs: While this case study and
+the empirical references throughout Section VI provide
+substantial evidence for MAS latency optimization strate-
+gies, we acknowledge that comprehensive, standardized
+benchmarks for multi-agent system latency—comparable to
+those available for single-agent LLM inference (e.g., TTFT,
+TPOT)—remain an area of active development in the research
+community. The relative scarcity of such benchmarks, par-
+ticularly for measuring fine-grained communication and
+coordination overheads across diverse MAS architectures
+and application domains, represents an important direction
+for future work. Establishing common evaluation protocols
+will be essential for systematic comparison of MAS opti-
+mization techniques and for validating the generalizability of
+findings like those presented here. The 29% latency reduc-
+tion achieved by MetaGPT demonstrates that architectural
+choices in communication protocols, coordination mecha-
+nisms, and workflow structure are primary levers for latency
+optimization in multi-agent systems. The data validates that
+moving from dialogue-driven coordination to structured,
+hierarchical workflows can yield significant performance
+improvements when the task domain permits clear role def-
+initions and predetermined workflows, consistent with our
+VOLUME 14, 2026 26161
+
+[[page 23]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+discussion of architectural patterns and their tradeoffs in
+Section VI-E.
+VII. OPEN CHALLENGES AND FUTURE RESEARCH
+DIRECTIONS
+Despite significant progress in optimizing individual com-
+ponents, the pursuit of consistently ultra-low latency in
+LLM-based agent systems is far from complete. Achieving
+responsiveness that enables seamless real-time interaction,
+especially as agents tackle increasingly complex and dynamic
+tasks, requires overcoming several fundamental challenges.
+This section first details the key unresolved hurdles related to
+scalability, performance trade-offs, and dynamic adaptation.
+It then outlines promising future research directions, from
+foundational hardware-software co-design to novel agent
+architectures and intelligent orchestration, that are essential
+for pushing the boundaries of agent speed and capability.
+A. KEY UNRESOL VED CHALLENGES
+Several formidable challenges currently hinder the realiza-
+tion of ultra-low latency LLM agents, demanding innovative
+solutions across the entire system stack. A paramount chal-
+lenge lies in the scalability of low-latency techniques and
+the management of escalating complexity as agent systems
+grow. Latency reduction methods that are effective for smaller
+models often face diminishing returns or prohibitive overhead
+when applied to larger models, extensive context windows,
+intricate multi-step tasks, or large-scale MAS where coor-
+dination itself becomes a bottleneck [6], [15], [23], [32],
+[85]. The combinatorial explosion of states and interactions in
+complex scenarios makes efficient, low-latency planning and
+decision-making exceptionally difficult, demanding more
+sophisticated search and guidance strategies [67], [69], [174].
+This scalability issue across model size, context length, and
+task intricacy is a primary barrier to deploying responsive
+agents in demanding, real-world applications.
+A second critical challenge involves navigating the inher-
+ent trade-off between reducing latency and maintaining high
+task performance, output quality, and system safety. Table 12
+illustrates this trade-off by outlining several optimization
+strategies alongside their latency benefits and potential risks
+to quality and safety. Aggressive optimization strategies—
+such as severe model compression, simplified reasoning
+cycles, or speculative decoding—can degrade an agent’s core
+capabilities, leading to reduced accuracy, factual inconsis-
+tency, or failure to adhere to safety constraints [21], [73],
+[115]. This ‘‘latency-quality-safety nexus’’ is particularly
+acute in high-stakes domains where a faster but less reliable
+or robust response could have severe consequences, making
+it essential to avoid optimizations that render agent behavior
+unpredictable or unsafe [175], [176], [177]. Developing a
+principled approach to manage these trade-offs, ensuring that
+speed does not compromise the agent’s fundamental utility
+and trustworthiness, remains a significant open problem.
+A third significant hurdle is enabling robust dynamic
+adaptation and real-time resource management to cope
+with fluctuating operational conditions. The optimal
+latency-reduction strategy is not static; it varies with chang-
+ing user requirements, system loads, network conditions,
+and available hardware resources, such as in hybrid edge-
+cloud deployments [77], [138], [161]. Designing systems
+that can monitor these variables and dynamically adjust
+their optimization configurations—for instance, by altering
+scheduling priorities, modifying planning depth, or switching
+decoding strategies—is crucial for maintaining consistent
+performance [47], [84]. However, achieving this adaptability
+without introducing performance jitter or compromising pre-
+dictability is extremely challenging, requiring sophisticated
+control mechanisms that can make fast, stable decisions based
+on real-time system state and task characteristics[114], [178].
+A fourth challenge, which cuts across the preceding
+three, is the absence of systematic comparative evaluation
+across the optimization categories surveyed in this work.
+Current literature predominantly evaluates techniques in
+isolation—quantization is benchmarked independently of KV
+cache optimization, agent-level planning improvements are
+assessed without considering system-level serving strategies,
+and multi-agent coordination mechanisms are rarely eval-
+uated against single-agent baselines under controlled con-
+ditions. This fragmented evaluation landscape obscures the
+relative contribution of each optimization layer and makes it
+difficult for practitioners to prioritize investments. Moreover,
+the shortcomings of individual approaches differ qualita-
+tively: model compression techniques (Section III) primarily
+risk quality degradation, agent-level strategies (Section IV)
+face scalability limitations as task complexity grows, system-
+level optimizations (Section V) are often hardware-specific
+and non-portable, and multi-agent methods (Section VI)
+introduce coordination overhead that can negate parallelism
+benefits for tightly coupled tasks. Establishing unified bench-
+marking protocols that evaluate cross-layer optimization
+combinations under realistic agent workloads is essential for
+advancing the field beyond isolated improvements toward
+holistic latency reduction.
+B. FUTURE RESEARCH DIRECTIONS
+To overcome the aforementioned challenges, future research
+should pursue several promising and synergistic directions
+aimed at holistically reducing agent latency. A foundational
+research direction is the pursuit of holistic hardware-software
+co-design, moving beyond accelerating core LLM inference.
+Future work should explore the concept of an ‘Agent-
+Aware Operating System’ (AgentOS). As this survey has
+deconstructed, an agent’s operational loop is a complex
+computational graph involving not just LLM inference but
+also planning, tool-use, and memory management (e.g.,
+Lframework, Ltool). A dedicated AgentOS could possess prim-
+itives to understand this entire graph, enabling intelligent,
+cross-layer scheduling. For instance, it could pre-fetch data
+for an anticipated tool call while the LLM is still in its plan-
+ning phase, or dynamically allocate heterogeneous memory
+to minimize the data movement between CPU-intensive logic
+26162 VOLUME 14, 2026
+
+[[page 24]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+TABLE 12. The trade-off between latency, performance, and safety. This table outlines the speed-quality-safety trade-off (Section VII) by linking
+optimization strategies to their benefits and potential risks.
+and GPU-intensive inference, thereby tackling bottlenecks at
+a more fundamental level than application-layer optimiza-
+tions alone.
+In addition to hardware advancements, another vital direc-
+tion involves fundamentally rethinking agent design through
+novel agent architectures and communication paradigms.
+Research into compositional, modular, or hierarchical agent
+designs can unlock significant latency reductions through
+parallelism and specialization, allowing complex tasks to be
+decomposed and handled by multiple, concurrently operat-
+ing specialist agents [28], [30], [68], [179]. Simultaneously,
+innovating inter-agent communication beyond verbose natu-
+ral language—by developing more efficient protocols based
+on semantic meaning, compressed state representations,
+or emergent, task-specific languages—is critical for minimiz-
+ing coordination overhead in MAS [156], [157], [180], [181].
+These architectural and communicational innovations aim to
+enhance intrinsic speed by optimizing the agent’s high-level
+logic and interaction patterns.
+An increasingly important research frontier is the extension
+of latency-optimized agent systems to diverse, real-world
+application domains beyond traditional natural language pro-
+cessing benchmarks. Recent work demonstrates that LLM
+and transformer-based systems are beingdeployed for mul-
+timodal disaster identification in low-resource linguistic
+contexts [54], multimodal misinformation detection across
+under-resourced languages [55], zero-shot automated evalu-
+ation in educational settings [52], and mental health moni-
+toring through social media analysis [53]. These applications
+impose stringent latency requirements while simultaneously
+demanding multimodal processing and cross-lingual gener-
+alization, creating optimization challenges that go beyond
+the primarily English-centric, text-only scenarios prevalent
+in current latency research. Developing agent systems that
+maintain low latency while processing heterogeneous inputs
+across diverse linguistic and cultural contexts represents a
+critical direction for ensuring the broad societal impact of the
+optimization techniques surveyed in this work.
+Leveraging advanced AI and Machine Learning (ML)
+for system-level orchestration presents a powerful avenue
+for enabling the intelligent, adaptive control required for
+dynamic environments. This includes applying ML models
+for fine-grained latency prediction of agent tasks, which
+can inform more effective scheduling and resource alloca-
+tion decisions [114], [182], [183]. Furthermore, developing
+learned scheduling policies, adaptive caching strategies that
+go beyond the KV cache, and intelligent resource manage-
+ment algorithms can create control systems that dynamically
+optimize the latency-quality trade-off based on real-time con-
+ditions and application-specific goals [43], [184], [185]. This
+AI-driven orchestration is key to managing the complexity
+of modern agent systems and ensuring their responsiveness
+under variable workloads.
+Finally, integrating energy efficiency as a first-class design
+objective is essential for creating sustainable low-latency
+agent systems. This is particularly critical for agents deployed
+on resource-constrained edge devices and for managing the
+operational costs of large-scale systems [38], [92]. This
+direction involves creating energy-aware performance met-
+rics, algorithms, and resource management strategies, as well
+as pursuing hardware-software co-design approaches that
+explicitly optimize for performance-per-watt [78], [138],
+[186]. A focus on sustainability ensures that the pursuit of
+speed is both technologically advanced and economically and
+environmentally viable.
+VIII. CONCLUSION
+Minimizing response latency is a cornerstone for unlocking
+the transformative potential of LLM-based agent systems,
+as high latency severely impairs usability, real-time applica-
+bility, task efficiency, and economic viability. This survey has
+provided a comprehensive analysis of this critical challenge,
+deconstructing the multifaceted sources of latency—from
+core LLM inference and agent framework overhead to tool
+interactions and system-level bottlenecks. We have detailed a
+holistic suite of optimization techniques that span the entire
+agent stack, including core model acceleration, agent-level
+algorithmic refinements inspired by cognitive science, system
+and infrastructure enhancements, and specialized strategies
+for multi-agent collaboration. This structured exploration,
+VOLUME 14, 2026 26163
+
+[[page 25]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+supported by frameworks, offers a consolidated knowl-
+edge base for building more responsive and effective agent
+systems. Despite substantial progress, the journey toward
+ultra-low latency is ongoing, marked by persistent challenges
+in scalability, navigating the speed-quality-safety trade-off,
+and enabling dynamic adaptation. Overcoming these hur-
+dles will require sustained, multi-disciplinary innovation
+across key research frontiers, including hardware-software
+co-design, novel agent architectures, AI-driven orchestration,
+and energy-efficient design. Ultimately, this collective effort
+is not merely a pursuit of speed but a fundamental quest
+to evolve LLM agents into the seamless, intelligent, and
+sustainable partners capable of tackling complex, real-world
+problems and reshaping how we interact with technology.
+REFERENCES
+[1] P . Zhao, Z. Jin, and N. Cheng, ‘‘An in-depth survey of large language
+model-based artificial intelligence agents,’’ 2023, arXiv:2309.14365.
+[2] Z. Xi et al., ‘‘The rise and potential of large language model based agents:
+A survey,’’Sci. China Inf. Sci., vol. 68, no. 2, 2025, Art. no. 121101.
+[3] S. Barua, ‘‘Exploring autonomous agents through the lens of large lan-
+guage models: A review,’’ 2024, arXiv:2404.04442.
+[4] B. T. R. Savarimuthu, S. Ranathunga, and S. Cranefield, ‘‘Harnessing the
+power of llms for normative reasoning in mass,’’ in Proc. Int. Workshop
+Coordination, Organizations, Institutions, Norms, Ethics Governance
+Multi-Agent Syst., 2024, pp. 132–145.
+[5] F. Christianos, G. Papoudakis, M. Zimmer, T. Coste, Z. Wu, J. Chen,
+K. Khandelwal, J. Doran, X. Feng, J. Liu, Z. Xiong, Y . Luo, J. Hao,
+K. Shao, H. Bou-Ammar, and J. Wang, ‘‘Pangu-agent: A fine-tunable
+generalist agent with structured reasoning,’’ 2023, arXiv:2312.14878.
+[6] X. Miao, G. Oliaro, Z. Zhang, X. Cheng, H. Jin, T. Chen, and Z. Jia,
+‘‘Towards efficient generative large language model serving: A survey
+from algorithms to systems,’’ 2023, arXiv:2312.15234.
+[7] A. Bastola, H. Wang, J. Hembree, P . Y adav, Z. Gong, E. Dixon, A. Razi,
+and N. McNeese, ‘‘LLM-based smart reply (LSR): Enhancing collabo-
+rative performance with ChatGPT-mediated smart reply system,’’ 2023,
+arXiv:2306.11980.
+[8] S. Shekhar, T. Dubey, K. Mukherjee, A. Saxena, A. Tyagi, and N. Kotla,
+‘‘Towards optimizing the costs of LLM usage,’’ 2024,arXiv:2402.01742.
+[9] X. Liu, R. Li, W. Ji, and T. Lin, ‘‘Towards robust multi-modal reasoning
+via model selection,’’ in Proc. 12th Int. Conf. Learn. Represent., 2023.
+[10] M. Á. González-Santamarta, F. J. Rodríguez-Lera, Á. M. Guerrero-
+Higueras, and V . Matellán-Olivera, ‘‘Integration of large language
+models within cognitive architectures for autonomous robots,’’ 2023,
+arXiv:2309.14945.
+[11] Y . Cheng, C. Zhang, Z. Zhang, X. Meng, S. Hong, W. Li, Z. Wang,
+Z. Wang, F. Yin, J. Zhao, and X. He, ‘‘Exploring large language model
+based intelligent agents: Definitions, methods, and prospects,’’ 2024,
+arXiv:2401.03428.
+[12] E. Karpas, O. Abend, Y . Belinkov, B. Lenz, O. Lieber, N. Ratner,
+Y . Shoham, H. Bata, Y . Levine, K. Leyton-Brown, D. Muhlgay, N. Rozen,
+E. Schwartz, G. Shachaf, S. Shalev-Shwartz, A. Shashua, and M. Tenen-
+holtz, ‘‘Mrkl systems: A modular, neuro-symbolic architecture that
+combines large language models, external knowledge sources and dis-
+crete reasoning,’’ 2022, arXiv:2205.00445.
+[13] X. Huang, W. Liu, X. Chen, X. Wang, H. Wang, D. Lian, Y . Wang,
+R. Tang, and E. Chen, ‘‘Understanding the planning of LLM agents:
+A survey,’’ 2024, arXiv:2402.02716.
+[14] Q. Lu, L. Zhu, X. Xu, Z. Xing, S. Harrer, and J. Whittle, ‘‘Towards
+responsible generative AI: A reference architecture for designing foun-
+dation model based agents,’’ in Proc. IEEE 21st Int. Conf. Softw. Archit.
+Companion (ICSA-C), Aug. 2023, pp. 119–126.
+[15] Z. Zhang, Q. Dai, X. Bo, C. Ma, R. Li, X. Chen, J. Zhu, Z. Dong,
+and J.-R. Wen, ‘‘A survey on the memory mechanism of large language
+model-based agents,’’ ACM Trans. Inf. Syst., vol. 43, no. 6, pp. 1–47,
+Nov. 2025.
+[16] J. Guo, N. Li, J. Qi, H. Y ang, R. Li, Y . Feng, S. Zhang, and M. Xu,
+‘‘Empowering working memory for large language model agents,’’ 2023,
+arXiv:2312.17259.
+[17] Y . Zhu, S. Qiao, Y . Ou, S. Deng, S. Lyu, Y . Shen, L. Liang, J. Gu, H. Chen,
+and N. Zhang, ‘‘KnowAgent: Knowledge-augmented planning for LLM-
+based agents,’’ in Proc. Findings Assoc. Comput. Linguistics, NAACL,
+2025, pp. 3709–3732.
+[18] J. Ruan, Y . Chen, B. Zhang, Z. Xu, T. Bao, G. Du, S. Shi, H. Mao, Z. Li,
+X. Zeng, and R. Zhao, ‘‘TPTU: Large language model-based AI agents
+for task planning and tool usage,’’ 2023, arXiv:2308.03427.
+[19] L. Wang, C. Ma, X. Feng, Z. Zhang, H. Y ang, J. Zhang, Z. Chen, J.
+Tang, X. Chen, Y . Lin, W. X. Zhao, Z. Wei, and J. Wen, ‘‘A survey on
+large language model based autonomous agents,’’Frontiers Comput. Sci.,
+vol. 18, no. 6, Dec. 2024, Art. no. 186345.
+[20] Y . Li, H. Wen, W. Wang, X. Li, Y . Y uan, G. Liu, J. Liu, W. Xu, X. Wang,
+Y . Sun, R. Kong, Y . Wang, H. Geng, J. Luan, X. Jin, Z. Y e, G. Xiong,
+F. Zhang, X. Li, M. Xu, Z. Li, P . Li, Y . Liu, Y .-Q. Zhang, and Y . Liu, ‘‘Per-
+sonal LLM agents: Insights and survey about the capability, efficiency and
+security,’’ 2024,arXiv:2401.05459.
+[21] Q. Zhou, Z. Zhang, X. Xiang, K. Wang, Y . Wu, and Y . Li, ‘‘Enhancing
+the general agent capabilities of low-paramter LLMs through tuning and
+multi-branch reasoning,’’ in Proc. Findings Assoc. Comput. Linguistics,
+NAACL, 2024, pp. 2922–2931.
+[22] B. Qiao, L. Li, X. Zhang, S. He, Y . Kang, C. Zhang, F. Y ang, H. Dong,
+J. Zhang, L. Wang, M. Ma, P . Zhao, S. Qin, X. Qin, C. Du, Y . Xu,
+Q. Lin, S. Rajmohan, and D. Zhang, ‘‘Taskweaver: A code-first agent
+framework,’’ 2023, arXiv:2311.17541.
+[23] T. Guo, X. Chen, Y . Wang, R. Chang, S. Pei, N. V . Chawla, O. Wiest,
+and X. Zhang, ‘‘Large language model based multi-agents: A survey of
+progress and challenges,’’ in Proc. Int. Joint Conf. Artif. Intell., 2024,
+pp. 8048–8057.
+[24] J. He, C. Treude, and D. Lo, ‘‘LLM-based multi-agent systems for
+software engineering: Literature review, vision, and the road ahead,’’
+ACM Trans. Softw. Eng. Methodology, vol. 34, no. 5, pp. 1–30,
+Jun. 2025.
+[25] Y . Zheng, C. Ma, K. Shi, and H. Huang, ‘‘Agents meet okr: An object and
+key results driven agent system with hierarchical self-collaboration and
+self-evaluation,’’ 2023, arXiv:2311.16542.
+[26] S. Hong, X. Zheng, J. H. Chen, Y . Cheng, J. Wang, C. Zhang, Z. Wang,
+S. K. S. Y au, Z. Lin, L. Zhou, C. Ran, L. Xiao, C. Wu, W. Chenglin,
+and S. Jürgen, ‘‘MetaGPT: Meta programming for a multi-agent col-
+laborative framework,’’ in Proc. 12th Int. Conf. Learn. Represent.,
+2023.
+[27] Z. Xu, S. Shi, B. Hu, J. Y u, D. Li, M. Zhang, and Y . Wu, ‘‘Towards reason-
+ing in large language models via multi-agent peer review collaboration,’’
+2023, arXiv:2311.08152.
+[28] W. Shen, C. Li, H. Chen, M. Y an, X. Quan, H. Chen, J. Zhang, and
+F. Huang, ‘‘Small llms are weak tool learners: A multi-llm agent,’’
+in Proc. Conf. Empirical Methods Natural Lang. Process., 2024,
+pp. 16658–16680.
+[29] W. Chen, Y . Su, J. Zuo, C. Y ang, C. Y uan, C. Qian, C.-M. Chan, Y . Qin,
+Y . Lu, R. Xie, Z. Liu, M. Sun, J. Zhou, L. Zhiyuan, S. Maosong, and
+Z. Jie, ‘‘AgentV erse: Facilitating multi-agent collaboration and explor-
+ing emergent behaviors,’’ in Proc. 12th Int. Conf. Learn. Represent. ,
+2023.
+[30] T. Händler, ‘‘Balancing autonomy and alignment: A multi-dimensional
+taxonomy for autonomous LLM-powered multi-agent architectures,’’
+2023, arXiv:2310.03659.
+[31] H. He, W. Y ao, K. Ma, W. Y u, Y . Dai, H. Zhang, Z. Lan, and D. Y u,
+‘‘WebV oyager: Building an end-to-end web agent with large multimodal
+models,’’ inProc. 62nd Annu. Meeting Assoc. Comput. Linguistics, 2024,
+pp. 6864–6890.
+[32] T. Xie, D. Zhang, J. Chen, X. Li, S. Zhao, R. Cao, T. J. Hua, Z. Cheng,
+D. Shin, F. Lei, Y . Liu, Y . Xu, S. Zhou, S. Savarese, C. Xiong,
+V . W. Zhong, and T. Y u, ‘‘OSWorld: Benchmarking multimodal agents for
+open-ended tasks in real computer environments,’’ in Proc. Adv. Neural
+Inf. Process. Syst., 2024, pp. 52040–52094.
+[33] J. Xie, Z. Chen, R. Zhang, X. Wan, and G. Li, ‘‘Large multimodal agents:
+A survey,’’ 2024, arXiv:2402.15116.
+[34] Y . Zhang, S. Y uan, C. Hu, K. Richardson, Y . Xiao, and J. Chen,
+‘‘Timearena: Shaping efficient multitasking language agents in a time-
+aware simulation,’’ in Proc. 62nd Annu. Meeting Assoc. Comput.
+Linguistics, 2024, pp. 3894–3916.
+26164 VOLUME 14, 2026
+
+[[page 26]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+[35] Y . Zhong, S. Liu, J. Chen, J. Hu, Y . Zhu, X. Liu, X. Jin, and H. Zhang,
+‘‘DistServe: Disaggregating prefill and decoding for goodput-optimized
+large language model serving,’’ in Proc. 18th USENIX Symp. Operating
+Syst. Design Implement. (OSDI), 2024, pp. 193–210.
+[36] D. Jacoby, T. Zhang, A. Mohan, and Y . Coady, ‘‘Human latency conver-
+sational turns for spoken avatar systems,’’ 2024, arXiv:2404.16053.
+[37] Y . Wu, R. Chang, J. M. Hellerstein, and E. Wu, ‘‘Facilitating exploration
+with interaction snapshots under high latency,’’ in Proc. IEEE Visualizat.
+Conf. (VIS), Feb. 2020, pp. 136–140.
+[38] M. O. Muñoz, R. Klatzky, J. Wang, P . Pillai, M. Satyanarayanan, and
+J. Gross, ‘‘Impact of delayed response on wearable cognitive assistance,’’
+PLoS ONE, vol. 16, no. 3, Mar. 2021, Art. no. e0248690.
+[39] P . Popovski, F. Chiariotti, K. Huang, A. E. Kalør, M. Kountouris, N. Pap-
+pas, and B. Soret, ‘‘A perspective on time toward wireless 6G,’’ Proc.
+IEEE, vol. 110, no. 8, pp. 1116–1146, Aug. 2022.
+[40] Z. Jiang, S. Fu, S. Zhou, Z. Niu, S. Zhang, and S. Xu, ‘‘AI-assisted
+low information latency wireless networking,’’ IEEE Wireless Commun.,
+vol. 27, no. 1, pp. 108–115, Feb. 2020.
+[41] D. Virmani and S. Jain, ‘‘Real time communication capacity for data
+delivery in wireless se nsor networks,’’Int. J. Comput. Sci. Issues (IJCSI),
+vol. 8, no. 4, p. 655, 2011.
+[42] Y . Kong, J. Ruan, Y . Chen, B. Zhang, T. Bao, S. Shiwei, G. Du, X. Hu,
+H. Mao, Z. Li, X. Zeng, R. Zhao, and X. Wang, ‘‘TPTU-v2: Boosting task
+planning and tool usage of large language model-based agents in real-
+world industry systems,’’ in Proc. Workshop Large Lang. Model (LLM)
+Agents, 2024, pp. 371–385.
+[43] A. Agrawal, N. Kedia, A. Panwar, J. Mohan, N. Kwatra,
+B. Gulavani, A. Tumanov, and R. Ramjee, ‘‘Taming throughput-
+latency tradeoff in LLM inference with sarathi-serve,’’ in Proc. 18th
+USENIX Symp. Operating Syst. Design Implement. (OSDI), 2024,
+pp. 117–134.
+[44] A. Gujarati, R. Karimi, S. Alzayat, W. Hao, A. Kaufmann, Y . Vigfusson,
+and J. Mace, ‘‘Serving DNNs like clockwork: Performance predictability
+from the bottom up,’’ inProc. 14th USENIX Symp. Operating Syst. Design
+Implement. (OSDI), 2020, pp. 443–462.
+[45] Z. Zhou, X. Ning, K. Hong, T. Fu, J. Xu, S. Li, Y . Lou, L. Wang, Z. Y uan,
+X. Li, S. Y an, G. Dai, X.-P . Zhang, Y . Dong, and Y . Wang, ‘‘A survey on
+efficient inference for large language models,’’ 2024, arXiv:2404.14294.
+[46] L. Zhang, X. Liu, Z. Li, X. Pan, P . Dong, R. Fan, R. Guo, X. Wang,
+Q. Luo, S. Shi, and X. Chu, ‘‘Dissecting the runtime performance of
+the training, fine-tuning, and inference of large language models,’’ 2023,
+arXiv:2311.03687.
+[47] B. Wu, Y . Zhong, Z. Zhang, S. Liu, F. Liu, Y . Sun, G. Huang, X. Liu, and
+X. Jin, ‘‘Fast distributed inference serving for large language models,’’
+2023, arXiv:2305.05920.
+[48] C. Hu, H. Huang, L. Xu, X. Chen, J. Xu, S. Chen, H. Feng, C. Wang,
+S. Wang, Y . Bao, N. Sun, and Y . Shan, ‘‘Inference without interference:
+Disaggregate llm inference for mixed downstream workloads,’’ 2024,
+arXiv:2401.11181.
+[49] T. Ding, T. Chen, H. Zhu, J. Jiang, Y . Zhong, J. Zhou, G. Wang, Z. Zhu,
+I. Zharkov, and L. Liang, ‘‘The efficiency spectrum of large language
+models: An algorithmic survey,’’ 2023, arXiv:2312.00678.
+[50] K. Mei, X. Zhu, W. Xu, W. Hua, M. Jin, Z. Li, S. Xu, R. Y e,
+Y . Ge, and Y . Zhang, ‘‘AIOS: LLM agent operating system,’’ 2024,
+arXiv:2403.16971.
+[51] M. Doostmohammadian, A. Aghasi, M. Pirani, E. Nekouei, H. Zarrabi,
+R. Keypour, A. I. Rikos, and K. H. Johansson, ‘‘Survey of distributed
+algorithms for resource allocation over multi-agent systems,’’ Annu. Rev.
+Control, vol. 59, 2024, Art. no. 100983.
+[52] S. T. Himi, N. Tanzila Monalisa, S. Sultana, A. Afrin, and K. M. Hasib,
+‘‘Automated exam script checking using zero-shot LLM and adaptive
+generative AI,’’ inProc. IEEE Int. Conf. Comput., Appl. Syst. (COMPAS),
+Sep. 2024, pp. 1–6.
+[53] A. K. Chowdhury, M. S. R. Sujon, M. S. S. Shafi, T. Ahmmad, S. Ahmed,
+K. M. Hasib, and F. M. Shah, ‘‘Harnessing large language models over
+transformer models for detecting Bengali depressive social media text:
+A comprehensive study,’’ 2024, arXiv:2401.07310.
+[54] F. T. J. Faria, M. B. Moin, B. K. Rafa, S. Saha, M. M. Rahman,
+K. M. Hasib, and M. F. Mridha, ‘‘BanglaCalamityMMD: A compre-
+hensive benchmark dataset for multimodal disaster identification in the
+low-resource Bangla language,’’Int. J. Disaster Risk Reduction, vol. 130,
+Nov. 2025, Art. no. 105800.
+[55] F. T. J. Faria, M. B. Moin, Z. Hasan, M. A. A. Khandaker, N. Islam,
+K. M. Hasib, and M. F. Mridha, ‘‘MultiBanFakeDetect: Integrating
+advanced fusion techniques for multimodal detection of Bangla fake news
+in under-resourced contexts,’’ Int. J. Inf. Manage. Data Insights, vol. 5,
+no. 2, Dec. 2025, Art. no. 100347.
+[56] E. Hirsch, G. Uziel, and A. Anaby-Tavor, ‘‘What’s the plan? Eval-
+uating and developing planning-aware techniques for LLMs,’’ 2024,
+arXiv:2402.11489v2.
+[57] H. Cui, Y . Du, Q. Y ang, Y . Shao, and S. C. Liew, ‘‘LLMind: Orchestrating
+AI and IoT with LLM for complex task execution,’’IEEE Commun. Mag.,
+vol. 63, no. 4, pp. 214–220, Apr. 2025.
+[58] J. Toy, J. MacAdam, and P . Tabor, ‘‘Metacognition is all you need? Using
+introspection in generative agents to improve goal-directed behavior,’’
+2024, arXiv:2401.10910.
+[59] W. Huang, F. Xia, T. Xiao, H. Chan, J. Liang, P . Florence, A. Zeng,
+J. Tompson, I. Mordatch, Y . Chebotar, P . Sermanet, N. Brown, T. Jack-
+son, L. Luu, S. Levine, K. Hausman, and B. Ichter, ‘‘Inner monologue:
+Embodied reasoning through planning with language models,’’ in Proc.
+6th Annu. Conf. Robot Learn., 2022, pp. 1769–1782.
+[60] G.-I. Y u, J. S. Jeong, G.-W. Kim, S. Kim, and B.-G. Chun, ‘‘Orca:
+A distributed serving system for transformer-based generative models,’’
+in Proc. 16th USENIX Symp. Operating Syst. Design Implement. (OSDI),
+2022, pp. 521–538.
+[61] R. Pope, S. Douglas, A. Chowdhery, J. Devlin, J. Bradbury, J. Heek,
+K. Xiao, S. Agrawal, and J. Dean, ‘‘Efficiently scaling transformer infer-
+ence,’’ Proc. Mach. Learn. Syst., vol. 5, pp. 606–624, 2023.
+[62] R. Y . Aminabadi, S. Rajbhandari, A. A. Awan, C. Li, D. Li, E. Zheng,
+O. Ruwase, S. Smith, M. Zhang, J. Rasley, and Y . He, ‘‘Deepspeed-
+inference: Enabling efficient inference of transformer models at unprece-
+dented scale,’’ in Proc. SC22: Int. Conf. High Perform. Comput., Netw.,
+Storage Anal., Feb. 2022, pp. 1–15.
+[63] J. P . Shah, G. Bikshandi, Y . Zhang, V . Thakkar, P . Ramani, and
+T. Dao, ‘‘FlashAttention-3: Fast and accurate attention with asynchrony
+and low-precision,’’ in Proc. Adv. Neural Inf. Process. Syst., 2024,
+pp. 68658–68685.
+[64] W. Kwon, Z. Li, S. Zhuang, Y . Sheng, L. Zheng, C. H. Y u, J. E. Gonzalez,
+H. Zhang, and I. Stoica, ‘‘Efficient memory management for large lan-
+guage model serving with pagedattention,’’ in Proc. ACM SIGOPS 29th
+Symp. Operating Syst. Princ., 2023, pp. 611–626.
+[65] Y . Song, Z. Mi, H. Xie, and H. Chen, ‘‘PowerInfer: Fast large
+language model serving with a consumer-grade GPU,’’ in Proc.
+ACM SIGOPS 30th Symp. Operating Syst. Princ., Nov. 2024,
+pp. 590–606.
+[66] T. Dao, D. Y . Fu, S. Ermon, A. Rudra, and C. Ré, ‘‘FlashAttention: Fast
+and memory-efficient exact attention with IO-awareness,’’ in Proc. Adv.
+Neural Inf. Process. Syst., 2022, pp. 16344–16359.
+[67] S. Ouyang and L. Li, ‘‘AutoPlan: Automatic planning of interactive
+decision-making tasks with large language models,’’ in Proc. Findings
+Assoc. Comput. Linguistics: EMNLP, 2023, pp. 3114–3128.
+[68] S. Rasal and E. Hauer, ‘‘Navigating complexity: Orchestrated problem
+solving with multi-agent LLMs,’’ 2024, arXiv:2402.16713.
+[69] Y . Zhuang, X. Chen, T. Y u, S. Mitra, V . S. Bursztyn, R. A. Rossi,
+S. Sarkhel, and C. Zhang, ‘‘ToolChain: Efficient action space navigation
+in large language models with A search,’’ in Proc. 12th Int. Conf. Learn.
+Represent., 2023.
+[70] M. Xing, R. Zhang, H. Xue, Q. Chen, F. Y ang, and Z. Xiao,
+‘‘Understanding the weakness of large language model agents
+within a complex Android environment,’’ in Proc. 30th ACM
+SIGKDD Conf. Knowl. Discovery Data Mining, Aug. 2024,
+pp. 6061–6072.
+[71] H. Chen, R. Pasunuru, J. Weston, and A. Celikyilmaz, ‘‘Walking down the
+memory maze: Beyond context limit through interactive reading,’’ 2023,
+arXiv:2310.05029.
+[72] B. Hu, C. Zhao, P . Zhang, Z. Zhou, Y . Y ang, Z. Xu, and B. Liu, ‘‘Enabling
+intelligent interactions between an agent and an LLM: A reinforcement
+learning approach,’’ 2023, arXiv:2306.03604.
+[73] X. Liu et al., ‘‘AgentBench: Evaluating LLMs as agents,’’ in Proc. 12th
+Int. Conf. Learn. Represent., 2023.
+[74] S. Liu, H. Xu, and Z. Cai, ‘‘Low latency datacenter networking: A short
+survey,’’ 2013,arXiv:1312.3455.
+[75] T. Jepsen, L. P . de Sousa, H. T. Dang, F. Pedone, and R. Soulé, ‘‘Optimistic
+aborts for geo-distributed transactions,’’ 2016, arXiv:1610.07459.
+VOLUME 14, 2026 26165
+
+[[page 27]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+[76] A. Ali-Eldin, B. Wang, and P . Shenoy, ‘‘The hidden cost of the edge:
+A performance comparison of edge and cloud latencies,’’ in Proc.
+Int. Conf. High Perform. Comput., Netw., Storage Anal., Nov. 2021,
+pp. 1–12.
+[77] H. Qiu, S. S. Banerjee, S. Jha, Z. Kalbarczyk, and R. K. Iyer, ‘‘FIRM:
+An intelligent fine-grained resource management framework for SLO-
+oriented microservices,’’ in Proc. 14th USENIX Symp. Operating Syst.
+Design Implement., 2020, pp. 805–825.
+[78] S. Rai and T. E. Carlson, ‘‘Cargo: Context augmented critical
+region offload for network-bound datacenter workloads,’’ 2020,
+arXiv:2008.07171.
+[79] E. Frantar, S. Ashkboos, T. Hoefler, and D. Alistarh, ‘‘GPTQ: Accurate
+post-training quantization for generative pre-trained transformers,’’ 2022,
+arXiv:2210.17323.
+[80] W. A. Hanafy, L. Wang, H. Chang, S. Mukherjee, T. V . Lakshman, and
+P . Shenoy, ‘‘Understanding the benefits of hardware-accelerated commu-
+nication in model-serving applications,’’ in Proc. IEEE/ACM 31st Int.
+Symp. Quality Service (IWQoS), Jun. 2023, pp. 1–10.
+[81] M. Lui, Y . Y etim, Ö. Özkan, Z. Zhao, S.-Y . Tsai, C.-J. Wu, and M. Hemp-
+stead, ‘‘Understanding capacity-driven scale-out neural recommendation
+inference,’’ inProc. IEEE Int. Symp. Perform. Anal. Syst. Softw. (ISPASS),
+Apr. 2021, pp. 162–171.
+[82] R. Abhyankar, Z. He, V . Srivatsa, H. Zhang, and Y . Zhang, ‘‘Apis-
+erve: Efficient api support for large-language model inferencing,’’ 2024,
+arXiv:2402.01869v1.
+[83] Y . Gu, Y . Shu, H. Y u, X. Liu, Y . Dong, J. Tang, J. Srinivasa, H. Latapie,
+and Y . Su, ‘‘Middleware for LLMS: Tools are instrumental for language
+agents in complex environments,’’ in Proc. Conf. Empirical Methods
+Natural Lang. Process., 2024, pp. 7646–7663.
+[84] Z. Liu, Y . Zhang, P . Li, Y . Liu, and D. Y ang, ‘‘Dynamic LLM-agent
+network: An LLM-agent collaboration framework with agent team opti-
+mization,’’ 2023, arXiv:2310.02170.
+[85] P . Pezeshkpour, E. Kandogan, N. Bhutani, S. Rahman, T. Mitchell, and
+E. Hruschka, ‘‘Reasoning capacity in multi-agent systems: Limitations,
+challenges and human-centered solutions,’’ 2024, arXiv:2402.01108.
+[86] G. Bai, Z. Chai, C. Ling, S. Wang, J. Lu, N. Zhang, T. Shi, Z. Y u, M. Zhu,
+Y . Zhang, X. Song, C. Y ang, Y . Cheng, and L. Zhao, ‘‘Beyond efficiency:
+A systematic survey of resource-efficient large language models,’’ 2024,
+arXiv:2401.00625.
+[87] Y . Fu, L. Xue, Y . Huang, A.-O. Brabete, D. Ustiugov, Y . Patel, and L. Mai,
+‘‘ServerlessLLM: Locality-enhanced serverless inference for large lan-
+guage models,’’ 2024, arXiv:2401.14351v2.
+[88] J. Lin, J. Tang, H. Tang, S. Y ang, G. Xiao, and S. Han, ‘‘AWQ:
+Activation-aware weight quantization for on-device LLM compression
+and acceleration,’’ GetMobile Mobile Comput. Commun., vol. 28, no. 4,
+pp. 12–17, Jan. 2025.
+[89] AutoGPTQ Team. (2024). AutoGPTQ: An Easy-to-Use LLM Quan-
+tization Package. [Online]. Available: https://github.com/AutoGPTQ/
+AutoGPTQ
+[90] T. Dettmers. (2024). Bitsandbytes: 8-Bit CUDA Functions for PyTorch.
+[Online]. Available: https://github.com/TimDettmers/bitsandbytes
+[91] T. Wolf et al., ‘‘Transformers: State-of-the-art natural language process-
+ing,’’ in Proc. Conf. Empirical Methods Natural Lang. Processing, Syst.
+Demonstrations, 2020, pp. 38–45.
+[92] W. Chen and Z. Li, ‘‘Octopus v2: On-device language model for super
+agent,’’ 2024, arXiv:2404.01744.
+[93] X. Cao, M. Xu, X. Y u, J. Y ao, W. Y e, S. Huang, M. Zhang, I. Tsang,
+Y .-S. Ong, J. T. Kwok, and H. T. Shen, ‘‘Analytical survey of learning
+with low-resource data: From analysis to investigation,’’ ACM Comput.
+Surveys, vol. 58, no. 6, pp. 1–47, Apr. 2026.
+[94] C. Zhang, Z. Liu, and D. Song, ‘‘Beyond the speculative game:
+A survey of speculative execution in large language models,’’ 2024,
+arXiv:2404.14897.
+[95] Z. Zeng, J. Y u, Q. Pang, Z. Wang, H. Zhuang, H. Shao, and X. Zou,
+‘‘Chimera: A lossless decoding method for accelerating large language
+models inference by fusing all tokens,’’ 2024, arXiv:2402.15758.
+[96] M. Elhoushi, A. Shrivastava, D. Liskovich, B. Hosmer, B. Wasti, L. Lai,
+A. Mahmoud, B. Acun, S. Agarwal, A. Roman, A. Aly, B. Chen,
+and C.-J. Wu, ‘‘LayerSkip: Enabling early exit inference and self-
+speculative decoding,’’ in Proc. 62nd Annu. Meeting Assoc. Comput.
+Linguistics, 2024, pp. 12622–12642.
+[97] C. Hooper, S. Kim, H. Mohammadzadeh, H. Genc, K. Keutzer, A. Gho-
+lami, and S. Shao, ‘‘SPEED: Speculative pipelined execution for efficient
+decoding,’’ 2023, arXiv:2310.12072.
+[98] B. Spector and C. Re, ‘‘Accelerating LLM inference with staged specu-
+lative decoding,’’ 2023, arXiv:2308.04623.
+[99] Z. Zhang, S. Liu, R. Chen, B. Kailkhura, B. Chen, and Z. Wang, ‘‘Q-hitter:
+A better token Oracle for efficient LLM inference via sparse-quantized
+KV cache,’’ in Proc. Mach. Learn. Syst., vol. 6, 2024, pp. 381–394.
+[100] Z. Zhang, Y . Sheng, T. Zhou, T. Chen, L. Zheng, R. Cai, Z. Song, Y . Tian,
+C. Ré, C. Barrett, Z. Wang, and B. Chen, ‘‘H2o: Heavy-hitter Oracle for
+efficient generative inference of large language models,’’ in Proc. Adv.
+Neural Inf. Process. Syst., vol. 36, 2023, pp. 34661–34710.
+[101] G. Xiao and Y . Tian, ‘‘Efficient streaming language models with atten-
+tion sinks,’’ in Proc. 12th Int. Conf. Learn. Represent. , 2023. [Online].
+Available: https://openreview.net/forum?id=NG7sS51zVF
+[102] B. Deiseroth, M. Meuer, N. Gritsch, C. Eichenberg, P . Schramowski,
+M. Aßenmacher, and K. Kersting, ‘‘Divergent token metrics: Measuring
+degradation to prune away LLM components-and optimize quantization,’’
+in Proc. Conf. North Amer . Chapter Assoc. Comput. Linguistics, Human
+Lang. Technol., 2024, pp. 6764–6783.
+[103] A. Zandieh, I. Han, V . Mirrokni, and A. Karbasi, ‘‘SubGen: Token gen-
+eration in sublinear time and memory,’’ 2024, arXiv:2402.06082.
+[104] S. Ren, Q. Jia, and K. Zhu, ‘‘Context compression for auto-regressive
+transformers with sentinel tokens,’’ in Proc. Conf. Empirical Methods
+Natural Lang. Process., 2023, pp. 12860–12867.
+[105] J. Pang, F. Y e, D. Wong, X. He, W. Chen, and L. Wang, ‘‘Anchor-based
+large language models,’’ in Proc. Findings Assoc. Comput. Linguistics
+ACL, 2024, pp. 4958–4976.
+[106] L. Y e, Z. Tao, Y . Huang, and Y . Li, ‘‘ChunkAttention: Efficient self-
+attention with prefix-aware KV cache and two-phase partition,’’ in Proc.
+62nd Annu. Meeting Assoc. Comput. Linguistics, 2024, pp. 11608–11620.
+[107] L. Zhu, X. Wang, W. Zhang, and R. Lau, ‘‘RelayAttention for efficient
+large language model serving with long system prompts,’’ in Proc. 62nd
+Annu. Meeting Assoc. Comput. Linguistics, 2024, pp. 4945–4957.
+[108] Y . Wang and Z. Xiao, ‘‘LoMA: Lossless compressed memory attention,’’
+2024, arXiv:2401.09486.
+[109] H. Sun, Y . Zhuang, L. Kong, B. Dai, and C. Zhang, ‘‘AdaPlanner: Adap-
+tive planning from feedback with language models,’’ inProc. Adv. Neural
+Inf. Process. Syst., 2023, pp. 58202–58245.
+[110] R. Sun, ‘‘Can a cognitive architecture fundamentally enhance LLMs? Or
+vice versa?’’ 2024, arXiv:2401.10444.
+[111] J. Liu, C. Y u, J. Gao, Y . Xie, Q. Liao, Y . Wu, and Y . Wang, ‘‘LLM-powered
+hierarchical language agent for real-time human-AI coordination,’’ in
+Proc. 23rd Int. Conf. Auto. Agents Multiagent Syst., 2023, pp. 1219–1228.
+[112] Z. Liu, W. Y ao, J. Zhang, L. Y ang, Z. Liu, J. Tan, P . K. Choubey, T. Lan,
+J. Wu, H. Wang, S. Heinecke, C. Xiong, and S. Savarese, ‘‘AgentLite: A
+lightweight library for building and advancing task-oriented LLM agent
+system,’’ 2024, arXiv:2402.15538.
+[113] J. Zhao, C. Zu, H. Xu, Y . Lu, W. He, Y . Ding, T. Gui, Q. Zhang, and X.
+Huang, ‘‘LongAgent: Scaling language models to 128k context through
+multi-agent collaboration,’’ 2024, arXiv:2402.11550.
+[114] Y . Li, Z. Li, W. Y ang, and C. Liu, ‘‘RT-LM: Uncertainty-aware resource
+management for real-time inference of language models,’’ in Proc. IEEE
+Real-Time Syst. Symp. (RTSS), Dec. 2023, pp. 158–171.
+[115] Z. Shi, M. Fang, S. Zheng, S. Deng, L. Chen, and Y . Du, ‘‘Cooperation
+on the fly: Exploring language agents for ad hoc teamwork in the avalon
+game,’’ 2023, arXiv:2312.17515.
+[116] S. Gao, J. Dwivedi-Y u, P . Y u, X. E. Tan, R. Pasunuru, O. Golovneva,
+K. Sinha, A. Çelikyılmaz, A. Bosselut, and T. Wang, ‘‘Efficient tool use
+with chain-of-abstraction reasoning,’’ in Proc. 31st Int. Conf. Comput.
+Linguistics, 2024, pp. 2727–2743.
+[117] S. Hao, Y . Gu, H. Ma, J. Hong, Z. Wang, D. Wang, and Z. Hu, ‘‘Reasoning
+with language model is planning with world model,’’ in Proc. Conf.
+Empirical Methods Natural Lang. Process., 2023, pp. 8154–8173.
+[118] Y . Y e, X. Cong, S. Tian, Y . Qin, C. Liu, Y . Lin, Z. Liu, and M. Sun,
+‘‘Rational decision-making agent with internalized utility judgment,’’
+2023, arXiv:2308.12519.
+[119] T. Cai, X. Wang, T. Ma, X. Chen, and D. Zhou, ‘‘Large language models
+as tool makers,’’ in Proc. 12th Int. Conf. Learn. Represent., 2023.
+[120] M. Zhuge, W. Wang, L. Kirsch, F. Faccio, D. Khizbullin, and J. Schmid-
+huber, ‘‘Gptswarm: Language agents as optimizable graphs,’’ inProc. Int.
+Conf. Mach. Learn., 2024, pp. 62743–62767.
+26166 VOLUME 14, 2026
+
+[[page 28]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+[121] P . Sharma, ‘‘LPar—A distributed multi agent platform for building poly-
+glot, omni channel and industrial grade natural language interfaces,’’
+2020, arXiv:2006.14666.
+[122] Z. Liu, W. Y ao, J. Zhang, L. Xue, S. Heinecke, R. Murthy, Y . Feng,
+Z. Chen, J. Carlos Niebles, D. Arpit, R. Xu, P . Mui, H. Wang, C.
+Xiong, and S. Savarese, ‘‘BOLAA: Benchmarking and orchestrating
+LLM-augmented autonomous agents,’’ 2023, arXiv:2308.05960.
+[123] M. Crouse, I. Abdelaziz, R. Astudillo, K. Basu, S. Dan, S. Kumaravel, A.
+Fokoue, P . Kapanipathi, S. Roukos, and L. Lastras, ‘‘Formally specifying
+the high-level behavior of LLM-based agents,’’ 2023, arXiv:2310.08535.
+[124] C. Ma, J. Zhang, Z. Zhu, C. Y ang, Y . Y ang, Y . Jin, Z. Lan, L. Kong,
+and J. He, ‘‘AgentBoard: An analytical evaluation board of multi-turn
+LLM agents,’’ in Proc. 38th Int. Conf. Neural Inf. Process. Syst., 2024,
+pp. 74325–74362.
+[125] S. Sarkar, M. Fakhruddin Babar, M. Hasan, and S. Kanti Karmaker,
+‘‘LLMs as on-demand customizable service,’’ 2024, arXiv:2401.16577.
+[126] G. Xiao, J. Lin, M. Seznec, J. Demouth, S. Han, and H. Song,
+‘‘SmoothQuant: Accurate and efficient post-training quantization for
+large language models,’’ in Proc. Int. Conf. Mach. Learn., 2022,
+pp. 38087–38099.
+[127] S. Rajbhandari, C. Li, Z. Y ao, M. Zhang, R. Y . Aminabadi, A. A. Awan,
+J. Rasley, and Y . He, ‘‘DeepSpeed-MoE: Advancing mixture-of-experts
+inference and training to power next-generation AI scale,’’ in Proc. Int.
+Conf. Mach. Learn., 2022, pp. 18332–18346.
+[128] J. Huang, S. Y ong, X. Ma, X. Linghu, P . Li, Y . Wang, Q. Li, S. Zhu, B. Jia,
+and S. Huang, ‘‘An embodied generalist agent in 3D world,’’ inProc. 41st
+Int. Conf. Mach. Learn., 2023, pp. 20413–20451.
+[129] Y . Chen, J. Arkin, Y . Zhang, N. Roy, and C. Fan, ‘‘Scalable multi-robot
+collaboration with large language models: Centralized or decentralized
+systems?’’ in Proc. IEEE Int. Conf. Robot. Autom. (ICRA), Aug. 2024,
+pp. 4311–4317.
+[130] N. Jalodia, M. Taneja, and A. Davy, ‘‘A graph neural networks based
+framework for topology-aware proactive SLA management in a latency
+critical NFV application use-case,’’ 2022, arXiv:2212.00714.
+[131] S. Sinha, R. West, and G. Ahmad, ‘‘PAStime: Progress-aware scheduling
+for time-critical computing,’’ in Proc. 32nd Euromicro Conf. Real-Time
+Syst. (ECRTS), 2019, pp. 1–3.
+[132] A. Khare, D. Garg, S. Kalra, S. Grandhi, I. Stoica, and A. Tumanov,
+‘‘SuperServe: Fine-grained inference serving for unpredictable work-
+loads,’’ inProc. 22nd USENIX Symp. Networked Syst. Design Implement.
+(NSDI), 2025, pp. 739–758.
+[133] M. Nosrati, A. Chalechale, and R. Karimi, ‘‘Latency optimization for
+resource allocation in cloud computing system,’’ in Proc.15th Int. Conf.
+Comput. Sci. Appl., Banff, AB, Canada, Jun. 2015, pp. 355–366.
+[134] A. U. Rahman, G. Ghatak, and A. De Domenico, ‘‘An online algorithm for
+computation offloading in non-stationary environments,’’IEEE Commun.
+Lett., vol. 24, no. 10, pp. 2167–2171, Oct. 2020.
+[135] M. Ebrahim, A. Senhaji Hafid, and M. Riduan Abid, ‘‘Lifelong learn-
+ing for fog load balancing: A transfer learning approach,’’ 2023,
+arXiv:2310.05187.
+[136] W. Song, T. Garrett, Y . Y ang, M. Liu, E. Tremel, L. Rosa, A. Merlina, R.
+Vitenberg, and K. Birman, ‘‘Cascade: A platform for delay-sensitive edge
+intelligence,’’ 2023, arXiv:2311.17329.
+[137] M. Afrin, J. Jin, A. Rahman, A. Rahman, J. Wan, and E. Hossain,
+‘‘Resource allocation and service provisioning in multi-agent cloud
+robotics: A comprehensive survey,’’ IEEE Commun. Surveys Tuts.,
+vol. 23, no. 2, pp. 842–870, 2nd Quart., 2021.
+[138] S. Tuli, G. Casale, L. Cherkasova, and N. R. Jennings, ‘‘DeepFT: Fault-
+tolerant edge computing using a self-supervised deep surrogate model,’’
+in Proc. IEEE Conf. Comput. Commun., May 2023, pp. 1–10.
+[139] H. Mao, Z. Zhang, Z. Xiao, Z. Gong, and N. Y an, ‘‘Learning agent
+communication under limited bandwidth by message pruning,’’ in Proc.
+AAAI Conf. Artif. Intell., 2020, vol. 34, no. 4, pp. 5142–5149.
+[140] P . Moritz, R. Nishihara, S. Wang, A. Tumanov, R. Liaw, E. Liang,
+M. Elibol, Z. Y ang, W. Paul, M. I. Jordan, and I. Stoica, ‘‘Ray: A dis-
+tributed framework for emerging AI applications,’’ inProc. 13th USENIX
+Symp. Operating Syst. design Implement. (OSDI), 2018, pp. 561–577.
+[141] NVIDIA Corporation. (2024). TensorRT-LLM: High-Performance Infer-
+ence for Large Language Models. [Online]. Available: https://github.com/
+NVIDIA/TensorRT-LLM
+[142] HuggingFace. (2024). Text Generation Inference: Production-Ready
+LLM Serving. [Online]. Available: https://github.com/huggingface/text-
+generation-inference
+[143] LangChain AI. (2025). LangChain: Building Applications With LLMs
+Through Composability. [Online]. Available: https://github.com/
+langchain-ai/langchain
+[144] LlamaIndex. (2025). LlamaIndex: A Data Framework for LLM Applica-
+tions. [Online]. Available: https://github.com/run-llama/llamaindex
+[145] Significant Gravitas. (2024). AutoGPT: An Experimental Open-Source
+Attempt To Make GPT-4 Fully Autonomous. [Online]. Available: https://
+github.com/Significant-Gravitas/AutoGPT
+[146] Y . Nakajima. (2023). BabyAGI: An AI-powered Task Management Sys-
+tem. [Online]. Available: https://github.com/yoheinakajima/babyagi
+[147] Cloud Native Computing Foundation. (2024). Kubernetes:
+Production-Grade Container Orchestration . [Online]. Available:
+https://kubernetes.io
+[148] Docker. (2024). Docker: Accelerated Container Application Develop-
+ment. [Online]. Available: https://www.docker.com
+[149] S. Ramírez. (2024). FastAPI: Modern Web Framework for Building APIs
+With Python. [Online]. Available: https://github.com/tiangolo/fastapi
+[150] KubeEdge Community. (2024). KubeEdge: Kubernetes Native Edge
+Computing Framework. [Online]. Available: https://kubeedge.io
+[151] Rancher Labs. (2024). K3s: Lightweight Kubernetes. [Online]. Available:
+https://k3s.io
+[152] B. Zhu, Y . Sheng, L. Zheng, C. Barrett, M. I. Jordan, and J. Jiao, ‘‘On
+optimal caching and model multiplexing for large model inference,’’ in
+Proc. 37th Int. Conf. Neural Inf. Process. Syst., 2023, pp. 59062–59094.
+[153] C. Carrión, ‘‘Kubernetes scheduling: Taxonomy, ongoing issues and chal-
+lenges,’’ ACM Comput. Surveys, vol. 55, no. 7, pp. 1–37, Jul. 2023.
+[154] T. Dao, ‘‘FlashAttention-2: Faster attention with better parallelism and
+work partitioning,’’ in Proc. Int. Conf. Learn. Represent. (ICLR), 2023.
+[155] S. Rasal, ‘‘LLM harmony: Multi-agent communication for problem solv-
+ing,’’ 2024, arXiv:2401.01312.
+[156] X. Guo, K. Huang, J. Liu, W. Fan, N. V élez, Q. Wu, H. Wang, T. L. Grif-
+fiths, and M. Wang, ‘‘Embodied LLM agents learn to cooperate in
+organized teams,’’ inProc. Lang. Gamification-NeurIPS Workshop, 2024.
+[157] S. Agashe, Y . Fan, A. Reyna, and X. E. Wang, ‘‘LLM-coordination: Eval-
+uating and analyzing multi-agent coordination abilities in large language
+models,’’ in Proc. Findings Assoc. Comput. Linguistics: NAACL, 2025,
+pp. 8038–8057.
+[158] J. Chen, X. Hu, S. Liu, S. Huang, W.-W. Tu, Z. He, and L. Wen,
+‘‘LLMArena: Assessing capabilities of large language models in dynamic
+multi-agent environments,’’ inProc. 62nd Annu. Meeting Assoc. Comput.
+Linguistics, 2024, pp. 13055–13077.
+[159] G. Wu, C. Zhao, C. Silva, and H. He, ‘‘Y our co-workers matter: Evalu-
+ating collaborative capabilities of language models in blocks world,’’ in
+Proc. Findings Assoc. Comput. Linguistics ACL, 2024, pp. 4941–4957.
+[160] B. Pan, J. Lu, K. Wang, L. Zheng, Z. Wen, Y . Feng, M. Zhu, and
+W. Chen, ‘‘Agentcoord: Visually exploring coordination strategy for llm-
+based multi-agent collaboration,’’ Comput. Graph., vol. 132, Nov. 2025,
+Art. no. 104338, doi: 10.1016/j.cag.2025.104338.
+[161] Z. Luan, Y . Lai, R. Huang, Y . Y an, J. Wang, J. Lu, and B. Chen,
+‘‘Hierarchical large language models in cloud-edge-end architecture for
+heterogeneous robot cluster control,’’ in Proc. 2nd Int. Symp. Comput.
+Artif. Intell., 2023, pp. 102–105.
+[162] J. Chen, Y . Jiang, J. Lu, and L. Zhang, ‘‘S-agents: Self-organizing agents
+in open-ended environments,’’ in Proc. ICLR Workshop Large Lang.
+Model (LLM) Agents, 2024.
+[163] X. Liu, D. Guo, X. Zhang, and H. Liu, ‘‘Heterogeneous embodied
+multi-agent collaboration,’’ IEEE Robot. Autom. Lett., vol. 9, no. 6,
+pp. 5377–5384, Jun. 2024.
+[164] T. Y uan, H.-M. Chung, J. Y uan, and X. Fu, ‘‘DACOM: Learning delay-
+aware communication for multi-agent reinforcement learning,’’ in Proc.
+AAAI Conf. Artif. Intell., Jun. 2023, vol. 37, no. 10, pp. 11763–11771.
+[165] N. Y oshimaru, M. Okuma, T. Iio, and K. Hatano, ‘‘AsyncMLD: Asyn-
+chronous multi-LLM framework for dialogue recommendation system,’’
+2023, arXiv:2312.13925.
+[166] A. Mizrahi, S. Azouvi, P . McCorry, and A. Zohar, ‘‘Sliding window
+challenge process for congestion detection,’’ in Proc. Int. Conf. Financial
+Cryptography Data Secur ., 2022, pp. 512–530.
+[167] L. Zhang, S. C. Liew, and H. Chen, ‘‘A just-in-time networking frame-
+work for minimizing request-response latency of wireless time-sensitive
+applications,’’ IEEE Internet Things J., vol. 10, no. 8, pp. 7126–7142,
+Apr. 2023.
+[168] N. Creech, N. Criado Pacheco, and S. Miles, ‘‘Dynamic neigh-
+bourhood optimisation for task allocation using multi-agent,’’ 2021,
+arXiv:2102.08307.
+VOLUME 14, 2026 26167
+
+[[page 29]]
+G. Park et al.: Minimizing Response Latency in LLM-Based Agent Systems: A Comprehensive Survey
+[169] F. Gehlhoff and A. Fay, ‘‘Concepts and algorithms for agent-based decen-
+tralized and integrated scheduling of production and auxiliary processes,’’
+2022, arXiv:2205.04461.
+[170] S. J. Zasada and P . V . Coveney, ‘‘A distributed multi-agent market place
+for HPC compute cycle resource trading,’’ 2015, arXiv:1512.04343.
+[171] Karishma and S. Rao, ‘‘Cooperative solutions to exploration tasks under
+speed and budget constraints,’’ J. Simul., vol. 17, no. 6, pp. 676–687,
+Nov. 2023.
+[172] H. Du, S. Thudumu, R. V asa, and K. Mouzakis, ‘‘A survey on
+context-aware multi-agent systems: Techniques, challenges and future
+directions,’’ 2024, arXiv:2402.01968.
+[173] C. Qian, W. Liu, H. Liu, N. Chen, Y . Dang, J. Li, C. Y ang, W. Chen, Y . Su,
+X. Cong, J. Xu, D. Li, Z. Liu, and M. Sun, ‘‘ChatDev: Communicative
+agents for software development,’’ in Proc. 62nd Annu. Meeting Assoc.
+Comput. Linguistics, 2024, pp. 15174–15186.
+[174] X. Chen, S. Zhang, P . Zhang, L. Zhao, and J. Chen, ‘‘Asking before acting:
+Gather information in embodied decision making with language models,’’
+2023, arXiv:2305.15695.
+[175] X. Tang, Q. Jin, K. Zhu, T. Y uan, Y . Zhang, W. Zhou, M. Qu, Y . Zhao,
+J. Tang, Z. Zhang, A. Cohan, Z. Lu, and M. Gerstein, ‘‘Prioritizing
+safeguarding over autonomy: Risks of LLM agents for science,’’ in Proc.
+ICLR Workshop Large Lang. Model (LLM) Agents, 2024.
+[176] N. A. Grupen, ‘‘Responsible emergent multi-agent behavior,’’ 2023,
+arXiv:2311.01609.
+[177] K. Gatsis, H. Hassani, and G. J. Pappas, ‘‘Latency-reliability trade-
+offs for state estimation,’’ IEEE Trans. Autom. Control, vol. 66, no. 3,
+pp. 1009–1023, Mar. 2021.
+[178] C. Nimpattanavong, T. V an Nguyen, I. Khan, R. Thawonmas, W. Choen-
+sawat, and K. Sookhanaphibarn, ‘‘Achieving fairness in DareFightingICE
+agents evaluation through a delay mechanism,’’ in Proc. IEEE Conf.
+Games (CoG), Aug. 2023, pp. 1–4.
+[179] Y . Wu, Y . Fan, S. Y eon Min, S. Prabhumoye, S. McAleer, Y . Bisk,
+R. Salakhutdinov, Y . Li, and T. Mitchell, ‘‘AgentKit: Structured LLM
+reasoning with dynamic graphs,’’ 2024, arXiv:2404.11483.
+[180] F. Jiang, Y . Peng, L. Dong, K. Wang, K. Y ang, C. Pan, D. Niyato, and
+O. A. Dobre, ‘‘Large language model enhanced multi-agent systems for
+6G communications,’’IEEE Wireless Commun., vol. 31, no. 6, pp. 48–55,
+Dec. 2024.
+[181] K. Wang, Y . Lu, M. Santacroce, Y . Gong, C. Zhang, and Y . Shen, ‘‘Adapt-
+ing LLM agents with universal communication feedback,’’ inProc. ICML
+Workshop F ound. Models Wild, 2025, pp. 6090–6107.
+[182] Z. Zheng, X. Ren, F. Xue, Y . Luo, X. Jiang, and Y . Y ou, ‘‘Response
+length perception and sequence scheduling: An LLM-empowered LLM
+inference pipeline,’’ in Proc. Adv. Neural Inf. Process. Syst., 2023,
+pp. 65517–65530.
+[183] J. Pichlmeier, P . Ross, and A. Luckow, ‘‘Performance characterization of
+expert router for scalable LLM inference,’’ in Proc. IEEE Int. Conf. Big
+Data (BigData), Dec. 2024, pp. 1686–1693.
+[184] Q. Su, C. Giannoula, and G. Pekhimenko, ‘‘The synergy of specula-
+tive decoding and batching in serving large language models,’’ 2023,
+arXiv:2310.18813.
+[185] P . Patel, E. Choukse, C. Zhang, Í. Goiri, B. Warrier, N. Mahalingam,
+and R. Bianchini, ‘‘POLCA: Power oversubscription in LLM cloud
+providers,’’ 2023, arXiv:2308.12908.
+[186] A. Mampage, S. Karunasekera, and R. Buyya, ‘‘A deep reinforcement
+learning based algorithm for time and cost optimized scaling of server-
+less applications,’’ Future Gener . Comput. Syst., vol. 173, Dec. 2025,
+Art. no. 107873.
+GYEONGMUK PARK is currently pursuing the
+integrated B.S./M.S. degree with the Graduate
+School of Data Science, Kangwon National Uni-
+versity, Chuncheon, Republic of Korea. As an
+Undergraduate Researcher with the Big Data Lab-
+oratory, he has worked on projects related to big
+data and machine learning, under the supervision
+of Y eonsu Park. His research interests include big
+data processing, LLM inference optimization, and
+advanced code intelligence.
+SEONGHYEON LEE received the B.S. and Ph.D.
+degrees in computer science and engineering from
+Pohang University of Science and Technology
+(POSTECH), Pohang, South Korea, in 2018 and
+2024, respectively.
+From 2024 to 2025, he was a Postdoctoral
+Researcher with POSTECH. Since 2025, he has
+been an Assistant Professor with the School of
+Computer Science and Engineering, Kyungpook
+National University, Daegu, South Korea. He has
+published 11 research papers in top-tier natural language processing con-
+ferences, including ACL. His research interests include code generation
+using generative language models, language-model-based robotic control,
+and multimodal language models integrating diverse input modalities. He is
+an Active Reviewer of the ACL Rolling Review (ARR) System and was
+recently invited to serve on the Program Committee for AAAI.
+YEONSU PARK received the B.S. degree in soft-
+ware engineering from Sungkyunkwan University,
+Suwon, Republic of Korea, in 2017, and the Ph.D.
+degree in computer science and engineering from
+POSTECH, Pohang, Republic of Korea, in 2024.
+He is currently an Assistant Professor with the
+Department of Computer Science and Engineer-
+ing, Kangwon National University, Chuncheon,
+Republic of Korea. Before that, he was a Post-
+doctoral Research Scientist with the Graduate
+School of Artificial Intelligence (GSAI), POSTECH. His research interests
+include big data processing, database systems, query processing, and query
+optimization.
+26168 VOLUME 14, 2026

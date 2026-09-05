@@ -1,0 +1,2098 @@
+[[page 1]]
+Noname manuscript No.
+(will be inserted by the editor)
+Developing LLM-based Multi-Agent Systems in
+Software Engineering: A Mixed-Method Experience
+Report
+Mariama Celi Serafim De Oliveira·
+Motunrayo Osatohanmen Ibiyo·Marco
+Gianrusso·Claudio Di Sipio·Davide
+Di Ruscio·Phuong T. Nguyen
+Received: date / Accepted: date
+AbstractThe proliferation of Generative Artificial Intelligence (Gen AI)
+powered by large language models (LLMs) has transformed the software
+development process, introducing new paradigms for code generation,
+debugging, testing, and maintenance. While early applications focused on
+leveraging single, independent LLMs to assist developers with isolated
+tasks, recent advances have shifted toward multi-agent systems (MAS)
+that orchestrate multiple LLM-based agents working collaboratively toward
+common objectives. Despite their promising potential, using MAS encompasses
+a set of challenges for developers who have to carefully select the right
+technology, devise proper coordination rules, and design specific roles for
+the involved agents. In this paper, by means of a mixed-method study, we
+Mariama Celi Serafim De Oliveira
+DISIM, University of L’Aquila, 67100 L’Aquila, Italy
+˚Abo Akademi University, 20500 Turku, Finland
+E-mail: mariamaceli.serafimdeoliveira@student.univaq.it
+Motunrayo Osatohanmen Ibiyo
+DISIM, University of L’Aquila, 67100 L’Aquila, Italy
+˚Abo Akademi University, 20500 Turku, Finland
+E-mail: motunrayoosatohanmen.ibiyo@student.univaq.it
+Marco Gianrusso
+DISIM, University of L’Aquila, 67100 L’Aquila, Italy
+E-mail: marco.gianrusso@univaq.it
+Claudio Di Sipio
+Johannes Kepler University, 4040 Linz, Austria
+E-mail: claudio.di sipio@jku.at
+BDavide Di Ruscio
+DISIM, University of L’Aquila, 67100 L’Aquila, Italy
+E-mail: davide.diruscio@univaq.it
+Phuong T. Nguyen
+DISIM, University of L’Aquila, 67100 L’Aquila, Italy
+E-mail: phuong.nguyen@univaq.it
+arXiv:2608.11965v1 [cs.SE] 12 Aug 2026
+
+[[page 2]]
+2 Mariama Celi Serafim De Oliveira et al.
+provide a comprehensive overview of the existing tools and frameworks for
+implementing MAS in software engineering. First, we conducted a quantitative
+analysis of the most relevant open source MAS frameworks by evaluating their
+documentation, features, and capabilities from the developers’ perspective.
+Second, we performed a qualitative evaluation of a subset of the selected
+frameworks by implementing a common use case, i.e., the summarization
+of GitHub README.MD files. Our findings demonstrate that the selected
+frameworks provide a good coverage in terms of fundamental components of
+MAS, even though advanced features such as telemetry of agents are still
+missing. In addition, the empirical evaluation shows that there is no significant
+difference in terms of ROUGE scores considering the summarization task,
+while the time taken to complete the task varies significantly across the
+frameworks, suggesting that some frameworks are more suitable for rapid
+prototyping than others. Finally, we provide a set of lessons learned and
+challenges that can help researchers and practitioners to select a suitable MAS
+framework according to their needs.
+Keywordsmulti-agent AI systems, large language models, software
+engineering, mixed methods, experience report
+1 Introduction
+The usage of large language models (LLMs) is pushing the boundaries of the
+automated software engineering, as different solutions are in place to support
+the whole development lifecycle, e.g., from the requirement engineering (Wei
+2024) to code development (Mastropaolo et al. 2021; Bucaioni et al. 2024). In
+this respect, these cutting-edge models contribute in defining a new software
+development paradigm, called AIware, in which LLMs are used as AI agents,
+being able to support developers in their daily tasks (Cogo et al. 2024).
+Although advanced LLMs outperform traditional approaches across many
+tasks, recent research reveals significant limitations that undermine the
+quality of their generated output. These limitations include:(i)catastrophic
+forgetting (Wang and Yin 2026), in which where models lose previously learned
+knowledge when trained on new data;(ii)hallucinations (Lavrinovics et al.
+2025; Huang et al. 2025; Zhang et al. 2025), i.e., generating plausible but
+factually incorrect or nonsensical content;(iii)privacy concerns (Kibriya
+et al. 2024; Berini et al. 2026), i.e., potential leakage of sensitive training
+data; and(iv)limited reasoning capabilities for complex, multi-step problems.
+To overcome these limitations, LLM-based multi-agent systems (MAS) have
+emerged as a novel methodology to orchestrate, manage, and evaluate a set
+of AI agents for specific applications (He et al. 2025; Li et al. 2024a). This
+transition represents a paradigm shift from monolithic LLM applications to
+the AgentWare paradigm, in which multiple LLMs are connected and work
+collaboratively to solve common tasks. By distributing responsibilities across
+specialized agents, MAS can leverage the strengths of individual models while
+mitigating their weaknesses through collaboration, verification, and iterative
+
+[[page 3]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 3
+refinement. The adoption of LLM-based agents has accelerated rapidly in
+recent years (Hou et al. 2024), with applications spanning diverse domains
+including software development, scientific research, and autonomous systems.
+However, despite the proliferation of MAS frameworks and implementations
+in Software Engineering (SE), a systematic and detailed comparison of
+their capabilities, performance, and suitability for specific SE tasks remains
+notably absent. This gap is particularly critical given the diversity of
+SE activities–ranging from code generation and debugging to requirements
+analysis and architectural design–each with distinct characteristics and quality
+requirements. Understanding how different MAS architectures perform across
+these varied tasks is essential for both researchers developing new agent
+systems and practitioners seeking to adopt these technologies effectively.
+In this paper, we adopteda mixed-method approach(Molina-Azor´ ın 2016;
+Di Penta and Tamburri 2017; Seaman et al. 2025) with both qualitative and
+quantitative results to provide a comprehensive overview of the existing MAS
+frameworks, focusing on their capabilities and features. In particular, we first
+selected 20 existing frameworks from GitHub and other sources. Then, we
+elicited the most popular and categorize them into two categories, i.e., low-
+code and high-code frameworks, according to the level of abstraction they
+provide. We then analyzed the documentation and technical features of the
+selected frameworks, focusing on their capabilities to support the development
+of MAS. Finally, we conducted an empirical evaluation based on a common
+scenario, i.e., the summarization of GitHub README files, to assess the
+usability and effectiveness of the selected frameworks in practice. Our findings
+demonstrate that the elicited frameworks offers a good coverage in terms
+of fundamental components of MAS, i.e., coordination rules, specification
+of roles and behaviors, and message handling. However, advanced features
+such as benchmarking, monitoring, and human-in-the-loop integration are
+still missing. On top of the obtained results, we delivered a set of lessons
+learned that can help researchers and practitioners to select the proper MAS
+framework according to their needs.
+We aim to answer the following research questions (RQs).
+– RQ 1:To what extent do existing frameworks cover MAS foundational
+concepts?To elicit the most advanced ones, we conducted a qualitative
+analysis using both the available documentation and previous studies.
+– RQ 2:What are the main characteristics of the considered MAS
+frameworks?Based on the identified frameworks, we performed an in-depth
+evaluation using a template-based approach. In particular, we focused on
+practical aspects that are relevant for developers, from the installation to
+the agent orchestration.
+– RQ 3:How well can popular frameworks support the summarization of
+GitHub README.MD files?Once we selected the four most representative
+frameworks, we performed a quantitative analysis to evaluate their
+performance in a common use case, i.e., the summarization of GitHub
+README.MD files.
+
+[[page 4]]
+4 Mariama Celi Serafim De Oliveira et al.
+In this respect, the contributions of this paper are summarized as follows:
+–A comparative analysis of existing frameworks to develop LLM-based
+multi-agent systems.
+–An empirical study to evaluate the effectiveness and efficiency of five
+frameworks for a common use case, i.e., the summarization of GitHub
+README.MD files.
+–A set of lessons learned and practical guidelines for researchers and
+practitioners to develop MAS leveraging existing frameworks.
+–A replication package including source code and the datasets formulated
+following existing practice (Baltes et al. 2026) to foster future research in
+the domain (De Oliveira et al. 2025).
+Structure.Section 2 reviews the related work and background related to
+LLM-based MAS frameworks. Afterward, we present a qualitative analysis
+with selection of the frameworks and the evaluation process in Section 3.
+Section 4 details an empirical study with the summarization of README files
+using MAS frameworks. A dedicated discussion concerning the lessons learned
+and practical guidelines for researchers and practitioners is provided in Section
+??. Finally, we sketch future work and conclude the paper in Section 5.
+2 Related Work
+2.1 LLMs-based Multi-Agent Systems in Software Engineering
+Before the advent of AI models, theCodewareparadigm has been
+widely adopted, involving professional programmers whose traditional
+lifecycle includes a well-established set of phases, i.e., requirements, design,
+implementation, testing, deployment, and maintenance that are carried out
+mostly manually (Hassan et al. 2024). With the introduction of generative
+AI models, the paradigm has shifted fromCodewareto different instances of
+AIware(see Figure 1). In particular, the evolution of AIware has been divided
+into three main paradigms:NeuralWare,PromptWare, andAgentWare.
+NeuralWare
+AI experts
+Training from scratch
+Deployed locally
+AIWare
+PromptWare
+Generative AI models
+Prompt engineering
+Single AI agent
+FMWare
+AgentWare
+Multi-agent system
+Human-in-the-loop
+Governance rules
+CodeWare
+Limited automation
+Manually written code
+Professional developers
+Fig. 1The evolution of software development paradigms (Cogo et al. 2024).
+NeuralWaredevelopment involves AI experts started to drive the
+development of a new generation of software (Amershi et al. 2019) by
+constructing a new set of assets such as datasets and models in a significantly
+more iterative and experiment-driven lifecycle. However, this new paradigm
+
+[[page 5]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 5
+has brought new challenges to the software engineering community, e.g.,
+versioning of AI models (Kandpal et al. 2023), AI-related code smells (Zhang
+et al. 2022), or additional requirements (De Martino and Palomba 2025).
+With the adoption and the further enhancements to the transformer
+architecture Vaswani et al. (2017) and the launch of ChatGPT in November
+2022, thePromptWareparadigm has emerged, as those models relies on
+natural language queries, knowns asprompts, allowing the development
+by programmers without deep programming and AI skills, ultimately
+democratizing software creation. In particular, researchers have started to
+improve the prompting process by introducing new techniques, moving from
+zero-shot (Romera-Paredes and Torr 2015) to more advanced paradigms, i.e.,
+few-shot prompting (Li et al. 2024b) and chain-of-thought prompting (Yang
+et al. 2023). Although promising, PromptWare has also brought new challenges
+to the SE community, e.g., hallucination (Liu et al. 2024b; Ji et al. 2023),
+energy consumption (Cursaru et al. 2024; Casta˜ no et al. 2023) and ethical
+concerns (Bhardwaj et al. 2021).
+The last step of this phenomenon is presented byAgentWareprogramming,
+that foster the interaction between different Foundation Model (FM) agents
+that are capable of decision-making, taking actions in an environment, and
+even interacting with other agents. In the SE domain, we can exemplify the
+usage of AgentWare in different phases of software development, with the
+majority of reported agents applied at the level of individual tasks, mainly in
+code generation and code quality assurance (e.g., static checking and testing),
+according to Liu et al. (2024a) survey. However, we can also find AgentWare
+agents in end-to-end software development or maintenance, which shows that
+LLM-based agents can be utilized to solve more complicated tasks in SE.
+One example of end-to-end software development is showcased by He et al.
+(2025), where two different games, Snake and Tetris, were developed using a
+platform called ChatDev (Qian et al. 2024). Given that ChatDev organizes the
+development process into three phases (designing, coding, and testing), they
+employed five different agents: the CEO, CTO, programmer, reviewer, and
+tester. From this case study, the authors concluded that the process was cost-
+effective and efficient, as the total expenditure for generating these two games
+was relatively low per prompt submission attempt. However, when tasked with
+more complex projects like the Tetris game, the system struggled to generate
+correct code.
+Zeshan et al. (2026) proposed LAMPS, a multi-agent system using
+collaborative LLMs to detect malicious PyPI packages. The system addresses
+the growing threat of malicious code in open-source repositories that
+traditional rule-based tools often miss due to their inability to capture
+semantic patterns. The research demonstrates that distributed LLM reasoning
+effectively detects malicious code and highlights benefits of modular multi-
+agent designs in software supply chain security.
+Although different approaches have been proposed, there is still the need
+to have a curated taxonomy to promote the effective adoption of AI agents.
+
+[[page 6]]
+6 Mariama Celi Serafim De Oliveira et al.
+2.2 Surveys on LLM-based MAS frameworks
+This section discusses existing survey, taxonomy, and comparison studies on
+MAS frameworks. H¨ andler (2023) proposed a MAS taxonomy with a focus
+on autonomy and alignment with human users’ goals. In particular, this
+work introduces a comprehensive multi-dimensional taxonomy that adheres
+to the 4+1 view model Kruchten (1995) of software architecture tailored
+focusing on agent composition and orchestration. On top of the proposed
+architectural model, a set of feature models have been depicted and discussed.
+To evaluate the expressiveness, seven different frameworks have been discussed
+using the proposed taxonomy. However, the taxonomy do not provide a
+comparison in terms of metrics, discussing qualitative and conceptual aspects.
+He et al. (2025) envisioned a research agenda for MAS in software engineering.
+After collecting relevant work with a systematic literature review (SLR), the
+authors developed two different games using MAS, i.e., Snake and Tetris,
+to assess the performance of MAS in solving complex programming tasks.
+Afterward, they identify a set of challenges and future opportunities in the
+field, which have been categorized into two main dimensions, i.e., enhancing
+individual agent capabilities and optimizing agent synergy. Concerning the
+single agents, it is crucial to refine the role-playing capabilities to build
+specialized agents by following three main steps, namely(i)identifying key
+SE roles using market analysis and involving stakeholder;(ii)understanding
+the limitations of LLM-based agents such as hallucination and performance
+degradation; and(iii)tailoring AI agents with specialized knowledge, prompts,
+and continuous learning. Concerning the optimization of the agents’ synergy,
+the interaction with human expert and handling privacy concerns are the main
+challenges. Rasheed et al. (2025) proposed an initial approach to evaluate 12
+different LLM agents by conducting two different experiments to support the
+Software Development Life Cycle (SDLC). In particular, the agents produced
+a requirements engineering specification, a software design plan, commented
+software code, a test and deployment plans for ten different software projects,
+spanning from snake game to a simple e-commerce application. The agents
+are then compared in terms of LOC and time taken to complete the tasks.
+Biancofiore et al. (2025) conducted a comprehensive comparison of existing
+Conversational Agents (CAs), spanning from neural network agents to cutting-
+edge transformers-based ones. First, a formal definition of CAs has given
+thorough the analysis of their dynamics in terms of domains of use and user
+experience. Then, the authors provide a categorization of the type of agents,
+i.e., modular and end-to-end approaches, and their goals, i.e., task-oriented
+and open-goal implementations. The conducted analysis showed that(i)task-
+oriented CAs prioritize efficiency in task completion while open-goal agents
+focus on building relationships and delivering personalized interactions; and
+(ii)a definitive solution to the challenges of automated conversation if far from
+to be definitive given the fast-evolving nature of the CAs.
+While prior studies have provided comprehensive analyses of LLM-based
+MAS, they have largely overlooked these frameworks from a developer’s
+
+[[page 7]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 7
+perspective–for example, in terms of documentation quality and ease of
+use. Moreover, although efficiency-related factors such as token consumption,
+number of requests, execution time, and cost are critical in practice, there is
+still a lack of systematic and comparative evaluation along these dimensions.
+Our work aims to fill this gap by providing a comprehensive taxonomy that
+has been elicited by analyzing both research papers and existing frameworks
+supporting the development of MAS. In addition, we provide a comparison
+of the frameworks, which can help developers to choose the most suitable
+framework for their needs.
+3 Qualitative Evaluation
+We describe the methods and results related to our qualitative analysis. In
+particular, Section 3.1 presents the literature review and the functionalities
+available in MAS frameworks. Afterward, Sections 3.2 and 3.3 report and
+explain the obtained results to answer the following research questions:
+To what extent do existing frameworks cover MAS foundational concepts?
+RQ1
+and
+What are the main characteristics of the considered MAS frameworks?
+RQ2
+3.1 Literature Analysis
+To find suitable MAS frameworks and tools, we reviewed existing literature
+in the field of software engineering and code development by conducting a
+multi-vocal study (Neto et al. 2019). Besides that, we considered existing
+systematic studies, including both gray and white literature. The methodology
+is composed of three main steps, i.e.,Planning,ConductingandMapping,
+following existing empirical standards (Kitchenham et al. 2010).
+Planning.The first step involves the definition of the query and the source
+of knowledge, i.e., the selected digital library. In the scope of the paper,
+we consider the Scopus digital library 1 as it is one of the largest and most
+comprehensive databases of peer-reviewed literature in the field of computer
+science. In addition, the platform enables searching for gray literature, e.g.,
+1 https://www.scopus.com/
+
+[[page 8]]
+8 Mariama Celi Serafim De Oliveira et al.
+preprints and conference papers, that are not indexed in other digital libraries.
+Scopus covers preprints from 2017 onwards from arXiv, ChemRxiv, bioRxiv,
+medRxiv, SSRN, TechRxiv, and Research Square, thus granting a wide
+coverage of the most relevant preprint services. While we acknowledge that the
+search is not exhaustive in terms of the identified papers, we aim to identify a
+“quasi-gold” set of academic works that can be used to elicit the foundational
+concepts of a MAS. Nevertheless, we adhere to formal guidelines proposed for
+conducting systematic studies that also involve gray literature (Garousi et al.
+2019) without running additional steps, e.g., snowballing.
+Table 1Keyword groups and final boolean search query.
+Group Keywords
+Group 1 MAS, multi-agent system, LLM, large-language models, pre-trained
+language model
+Group 2 evidence-based software engineering survey, structured review,
+systematic review, literature review, literature analysis, in-depth
+survey, literature survey, meta-analysis, past studies, subject matter
+expert, analysis of research, empirical body of knowledge
+Combined (mas OR multi-agent AND system AND llm OR large-language AND
+models OR pre-trained AND language AND model AND “evidence-
+based software engineering” OR survey OR “structured review” OR
+“systematic review” OR “literature review” OR “literature analysis”
+OR “in-depth survey” OR “literature survey” OR “meta-analysis” OR
+“past studies” OR “subject matter expert” OR “analysis of research”
+OR “empirical body of knowledge”)
+The search string is composed of two different group of keywords, i.e.,
+MAS-related (Group 1) and Systematic studies (Group 2), that are eventually
+combined in the final boolean query as shown in Table 1. We use theTITLE-
+ABS-KEYfield to search for the keywords in the title, abstract, and keywords
+of the papers. We also limited the search to the Computer Science domain and
+to articles published in well-ranked venues according to the CORE ranking 2
+and Scimago Journal Rank (SJR). 3 To find relevant studies, we followed
+the guidelines proposed by existing research (Kitchenham et al. 2010) for
+conductingtertiary studiesin which the subject of the study are systematic
+reviews. While the search string is not exhaustive, it represents a starting point
+to elicit pivotal components of a MAS system.
+We then defined a set of inclusion and exclusion criteria to filter the results,
+summarized in Table 2. In particular, we did not consider papers that propose
+a new MAS. Instead, we focused on studies that provide foundational concepts
+for building MAS. In addition, we imposed the following criteria:(i)the search
+string is composed of keywords related to MAS and LLMs;(ii)the search was
+limited to Computer Science;(iii)only articles published in premier venues
+according to CORE ranking and Scimago Journal Rank (SJR) were selected;
+2 https://portal.core.edu.au/conf-ranks/
+3 https://www.scimagojr.com/
+
+[[page 9]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 9
+Table 2Inclusion and exclusion criteria for the literature analysis.
+Inclusion criteria
+/Surveys, literature reviews, or similar that focus on MAS based on LLMs
+and/or pre-trained models.
+/Articles that provide governance rules, guidelines, and other foundational
+concepts for building MAS.
+/Conference and journal paper published in well-ranked venues according to
+CORE ranking and Scimago Journal Rank (SJR). In addition, we considered
+relevant papers that have not been published but available on preprint services,
+e.g., arXiv.
+/Articles written in English and published in the Computer Science domain.
+/Studies published from January 2023 to January 2025
+Exclusion criteria
+✖Studies that focus on multi-agent systems but not large language models.
+✖Papers that propose a new MAS but do not provide a systematic study or
+comparison of them.
+✖Workshops, vision/short papers, and posters.
+(iv)the articles must be written in English; and finally(v)the search was
+confined to the most 2 recent years, i.e., from January 2023 to January 2025.
+Table 3Inclusion and exclusion criteria for MAS frameworks.
+Inclusion criteria
+/Frameworks with supporting GitHub repositories.
+/Frameworks that provide proper documentation, tutorials, or similar to
+extract foundational concepts of MAS.
+/Open-source frameworks or those that provide permissive licenses.
+Exclusion criteria
+✖Frameworks to develop single LLM-based systems or that do not allow
+orchestration among agents.
+✖Frameworks that have fewer than 10,000 GitHub stars.
+We used GitHub as the base for selecting frameworks, as it provides a wide
+range of open-source projects. The inclusion and exclusion criteria applied are
+summarized in Table 3. We first identified a GitHub awesome list4 of tools, then
+we considered open-source frameworks that provide proper documentation
+and/or a supporting GitHub repository. Tools with fewer than 10,000 stars
+were excluded. While the number of stars might not be sufficient to judge the
+quality of the frameworks, it can be used together with the number of forks to
+evaluate the popularity of the tool (Borges and Tulio Valente 2018). Moreover,
+we checked tech blog posts, forums, and other sources to identify additional
+relevant tools and frameworks falling within the definition of gray literature
+provided by (Garousi et al. 2019). For the literature analysis, we independently
+4 https://github.com/kaushikb11/awesome-llm-agents
+
+[[page 10]]
+10 Mariama Celi Serafim De Oliveira et al.
+Table 4Functionalities of MAS frameworks.
+Alias Name Description
+F1 MAS core architecture We analyze if the tool allows for the definition of
+the core features of a multi-agent system identified in
+the literature, i.e., definition of agents, orchestration,
+concept of memory and external tools as defined in
+existing studies (He et al. 2025; Xi et al. 2025).
+F2 MAS type This concerns whether the tool enables the integration
+of custom agents or agents coming from a different
+architecture, e.g., AI models, transformers. If this
+feature is not provided, we consider the system as
+Homogeneous, otherwise it is Heterogeneous.
+F3 Role specification With this feature, we check if the platform allows
+us to define the role of an agent, e.g., PromptAgent,
+SupervisorAgent, or other roles.
+F4 Tool support This dictates if the tool allows for the usage of external
+tools, e.g., APIs, or other tools.
+F5 Remote access to
+agents
+We analyze if the tool facilitates remote access to agents,
+e.g., through a Web interface or other means, or if the
+agents are only available locally.
+F6 Agent monitoring This evaluates whether the platform supports any
+monitoring facility, e.g., evaluation metrics, or telemetry
+functions.
+F7 Human feedback
+integration
+We analyze if it is possible to embed human feedback in
+the agent’s decision making process. Note that chat is
+not considered as human feedback.
+F8 Agent comparison This is related to the functionality to allows one to
+compare agents, e.g., through a web interface or other
+means.
+F9 Reusage of
+benchmarks datasets
+Platforms could enable the reuse of benchmark datasets
+for the evaluation of the agents through a specific
+interface or API.
+F10 Discovery capabilities Discovering new agents or new functionalities, e.g.,
+store or marketplace for agents or tools is a useful
+functionality, and we check if it is enabled by the
+considered platforms.
+analyzed the tools and then discussed the results to reach a consensus on the
+final set. To facilitate future research, we specified the selection process in the
+replication package available online (De Oliveira et al. 2025).
+Conducting.Once we defined the search string and the inclusion and exclusion
+criteria, we obtained a total number of 17 papers that match the identified
+keywords. Then, by applying the defined criteria, we ended up with 10 relevant
+papers. Five of them are classified aswhite literatureas they have peer-
+reviewed in high-ranked journals and conferences, while the remaining papers
+fall within thegray literaturecategory, i.e., being available on preprint services.
+Similarly, we started from a pool of 20 different frameworks that are publicly
+available on GitHub. After the application of the criteria, we excluded two
+frameworks with fewer than 10,000 stars, and three with subscriptions. Finally,
+we got a final set of 16 frameworks being relevant to the scope of the paper.
+Mapping.The final step of the methodology involves mapping the selected
+papers and frameworks to the identified dimensions. We first read the full
+text of each paper to extract an initial list of features for each dimension.
+Afterward, we discussed the results to reach a consensus on the final list of
+
+[[page 11]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 11
+features, and mapped the features to the corresponding papers. Eventually,
+we obtained the foundation features summarized in Table 4.
+Table 5Characteristics.
+Alias Characteristic Description
+C1 Installation It describes how to install the tool, including any
+dependencies or prerequisites that need to be met. There
+are also instructions for setting up the tool in a local
+environment, as well as any necessary configurations.
+C2 Developer Interface This concerns the ease of use and intuitiveness of
+the supported interface. It is also related to the
+quality of the documentation provided, including its
+clarity, completeness, and organization. This includes
+evaluating the availability of tutorials, examples, and
+API references.
+C3 Model and Tools
+Integration
+Support for integrating with different AI models,
+including LLMs and other types of models, as well as
+external services. We assess the flexibility of the tool
+in terms of model selection and integration, as well as
+its ability to work with different model architectures.
+This includes evaluating the availability of pre-built
+integrations and the flexibility of the tool in terms of
+custom integration.
+C4 Agent Creation Support for creating and managing agents, i.e., the ease
+of creating new agents, including the availability of
+templates and examples. In addition, this concerns how
+role and external knowledge are defined in the tool.
+C5 Agent Orchestration Support for orchestrating agents and managing their
+interactions, i.e., the ease of defining workflows and
+coordinating multiple agents, including the availability
+of pre-built orchestration patterns.
+C6 Monitoring Support for monitoring and debugging agents, i.e., the
+availability of monitoring tools, including logging and
+telemetry features. This includes evaluating the ease
+of tracking agent performance and identifying issues
+during development and deployment.
+✍Addressing RQ1.To report the main advantages and disadvantages of each
+tool from a developer’s perspective, we defined the technical characteristics
+shown in Table 5. On one hand, they cover technical aspects related to the
+installation and integration of the tools, e.g., installation process, model and
+tools integration, and agent creation. On the other hand, they partially overlap
+with the foundation functionalities discussed in Table 4. This aims to provide
+both practical and foundational evidence to support the development of MAS.
+✍Addressing RQ2.The search in the literature analysis resulted in several
+frameworks, and to answerRQ 2 we had to narrow down the corpus to focus
+only on the most representative ones. To this end, the first two authors of
+this paper independently analyzed the tools identified inRQ 1, picking three
+different frameworks for each programming paradigm, i.e., low and high code.
+Moreover, we chose the frameworks that have the highest number of GitHub
+stars and forks, as well as maintain a trade-off between the number of features
+provided and the ease of use. The analysis led to the identification ofeight
+representative tools, i.e., AutoGen (AutoGen 2024), AutoGPT (Auto-GPT
+2024), Dify (Dify 2024), Flowise (Flowise 2024), Haystack (Deepset 2024),
+
+[[page 12]]
+12 Mariama Celi Serafim De Oliveira et al.
+Llama Index (Meta 2024), OpenAISDK (OpenAI 2024), and Semantic Kernel
+(Microsoft 2024). For the sake of presentation, in the rest of this paper, we
+report and analyze the tools in alphabetical order, without grouping them into
+two distinct categories, i.e., low code and high code.
+3.2 Coverage of Foundational Concepts
+Table 6 provides an overview of the selected MAS frameworks and their
+support for the ten features defined in Section 3.1. We examined the official
+documentation provided on GitHub or the framework’s website and similar
+documents to indicate if a feature is fully supported , partially supported
+G #, or not supported#. A feature is considered fully supported when the
+framework provides all the characteristics in Table 4. A feature is partially
+supported when the framework implements some of the characteristics but
+lacks others. Finally, a feature is not supported when none of the characteristics
+described for that feature is present in the framework. The classification of
+each framework was performed by a single author of the present work, with
+the classification distributed among the authors.
+In addition, we classify the tools into two categories i.e.,low-codeand
+high-code. The former characterizes frameworks that facilitate the MAS
+development by providing graphical capabilities for newcomer developers. The
+latter represents traditional frameworks that require developers to write code
+to implement the MAS even though they may provide some built-in functions
+and classes to facilitate the development.
+Table 6Overview of MAS frameworks grouped by development paradigm.
+Name F1 F2 F3 F4 F5 F6 F7 F8 F9 F10
+Low-code
+Haystack (Deepset 2024) # G # #
+Dify (Dify 2024) 
+Flowise (Flowise 2024) G # # G # # 
+AutoGPT (Auto-GPT 2024) G # # # # 
+Botpress (Botpress 2024)G # # G # # # G #
+High-code
+AutoGen (AutoGen 2024) G # # #
+Llama Index (Meta 2024) # # #
+OpenAISDK (OpenAI 2024) # G # # G # # 
+Semantic Kernel (Microsoft 2024) # # #
+LangChain (LangChain 2024) G # G # 
+Camel (Camel-AI 2024) # # # # #
+CrewAi(CrewAI 2024) # # # #
+ix (Krenesky 2024) # # # # #
+MetaGPT (MetaGPT 2024)G # # # G # # # #
+Smolagents (Smolagents 2024) # G # # #
+Agno (Agno 2025) # # # # 
+From the analysis, we found that the most complete framework is
+LangChain (LangChain 2024), as it provides support (full and partial) for
+
+[[page 13]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 13
+all the elicited functionalities. This is quite expected as it was one of the first
+MAS frameworks to be developed, and it has been continuously improved since
+its release. Similarly, Dify (Dify 2024) supports all the identified functionalities
+except for F6, i.e., Agent Monitoring. Contrariwise, ix (Krenesky 2024)
+and Camel (Camel-AI 2024) support the first five functionalities, neglecting
+the remaining ones. Concerning the framework accessibility, we report that
+Amazon Bedrock, VertexAI and Botpress require a subscription to use their
+services, while the other frameworks are open-source and can be used for free.
+Therefore, we excluded these three frameworks from our further analyses.
+Overall, the low-code frameworks covers more functionalities compared
+to high-code, especially qualitative aspects like benchmarking, monitoring,
+and evaluation. On the one hand, low-code frameworks are designed to be
+more user-friendly and accessible, often providing built-in tools. On the other
+hand, high-code frameworks focus more on flexibility and extensibility, leaving
+qualitative aspects to be implemented by developers as needed.
+From the initial list, we further refined the list of tools by considering
+the following aspects:(i)they offer a permissive license, e.g., developers can
+reuse the tool without any subscription or commercial license;(ii)they have
+a large number of stars and forks, i.e., they are well-maintained and have
+a vibrant community of developers; and(iii)they provide a comprehensive
+documentation and examples to support developers in using the tool. By
+applying these criteria, we selected eight (marked in gray in Table 6)
+frameworks for our analysis and evaluated them using the README.MD
+summarization task, i.e., theMetagentescenario (Nguyen et al. 2025)
+presented in Section 4.1. In such a way, we covered all the ten functionalities
+using different frameworks, thus providing a comprehensive analysis of the
+MAS frameworks.
+Answer toRQ 1:Concerning low-code platforms, Dify (Dify 2024) is
+the one that covers most of the considered functionalities, i.e., 9 over
+10, and both Haystack (Deepset 2024) and Flowise (Flowise 2024) come
+at the second place, making available 7 over 10 functionalities. With
+respect to high-code platforms, LangChain (LangChain 2024) is the most
+complete one, with more than 8 fully supported, and 2 partially supported
+functionalities. Still, there are some gaps in terms of agent monitoring and
+evaluation, which are not fully supported by a few frameworks. Essentially,
+the low-code platforms, i.e., Haystack (Deepset 2024), Flowise (Flowise
+2024), AutoGPT (Auto-GPT 2024), Botpress (Botpress 2024), tend to
+cover more qualitative aspects compared to high-code ones, even though
+the integration between the two paradigms is supported.
+
+[[page 14]]
+14 Mariama Celi Serafim De Oliveira et al.
+3.3 Characteristics of the Frameworks
+We investigate different aspects of the frameworks to answer the following
+research question. In particular, the first three authors implemented the
+Metagentescenario independently and received the same training and
+documentation materials. Then, the fourth author aggregates the results to
+reach a consensus on the main characteristics of the frameworks. Our aim is
+to answer the following research question:
+What are the main characteristics of the considered MAS frameworks?
+RQ2
+To this end, we consider the characteristics defined in Table 5, inspecting
+the frameworks to understand how well they cover them.
+3.3.1 C1 - Installation
+Table 7 summarizes the installation process for each framework, highlighting
+the setup method and the quickstart support in terms of documentation,
+tutorial, or similar materials. Overall, all the frameworks provide well-
+structured documentation, even though at different levels of detail. In terms
+of installation, high-code frameworks can be installed using common package
+managers, e.g., pip or npm, while low-code ones require Docker to be run,
+especially the one classified as low-code, possibly increasing the complexity of
+the setup for newcomers. In addition, some frameworks provide a web-based
+dashboard to facilitate the development and management of MAS applications.
+Table 7Installation.
+Framework Local Cloud Docker Quickstart support
+AutoGen (AutoGen 2024) / ✖ ✖ Documentation, Tutorials
+AutoGPT (Auto-GPT 2024) / ✖ / Documentation, Tutorials
+Dify (Dify 2024) / / / Documentation, Templates
+Flowise (Flowise 2024) / ✖ / Tutorials
+Haystack (Deepset 2024) / ✖ ✖ Documentation
+Llama Index (Meta 2024) / ✖ ✖ Visualization
+OpenAISDK (OpenAI 2024) / ✖ ✖ Documentation
+Semantic Kernel (Microsoft 2024) / ✖ ✖ Notebooks, Examples
+▷AutoGen. The setup is straightforward, using commonpipcommands
+which will install the AgentChat and Extension packages. The documentation
+provides simple examples of developing agents, such as agents counting
+numbers or providing weather information.
+▷AutoGPT. The tool can be installed into two ways, i.e., locally or the
+cloud. However, the cloud service is not yet available to all users since the tool
+is still in the beta version. As a result, the tested version was run locally using
+Docker for the backend andnpm(Node Package Manager) for the front end.
+
+[[page 15]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 15
+▷Dify. Similarly to AutoGPT, Dify can be run locally using Docker, or
+deployed in the cloud with either a free plan or a paid option. On the one
+hand, the cloud tool requires minimal setup, it has some limitations on the
+number of apps, requests, and memory. On the other hand, the self-hosted
+version is free but requiring more effort in the setup.
+▷Flowise. The framework requires familiarity with JavaScript development,
+particularly the use ofnpmusing the standard installation process. This
+method involves setting up the local environment manually, which may pose
+a barrier for beginners or people with no experience with JS technologies.
+▷Haystack. Developers can choose to install Haystack usingpipcommands
+or relying on deepset studio,5 a tailored IDE, even though it needs a dedicated
+account. Besides the technical documentation that offers a good overview of
+basic building blocks, a set of tutorials is available on a dedicated GitHub
+repository.6
+▷LlamaIndex. The installation is simple and streamlined, with support for
+dependency management systems such as Conda and Poetry. For most use
+cases, a single command–pip install llama-index–is sufficient for enabling core
+functionalities, including the definition of structured workflows and agent-
+based architectures.
+▷OpenAI SDK. The installation process is straightforward, requiring only
+the installation of the SDK package viapip. Additional setup includes
+configuring environment variables used by agents and tools. In addition, the
+SDK offers a quickStart guide that effectively walks users through installation
+and basic usage. It covers how to define agents, add guardrails, and orchestrate
+workflows, making it easy for new users to get started.
+▷Semantic Kernel. The platform supports three different languages, i.e.,
+C#, Python, and Java, with instructions for the corresponding package
+managers. Alternatively, developers can directly pass parameters to the
+instantiated function responsible for setting up models.
+3.3.2 C2 - Developer Interface
+Table 8 summarizes the characteristics related to developer interface for
+each framework, highlighting the CLI, IDE/SDK, and web-based dashboard
+support for each tool. The CLI column indicates whether the framework
+provides a command-line interface for developers to interact with the system,
+while the IDE/SDK column signifies the presence of an integrated development
+environment or software development kit. Finally, the web-based dashboard
+column indicates if the framework provides a web-based interface for managing
+and monitoring the MAS applications.
+▷AutoGen. All the implementation is carried out by writing code using
+Python and users can opt for using Python scripts or Jupyter notebooks.
+5 https://www.deepset.ai/deepset-studio
+6 https://github.com/deepset-ai/haystack-tutorials
+
+[[page 16]]
+16 Mariama Celi Serafim De Oliveira et al.
+Table 8Developer Interface.
+Framework CLI IDE/SDK Web-based dashboard
+AutoGen (AutoGen 2024) / / ✖
+AutoGPT (Auto-GPT 2024) / ✖ /
+Dify (Dify 2024) ✖ / /
+Flowise (Flowise 2024) ✖ ✖ /
+Haystack (Deepset 2024) / ✖ ✖
+Llama Index (Meta 2024) / ✖ ✖
+OpenAISDK (OpenAI 2024) / / ✖
+Semantic Kernel (Microsoft 2024) / ✖ ✖
+The documentation is easy to follow and covers different aspects of the tool.
+Additionally, it provides simple examples to be reimplemented by the user.
+▷AutoGPT.Users can interact with the system through a dashboard
+accessed via a web application that provides three different views, i.e., Build,
+Library, and Marketplace. In the Build section, users can create workflows
+using a system of visual blocks to perform specific tasks with LLM agents
+while the Library view store and display the created workflows.
+▷Dify. It offers a user interface for the system, designed as an
+intuitive dashboard, enabling users to seamlessly create and manage various
+applications, e.g., chatbots, agents, or workflows. This dashboard also allows
+for the modification of the system’s configuration and models’ setup.
+▷Flowise. The platform provides a browser-based interface characterized by
+its drag-and-drop interaction model. Users can visually construct workflows
+by selecting components from a categorized library and positioning them on a
+design canvas. Each component is configured to suit specific functional needs.
+▷Haystack. The open-source version does not include a native user interface,
+and it is primarily code-driven, making it ideal for developers familiar with
+Python. Meanwhile, deepset Studio provides a drag-and-drop editor to build
+and manage pipelines visually. In the scope of our paper, we evaluated the
+open-source version of the interface, i.e., without relying on the IDE.
+▷LlamaIndex. It relies on Python classes, decorators, and agent-based
+patterns, with type-safe constructs often defined via Pydantic. It does not
+provide a graphical or declarative interface for composing workflows, as all
+components must be implemented directly in code.
+▷OpenAI SDK. The framework offers both the integration with native
+Python and SDK. The former consists of interfaces and classes for
+orchestrating and chaining agents, including decorators and inheritance
+capabilities.
+▷Semantic Kernel. Similar to LlamaIndex, Semantic Kernel does not
+provide graphical features but the official version has comprehensive
+documentation to outline its functionalities and examples to be used as Python
+scripts. Nevertheless, the same outcome can be achieved through various
+functions that can be somewhat confusing for newcomers.
+
+[[page 17]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 17
+3.3.3 C3 - Agents and Tools Integration
+Table 9 depicts an overview of the integration strategies for agents and external
+tools. The function calling column indicates whether the framework supports
+invoking third-party APIs, while the hosted tools column dictates the presence
+of pre-defined tools that can be used within the MAS application. The agent-
+as-a-tool column signals the availability of utilities to incorporate agents as
+reusable components within workflows. The last column shows the presence of
+a marketplace for sharing and discovering agents and tools.
+Table 9Agents and tools integration.
+Platform Func. call. Hst. tools Agent-as-Tool Mrkt. place
+AutoGen (AutoGen 2024) / / ✖ ✖
+AutoGPT (Auto-GPT 2024) / / ✖ /
+Dify (Dify 2024) ✖ / ✖ /
+Flowise (Flowise 2024) / / ✖ ✖
+Haystack (Deepset 2024) / / ✖ ✖
+Llama Index (Meta 2024) / / ✖ /
+OpenAISDK (OpenAI 2024) / / / ✖
+Semantic Kernel (Microsoft 2024) / ✖ ✖ ✖
+▷AutoGen. Agents can be utilized by installing the extension specific to the
+provider used even though some of them are still in the experimental phase,
+e.g., Anthropic and Ollama. During configuration, the user can choose which
+model the agent will utilize. During runtime, it is possible to switch the model
+as long as the user has written the code for doing this at execution time.
+▷AutoGPT.It offers the possibility to use different agents from different
+providers by specifying the API key. However, the chosen agent cannot be
+changed at runtime as it is linked to the execution node.
+▷Dify. It supports various models within the workflow application type.
+To access different types of agents in the application, users must install the
+corresponding model plugin, available in the application marketplace. Once
+installed, they can be accessed within the app. Additionally, users can easily
+set up and switch agents in the application via the dashboard is straightforward
+while configuring the workflow.
+▷Flowise. The platform supports integration with a wide range of agents
+providers, offering developers flexibility in choosing and switching between
+LLMs. Changing from one model to another is relatively straightforward, as
+it only requires replacing or reconfiguring the appropriate model component
+within a given flow.
+▷Haystack. It provides a dedicated functionality to allow for agents
+integration, called “Generators,” supporting both notable providers and
+local models, making the integration straightforward. Similarly, it integrates
+external tools like retrievers, fetchers, and other components developed by the
+Haystack team or community-based are integrated into pipelines.
+
+[[page 18]]
+18 Mariama Celi Serafim De Oliveira et al.
+▷LlamaIndex. The integration of the model into LlamaIndex is designed
+to be highly adaptable, with native support for both remote LLMs such as
+OpenAI and local deployments through Ollama, OpenLLM, or vLLM. Due to
+its decoupled architecture, switching between agents typically requires only
+minor changes to the configuration or import paths, leaving the core logic of
+workflows untouched.
+▷OpenAI SDK. While the framework supports OpenAI models natively,
+custom model classes must be implemented for external providers according
+to the required interface. This has an impact also on agents selection, i.e., third-
+party provides needs a corresponding class to be integrated in the workflows.
+OpenAI SDK provides built-in support for several tools, including Web search,
+file search, and a computing tool for automating tasks.
+▷Semantic Kernel. Using and selecting different agents is straightforward
+even though the process require some effort for developers, as utilizing different
+model providers involves invoking a distinct function from the SDK. Therefore,
+changing models entails rewriting portions of the code. Additionally, users can
+incorporate multiple models into the kernel and can switch between them at
+runtime, as long as the code clearly specifies the desired method for doing so.
+3.3.4 C4 - Agent Creation
+Table 10 summarizes the agent creation process for each framework,
+highlighting the role specification, memory management, and template
+support. The role specification indicates how the agent’s behavior is defined,
+while memory refers to the type of memory used by the agent, i.e., short-term
+(ST) or long-term (LT). Finally, the Template column signals whether the
+framework provides ready-to-use designs for creating agents.
+Table 10Agent Creation.
+Platform Role specification Memory Template
+AutoGen (AutoGen 2024) Class-based ST, LT ✖
+AutoGPT (Auto-GPT 2024) Prompt-based ST, LT ✖
+Dify (Dify 2024) Node-based ST ✖
+Flowise (Flowise 2024) Prompt-based ST ✖
+Haystack (Deepset 2024) Prompt-based ST, LT ✖
+Llama Index (Meta 2024) Prompt-based ST, LT /
+OpenAISDK (OpenAI 2024) Class-based ST, LT ✖
+Semantic Kernel (Microsoft 2024) File-based ST, LT /
+▷AutoGen. The creation process involves instantiating the class associated
+with the desired agent, including setting up the messages protocol. Therefore,
+the framework does not utilize templates for implementing agents. The usage
+of ST memory is enabled by utilizing code variables and storing the agents’
+last conversation with built-in functions. Additionally, it is possible to save the
+agent’s state to disk for later retrieval. Instead, LT memory can be achieved by
+using third-party vector databases that are accessible during code execution.
+
+[[page 19]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 19
+▷AutoGPT. Agents can be defined using any block under the AI category but
+no predefined template is provided. Once the type of block is chosen, the user
+can manually define the prompt to specify the behaviors and roles. Another
+option is to utilize predefined AI blocks, which implements agents specialized
+in well-known tasks, e.g., summarization or image generation. Concerning the
+memory, AutoGPT supports both ST and LT memory.
+▷Dify. Agent creation is done by adding the LLM or Agent node to an
+existing workflow, even though roles and behaviours can be customized using
+prompts. In the workflow, the agents’ ST memory essentially consists of its
+output, which can be accessed by subsequent nodes. Furthermore, LT memory
+can be built by using miscellaneous data sources e.g., text files, Notion DB,7 or
+external websites. It is worth noting that Dify enables the creation of prompts
+where variables can be defined, offering greater flexibility for the prompts.
+▷Flowise. The system does not provide templates for agent creation, but it
+allows the user to define the agent’s role and behavior using prompts. However,
+the documentation does not offer any examples on how to implement agents,
+which may make it challenging for new users to understand how to create them
+effectively.
+▷Haystack. Developers can define intelligent LLM-powered agents that
+interact with tools and manage internal state across multiple steps by
+exploiting the built-in Agent component. Each agent is configured with a chat
+generator, a set of tools, and specific exit conditions to control when the agent
+should stop. A system prompt can be added to define the agent’s role or
+behavior, while a state schema enables ST memory management.
+▷LlamaIndex. LlamaIndex provides abstractions for building LLM-based
+agents using two primary templates i.e., FunctionAgent and ReActAgent. The
+FunctionAgent is designed for scenarios where LLM supports function calling,
+i.e., invoking tools asynchronously and maintaining a history of interactions.
+The agent processes tool results, which are returned as messages with the role
+“tool,” and updates its context based on the outcomes.
+▷OpenAI SDK. Creating an agent involves instantiating theAgentclass
+with the chosen model and instruction prompt. The base agent class can
+be extended to define custom behaviors and capabilities. Agent roles and
+behaviors are defined using theinstructionparameter during initialization,
+which acts as the system prompt guiding the agent’s operation.
+▷Semantic Kernel. While the system does not provide predefined agents,
+Semantic Kernel drives the developers using YAML templates to facilitate
+the agent instructions specification. Alternatively, the user can write the
+prompts manually where input variables and function calls can also be utilized.
+However, there is no distinction between these; the user can include whatever
+they wish in the instructions. To enable the LT memory feature, Semantic
+Kernel provides an internal vector database. Additionally, the developer can
+leverage chat history, where prompts and responses can serve as ST memory.
+7 https://www.notion.com/help/intro-to-databases
+
+[[page 20]]
+20 Mariama Celi Serafim De Oliveira et al.
+3.3.5 C5 - Agent Orchestration
+Table 11 summarizes the agent orchestration capabilities of in terms of
+execution, message passing, and handoff mechanisms. TheExecution flow
+column indicates whether the framework supportssequentialorhierarchical
+execution of agents. Sequential orchestration means agents act one after
+another in a linear pipeline. Hierarchical orchestration introduces an explicit
+control structure: some agents can act as supervisors or coordinators,
+delegating subtasks to other agents and integrating their results. TheMessage
+passingcolumn indicates whether it supports message passing between agents.
+We characterized the message passing mechanism asStatefulif the information
+is preserved orStatelessotherwise. In this respect, a manualhandoffmeans
+that developers have to write code to handle the message passing.
+Table 11Agent Orchestration.
+Platform Execution flow Msg. passing Handoff
+AutoGen (AutoGen 2024) Seq. Stateless Automated
+AutoGPT (Auto-GPT 2024) Sequential (Seq.) Stateless Automated
+Dify (Dify 2024) Seq., Hierarchical Stateless Automated
+Flowise (Flowise 2024) Seq., Hierarchical Stateful Automated
+Haystack (Deepset 2024) Seq. Stateless Manual
+Llama Index (Meta 2024) Seq., Hierarchical Stateful Manual, Automated
+OpenAISDK (OpenAI 2024) Seq., Hierarchical Stateful Manual, Automated
+Semantic Kernel (Microsoft 2024) Seq., Hierarchical Stateful Manual, Automated
+▷AutoGen. The orchestration is mainly done programmatically, i.e.,
+developers have to manually specify all aspects of execution, including the
+order of loops and agents. However, a multi-agent team template can be used
+to facilitate the task as it provides high-level definitions of the workflow, These
+two paradigms, i.e., high-code or low-code, can be reused also for setting up
+the communication mechanism.
+▷AutoGPT. The orchestration workflow is represented through a visual,
+block-based dashboard, enabling users to add, connect, and configure blocks
+to create flows leveraging the low-code paradigm. Nevertheless, users seeking
+more specialized functionality may eventually need to write Python code to
+create custom blocks. The AutoGPT platform incorporates various logic and
+data blocks intended to replicate the functionality of code-based workflows.
+▷Dify. Workflows must be created to orchestrate the agents. The workflows
+are defined by a visual block-based dashboard where users can add nodes.
+Each node is responsible for performing a small task to achieve a larger goal,
+including the run of code snippets written in Python or NodeJS. Nevertheless,
+the usage of visual block-based dashboards limits the expressiveness of the
+flow as only nodes available in the system can be used.
+▷Flowise. The expressiveness of control flow in Flowise is achieved through
+the connection of agent outputs to the sequential inputs of other agents. This
+output-input linkage defines the logic chain and facilitates the development of
+
+[[page 21]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 21
+dynamic workflows. Components such as condition nodes and loop handlers
+allow developers to simulate decision-making and repetition, which are crucial
+for adapting agent behavior to real-time data or user input.
+▷Haystack. While agent orchestration is not originally provided in Haystack
+as a high-level abstraction, Haystack relies on a pipeline based architecture
+where each step may be treated as a stand-alone component with defined
+inputs and outputs. This allows developers to build complex workflows by
+chaining components and including multiple agents.
+▷LlamaIndex. There are two distinct paradigms for agent orchestration:
+Workflow and AgentWorkflow as shown in Figures 2(a) and 2(b), respectively.
+In particular, round nodes represent events, the square ones the different
+agents, and the edges the transition between them. Agents decide when to
+invoke tools, when to stop, and whether to hand off control to another agent.
+▷OpenAI SDK. Two orchestration techniques are supported, i.e.,LLM-
+Orchestrated Workflowsand theCode-Orchestrated Workflows. The
+former involves a “triage agent” planning the workflow by invoking tools
+and delegating tasks to sub-agents. In the latter, users explicitly define
+workflow logic using Python code for more deterministic control. Control flow
+expressiveness depends on the orchestration method. In LLM-orchestrated
+workflows, the triage agent uses “handoffs” to delegate tasks.
+▷Semantic Kernel. There are two different ways of handling the workflow
+between agents, i.e., managing the agents manually or using the Agent
+Framework capability. Concerning the former, the user must write all
+interactions between the agents. As a result, the entire orchestration relies
+on the user writing the code for it. Meanwhile, the Agent Framework can
+support(i)the writing of the orchestration code manually, similar to how
+it would be done without a framework or(ii)creating a group chat namely
+AgentGroupChat, that is based on top of a sequence of interactions, known
+as the selection function, as well as how these interactions between agents will
+be concluded, referred to as the termination function.
+3.3.6 C6 - Monitoring
+Table 12 summarizes the monitoring capabilities of each framework, focusing
+the availability of real-time logs, debugging tools, and telemetry features.
+Real-time logs indicate whether the framework provides live feedback during
+execution, while debugging tools refer to the ability to inspect and troubleshoot
+workflows. Telemetry features encompass the collection of metrics such as
+token usage, cost, and latency.
+▷AutoGPT. After the execution, the user can verify the input and output of
+each block and workflow. In the case of the LLM agent, the prompt used is also
+displayed as an input. No debugging tool for the was found and only workflow
+information is available, describing the duration, cost, and the starting time.
+▷AutoGen. It is possible to store the sequence of messages exchanged
+between agents in a variable or use prints to observe the conversation between
+
+[[page 22]]
+22 Mariama Celi Serafim De Oliveira et al.
+(a) Workflow pattern
+(b) AgentWorkflow pattern
+Fig. 2Comparison of orchestration patterns in LlamaIndex.
+agents. Moreover, the platform enables developers to debug the execution of
+the agents by utilizing logging, print statements in the code, and the debugging
+tools offered in the IDE. The framework monitors token usage and the total
+duration of the conversation and errors can be caught using Python code.
+▷Dify. After executing a workflow in Dify, it is possible to check the logs
+of each executed node, which describe the input and output of each node, as
+well as metrics such as token consumption, cost, and latency in the case of
+
+[[page 23]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 23
+Table 12Monitoring.
+Platform Real-time Logs Debug Telemetry
+AutoGen (AutoGen 2024) / / /
+AutoGPT (Auto-GPT 2024)PT / ✖ ✖
+Dify (Dify 2024) / / /
+Flowise (Flowise 2024) ✖ / ✖
+Haystack (Deepset 2024) / / /
+Llama Index (Meta 2024) / / /
+OpenAISDK (OpenAI 2024) / / ✖
+Semantic Kernel (Microsoft 2024) / / /
+nodes that deal with models. Analyzing these logs facilitates the identification
+of potential errors related to parameter passing as well as runtime errors.
+▷Flowise. It provides a basic level of logging through its test chatbot
+interface, which displays some information about the output generated by
+each agent during a workflow run. While this feature offers a quick way to
+preview the behavior of the system, it is not sufficient for in-depth analysis
+or diagnostics. The limited information makes it difficult to understand the
+internal state of the system or trace the full execution path of a complex
+agent workflow. To address this limitation, Flowise supports integration with
+external observability tools e.g., LangSmith 8 or Arize.9
+▷Haystack. Versatile tools are provided for monitoring and debugging
+pipelines, both during development and in production. Basic logging relies
+on Python’s standard library, but can be extended with structured formats
+and advanced rendering for more complex environments. During prototyping,
+real-time logging can be enabled to trace each pipeline step, highlighting the
+inputs and outputs of individual components.
+▷LlamaIndex. There are basic supports for monitoring agent workflows
+through logging, event streaming, and internal instrumentation. Logs and
+execution traces are primarily exposed via the Context object, which maintains
+a streaming queue of events such as tool invocations, agent inputs/outputs,
+and intermediate reasoning steps. Developers can consume this stream using
+the stream event method to observe runtime behavior step by step.
+▷OpenAI SDK. Tracing is built-in and enabled by default, leveraging
+OpenAI dashboard that groups them using workflow names or trace IDs. It can
+be disabled via theOPENAI AGENTS DISABLE TRACINGenvironment variable
+or programmatically viaRunConfig.tracing.disable = True. Sensitive
+agents/tools can also be excluded from tracing. Debugging follows standard
+Python debugging practices, leveraging IDE features, print statements.
+▷Semantic Kernel. It is possible to include prints in the execution of the
+code to visualize the agents’ responses. Furthermore, developers can include
+logging functions to check all the kernel invocations. In addition, the framework
+allows users to debug the agent’s execution by using logging in the code, as
+well as debugging tools available in the developer’s IDE.
+8 https://www.langchain.com/langsmith
+9 https://arize.com/
+
+[[page 24]]
+24 Mariama Celi Serafim De Oliveira et al.
+3.4 Rigor and Reliability of the Qualitative Findings
+We employed the Thematic Analysis Template (TAT) method, a well-founded
+methodology to analyze qualitative results (Cassell and Symon 2025). The
+definition of the TAT begins by identifying an initial set of themes relevant to
+the considered context. Alternatively, a priori theme can be set according to
+the author’s experience. Then, these elicited concepts can be refined according
+to further data analysis. In the scope of our work, we defined the initial set
+of themes based on the research questions and the analysis of the frameworks.
+The resulting TAT is reported in Table 13, where we also provide a description
+of each theme and sub-theme, and a description of them.
+Table 13Thematic Analysis Table (TAT): Themes, sub-themes, and example indicators.
+ID Theme Sub-theme Description
+T1 Clarity of online
+documentation
+T1.1 Completeness The coverage of APIs,
+configuration options, and end-
+to-end examples for developers.
+T1.2 Example tutorials The presence of step-by-step
+tutorials and runnable examples
+to speed onboarding.
+T2 Benchmarking is
+still limited
+T2.1 Definition metrics How difficult custom metrics can
+be implemented.
+T2.2 Reproducibility How telemetry features can help
+in reducing hallucinations.
+T3 Agent Instruction T3.1 Prompt templates How to instruct agents using
+prompt patterns.
+T3.2 Role customization The use of explicit role markers
+and conventions to clarify agent
+responsibilities and handoffs.
+T4 MAS can be
+democratized
+through low-code
+frameworks
+T4.1 Low-code UX Features to lower the entry barrier
+although seasoned developers may
+be more efficient
+T4.2 Template libraries How reusable flow/agent
+templates and starter kits can
+accelerate the adoption of MAS.
+We discuss the themes as follows.
+Clarity of online documentationOverall, the documentation of the
+frameworks is quite clear and comprehensive, providing detailed information
+about the APIs, configuration options, and end-to-end examples for
+developers. However, there are some differences in terms of the completeness
+of the documentation and the presence of example tutorials. For instance,
+while some frameworks provide a wide range of examples and tutorials to help
+developers get started quickly, others may have more limited resources, which
+can make onboarding more challenging for newcomers.
+
+[[page 25]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 25
+Benchmarking is still limitedThe evaluation of MAS frameworks is still in its
+early stages, and there are several challenges to be addressed. One of them
+is the definition of metrics that can effectively capture the performance and
+capabilities of MAS. Additionally, reproducibility is a concern, as the lack
+of standardized evaluation protocols and the variability in agent behavior can
+make it difficult to compare results across different studies. Telemetry features
+can help reduce hallucinations by providing insights into the internal workings
+of agents, thus allowing for better debugging and analysis.
+Agent InstructionPrompt engineering is a powerful technique for instructing
+agents and guiding their behavior. The use of prompt templates can help
+structure the interactions between agents and ensuring that they follow a
+consistent format. Role customization, through explicit role markers and
+conventions, can clarify agent responsibilities and handoffs, making it easier
+to design complex workflows and coordinate multiple agents effectively.
+MAS can be democratized through low-code frameworksLow-code frameworks
+have the potential to democratize the development of MAS by providing
+features that lower the entry barrier for developers. These frameworks can
+offer visual interfaces, drag-and-drop components, and pre-built templates
+that allow users to create and orchestrate agents without needing extensive
+programming knowledge.
+Answer toRQ 2:The considered frameworks exhibit a range of
+capabilities in terms of agent creation, orchestration, and monitoring
+at different levels of abstraction. As expected, low-code frameworks
+including AutoGPT (Auto-GPT 2024), Dify (Dify 2024), Flowise (Flowise
+2024), and Haystack (Deepset 2024) offer more built-in functions, even
+though limitations in terms of agent selection and sharing represent a
+drawback. In contrast, high-code frameworks, i.e., AutoGen (AutoGen
+2024), Llama Index (Meta 2024), OpenAISDK (OpenAI 2024), Semantic
+Kernel (Microsoft 2024) provide more flexibility and control over agent
+behavior, but require more development effort. The choice of framework
+depends on the specific requirements of the application, the level of
+expertise of the developers, and the desired balance between ease of use
+and customization.
+4 Quantitative Evaluation
+To empirically evaluate the existing frameworks, we consider a concrete
+use case in Software Engineering, i.e., the summarization of GitHub
+README.MD files (Doan et al. 2023). The motivation behind the selection of
+this task is as follows. Software projects increasingly rely on documentation,
+such as GitHub README files and app store descriptions, to explain their
+
+[[page 26]]
+26 Mariama Celi Serafim De Oliveira et al.
+functionality and usage. While these documents are essential for helping
+users understand a project, they are often long and time-consuming to read,
+which can discourage engagement. Although platforms like GitHub and the
+Google Play Store provide short summary fields, e.g., “About” sections or
+brief descriptions, these are frequently left empty. This highlights the need
+for automatically generating concise summaries of README files to improve
+accessibility and usability.
+In our previous work (Nguyen et al. 2025), we developedMetagente,
+an LLM-based Multi-Agent System on top of LangChain. In this paper, we
+reimplementedMetagenteusing the most four popular MAS frameworks, and
+performed an empirical study to answer the following research question.
+How well can the frameworks support GitHub README.MD summarization?
+RQ3
+We introduce the prompt optimization and evaluation pipelines in Section
+4.1. The datasets and metrics used for the quantitative evaluation are outlined
+in Section 4.2 and Section 4.3, respectively. Afterward, the experimental results
+concerning the two major performance traits, i.e.,EffectivenessandEfficiency
+are reported and analyzed in Sections 4.4 and??, respectively.
+4.1 Implementation
+The summarization task consists of two components: the Optimization
+Pipeline and the Evaluation Pipeline (cf. Fig. 3). The primary objective is
+to utilize specialized LLM-based agents to optimize a prompt that can be
+used by an LLM to generate summaries of GitHub repository README.MD
+files, aiming to closely match the corresponding ground truth summaries. The
+proposed approach (Nguyen et al. 2025) demonstrates how multiple agents
+can interact to collaboratively achieve a common goal, making it a suitable
+benchmark for evaluating multi-agent frameworks.
+The architecture demonstrates core MAS capabilities through specialized
+agents:Teacher AgentandPrompt Creator Agentguide prompt
+improvement, whileExtractor AgentandSummarizer Agentperform
+information retrieval and summary generation. Interaction occurs through
+sequential transfers between agents and an iterative optimization cycle, with
+Prompt Creator Agentintegrating results across multiple README files.
+It is worth noting that the main objective of the implementation of these
+pipelines is not to evaluate the LLM models themselves or the pipeline design
+per se but rather to assess the capabilities of each framework in executing the
+README.MD generation tasks. This includes measuring performance using
+ROUGE scores, collecting usage data, and reporting models’ efficiency in terms
+of token usage, number of requests, and total usage time.
+
+[[page 27]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 27
+(a) Optimization Pipeline
+(b) Evaluation Pipeline
+Fig. 3Pipelines used in the multi-agent system.
+4.1.1 Optimization Pipeline
+Figure 3(a) illustrates the Optimization Pipeline with four agents:Extractor
+Agent,Summarizer Agent,Teacher Agent, andPrompt Creator Agent.
+Throughout the pipeline, each agent receives a task-specific prompt that
+guides its behavior. These prompts were adapted from the ones used in the
+baseline experiment referenced earlier, with minor modifications introduced to
+accommodate the specific requirements and constraints of each framework.
+As presented in Figure 3, the description of each agent utilized in the
+pipeline follows below.
+–Extractor Agentis responsible for identifying and filtering relevant
+information from a raw README.MD file by removing noisy or irrelevant
+content. Its primary goal is to extract a concise description of the repository
+by omitting sections such as installation instructions and configuration
+details, which do not add much information to the summarization.
+–Summarizer Agentgenerates a summary based on the extracted repository
+description. Unlike traditional summarization agents with a fixed prompt,
+this agent uses a dynamic prompt that is updated at each iteration by
+Teacher Agent. The only fixed prompt is provided by the user during
+the first iteration, as no feedback fromTeacher Agentis available yet.
+In subsequent iterations,Summarizer Agentreceives a revised prompt
+intended to improve its performance.
+
+[[page 28]]
+28 Mariama Celi Serafim De Oliveira et al.
+–Teacher Agentis tasked with improving the prompt used bySummarizer
+Agentat each iteration. To do so, it receives the following inputs: the
+summary generated bySummarizer Agent, the prompt used in that
+iteration bySummarizer Agent, the ROUGE-L score comparing the
+generated summary with the ground truth, the ground truth summary
+itself, and the original extracted text provided byExtractor Agent. Based
+on this information,Teacher Agentanalyzes the inputs and produces a
+refined prompt to be used in the next iteration of the optimization process
+bySummarizer Agent.
+–Prompt Creator Agentis responsible for the creation of the final
+prompt. Throughout the optimization task, several README.MD files
+are processed to generate candidate prompts. However, only the prompts
+that produce summaries with a ROUGE-L score equal to or greater than
+a predefined threshold during the iterative process are selected.Prompt
+Creator Agentcollects these high-performing prompts and combines them
+into a single, representative prompt that captures the most effective
+features across examples. The output ofPrompt Creator Agentis the
+final output of the pipeline and it is the outcome of the optimization phase.
+This prompt will be once again utilized in the Evaluation phase.
+As illustrated in Figure 3(a), the workflow of the agents unfolds as follows:
+1. A README.MD file is provided toExtractor Agent, which generates a
+concise version of the text to be used as input forSummarizer Agent.
+2. Optimization Loop:
+(a)Summarizer Agentreceives the extracted text and produces a summary
+based on its current prompt.
+(b) A ROUGE-L score is then calculated by comparing the generated
+summary with the ground truth summary. If the score is equal to or
+exceeds a predefined threshold, the optimization loop is interrupted,
+and the current prompt used bySummarizer Agentis saved as a
+candidate prompt.
+(c) If the ROUGE-L score is below the threshold,Teacher Agentreceives
+the inputs fromExtractor AgentandSummarizer Agentalong with
+the ROUGE-L score. It uses this information to generate a new prompt,
+which is then passed toSummarizer Agentfor the next iteration.
+(d) The loop continues until either the threshold is met or the maximum
+number of predefined iterations is reached.
+3. Once the loop ends, a new README.MD file is passed through the same
+pipeline to generate another candidate prompt.
+4. After all README.MD files have been processed,Prompt Creator Agent
+collects all candidate prompts that achieved a ROUGE-L score above the
+defined threshold and aggregates them into a single, final prompt.
+Listings 1 and 2 illustrate one of the prompts used by a pipeline agent and
+its corresponding output. For reference, the complete set of prompts used for
+each framework is presented in the online appendix (De Oliveira et al. 2025).
+
+[[page 29]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 29
+Listing 1Summarizer Prompt in AutoGen.
+Summarize the following extracted text from a Github repository README
+into a short term/phrase introducing the repository:
+<EXTRACTED_README>
+# OpenMTP | Android File Transfer for macOS
+## Introduction
+### Advanced Android File Transfer Application for macOS.
+[...]
+Countless searches to find an app to solve these problems and failing to
+find one made me restless. So, I took the leap and decided to create an
+app for us that could help us have a smooth and hassle-free file
+transfer process from macOS to Android/MTP devices. Created with the
+objective of giving back to the community, we can all use this app for
+free in this lifetime.
+</EXTRACTED_README>
+The output should include only a short term/phrase introducing the
+repository.
+Listing 2Summarizer Output in AutoGen.
+1OpenMTP: Seamless Android File Transfer for macOS
+4.1.2 Evaluation Pipeline
+Once the optimized prompt has been obtained from the Optimization Pipeline,
+the evaluation phase can be initiated. As shown in Figure 3(b), this phase is
+comparatively simpler, consisting of only two agents:Extractor Agentand
+Summarizer Agent. The evaluation pipeline corresponds to the deployment
+phase in real-world scenarios, where input data is processed byExtractor
+Agentand then fed toSummarizer Agent, generating the final About
+description. Unlike the optimization phase, which requires ground-truth data
+for training and validation, the deployment only needs README files as input.
+✍Addressing RQ3.From the eight frameworks analyzed inRQ 2, we further
+selected the most popular ones with the highest number of GitHub stars and
+forks. The selection resulted infourtools for the quantitative evaluation, i.e.,
+AutoGen (AutoGen 2024), AutoGPT (Auto-GPT 2024), Dify (Dify 2024), and
+Semantic Kernel (Microsoft 2024). As like inRQ2, for the sake of presentation,
+we report and analyze the tools in alphabetical order, without grouping them
+into low code and high code categories. All experiments were conducted under
+the same hardware environment and operating systems, the specifications of
+which are provided in Table 14. In contrast, software configurations varied
+slightly depending on the framework in use. Framework-specific software
+details, including versions and dependencies, are summarized in Table 15.
+
+[[page 30]]
+30 Mariama Celi Serafim De Oliveira et al.
+Table 14System configuration used for running experiments.
+Component Specification
+Processor Apple M2 (8-core CPU)
+RAM Memory 16 GB
+Operating System macOS 15.5 (24F74)
+Table 15Environment configurations.
+Framework Python Version Docker
+AutoGen Python 3.12.2 0.5.4 No
+AutoGPT Python 3.12.2 0.6.4 (beta) Yes (only databases )
+Dify – 1.0.1 Yes
+Semantic Kernel Python 3.12.2 1.29.0 No
+General Setup for All FrameworksThough the task was implemented
+differently across frameworks, we standardized key parameters to ensure fair
+comparisons among the evaluated frameworks. These common configurations
+included the type of LLMs and temperature used in each agent, maximum
+iterations, and the ROUGE-L threshold used in the optimization loop.
+Table 16Agent Configurations.
+Agent Model Version Temperature
+Extractor Agent gpt-4o-mini (2024-07-18) 0.7
+Summarizer Agent gpt-4o-mini (2024-07-18) 0.7
+Teacher Agent gpt-4o (2024-08-06) 0.0
+Prompt Creator Agent gpt-4o (2024-08-06) 0.2
+Evaluator* gpt-4o-mini (2024-07-18) 0.0
+*The Evaluator agent was only used in the Semantic Kernel Chat implementation to
+facilitate autonomous orchestration during optimization.
+Table 16 provides details regarding the models used for each agent. The
+same configuration was applied to the models across all frameworks except for
+AutoGPT, which does not allow for manual adjustment of model parameters,
+e.g., temperature. All the frameworks were configured with 15 iterations per
+optimization loop and a ROUGE-L threshold of 0.7. These values were adopted
+from the original study (Nguyen et al. 2025), which is the base for this
+optimization task.
+4.2 Datasets
+We made use of the datasets curated from our previous work (Nguyen et al.
+2025) for the evaluation. The datasets were initially adopted from an existing
+dataset for README.MD-related tasks (Doan et al. 2023), and extended by
+incorporating a diverse range of data sources to enhance its comprehensiveness
+and applicability. First, the initial dataset was augmented with GitHub
+
+[[page 31]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 31
+repositories categorized under the awesome-lists and documentation-related
+topics10 that align with the document repositories category (Zanartu et al.
+2022). Then, it was enriched with curated repositories containing popular
+Python projects (popular-3k python 2023), Jupyter notebooks for data
+analysis (Rule et al. 2018; Borges et al. 2016). By an initial check, we
+noticed that by several repositories, the About descriptions do not match
+with what was written by the README.MD files. This happens because
+developers changed the README.MD files, but then forgot to update the
+corresponding About. To remove irrelevant data, we used the cosine similarity
+metric to measure the similarity between each README.MD file and its
+corresponding About description. Through a manual inspection, we observed
+a strong correlation between cosine similarity scores and the actual relevance
+of these pairs. Based on this observation, we filtered out irrelevant pairs by
+retaining only those with a cosine similarity greater than 0.6, following an
+empirically established threshold from prior work (Pham et al. 2023). Applying
+this criterion reduced the dataset from 6,933 repositories to a subset of 925.
+Finally, we conducted a manual verification step to ensure the relevance of
+each remaining README.MD–About pair. From which two training sets were
+randomly selected with 10 and 50 samples to yieldTS10 andTS 50, and a testing
+set of 865 samples named as ES.
+Table 17Statistics of the README.MD datasets.
+Domain # of repos Avg. code cells Avg. text cells Total
+Topic
+C 115 13,302 21,465 34,767
+List 70 1,769 2,283 4,052
+AI 51 1,176 1,966 3,142
+UI 68 851 1,577 2,428
+Awesome 184 886 1,115 2,001
+Language
+R 131 825 1,262 2,087
+Java 752 274 472 746
+C 1,228 268 470 738
+Vim Script 144 111 159 270
+Dart 50 93 160 253
+We conducted acontamination auditfollowing the protocol proposed
+by Golchin and Surdeanu (Golchin and Surdeanu 2024). Specifically, each
+description was divided into two parts: the first segment was provided as input
+to the model, which was then prompted to generate the remaining portion. If
+contamination were present, the model would be expected to reproduce the
+exact continuation under such guidance. However, for all samples, the model
+consistently refused to comply with the guided prompts, e.g., “I’m sorry, but
+I can’t provide the exact continuation...” This suggests that the dataset was
+not included in the model’s pretraining data, indicating that our evaluation is
+not affected by contamination bias.
+10 https://github.com/topics
+
+[[page 32]]
+32 Mariama Celi Serafim De Oliveira et al.
+Table 18 provides descriptive statistics for the resulting dataset. It includes
+the average length and standard deviation (St. Dev.) for both the About
+description and README.MD acrossES,TS 10, andTS 50. These statistics
+highlight the variability and characteristics of the dataset used in the study.
+Table 18Datasets statistics.
+Dateset # Samples Description README.MD
+Avg. length St. Dev. Avg. length St. Dev.
+ES 865 76.09 53.81 6,591.44 8,976.48
+TS10 10 85.70 50.43 4,021.50 5,334.84
+TS50 50 61.76 31.29 5,111.20 6,094.71
+4.3 Evaluation Metrics
+Based on theMetagentescenarios, we replicated the original experiment,
+and computed the ROUGE-1, ROUGE-2, and ROUGE-L scores (Lin 2004)
+to evaluate the quality of the generated summary. While we acknowledge
+that more advance metrics have been proposed in the literature, we consider
+ROUGE to avoid a biased comparison with the original experiment.
+ROUGE-N =
+P
+S∈{Reference Summaries}
+P
+gramn∈S min (Countgen(gramn),Count ref(gramn))
+P
+S∈{Reference Summaries}
+P
+gramn∈S Countref(gramn)
+(1)
+where gram n denotes an n-gram, Count gen is the count in the generated
+summary, and Countref is the count in the reference summary.
+The ROUGE-L score is based on the Longest Common Subsequence (LCS):
+ROUGE-L = LCS(X, Y)
+Length(Y) (2)
+where LCS(X, Y) is the length of the longest common subsequence between
+the generated summaryXand the reference summaryY.
+To assess the statistical significance of the results, we first compute
+the Shapiro-Wilk test (Shapiro and Wilk 1965) to check for normality of
+the distribution. Since none of the distributions was normal, we perform
+a Wilcoxon signed-rank test (Wilcoxon 1945). The null hypothesis states
+that there is no significant difference between the two samples, while the
+alternative hypothesis states that there is a significant difference. A p-value
+less than 0.05 indicates that we can reject the null hypothesis and conclude
+that there is a significant difference between the two samples. In our case, we
+use the Wilcoxon signed-rank test to compare the performance of each MAS
+framework with theMetagenteframework.
+The frameworks have been evaluated with respect to two main performance
+traits, i.e.,EffectivenessandEfficiency. For the former, we measure the ability
+
+[[page 33]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 33
+to provide meaningful summarization, being relevant to the ground-truth data
+using popular metrics including the ROUGE-1, ROUGE-2, and ROUGE-L
+scores. Meanwhile with the latter, we evaluate whether the frameworks are
+effective with respect toToken usage,Number of requests,Usage time, and
+Usage by model type. We report and analyze the experimental results obtained
+from the empirical study in terms of Effectiveness and Efficiency, in Section 4.4
+and Section??, respectively.
+4.4 Effectiveness
+To refine a specific task prompt through a feedback loop with the teacher-
+student concept, we used the datasets introduced in Section 4.2, i.e.,TS 10 and
+TS50. Each sample of the considered datasets is fed as the input for guiding
+Metagentein generating the final prompts, and the results are reported and
+analyzed as follows.
+4.4.1 Prompt Refinement with TS 10
+For the first series of experiments, we used theTS 10 dataset, and the results
+are shown in the boxplots in the right side of Figure 4. The violin plots for
+both frameworks display a dense concentration of scores between 0.2 and 0.7.
+There are also thicker tails near 1.0, especially for ROUGE-1. This indicates
+that the optimized prompts were able to generate not only average summaries
+but also summaries that are identical or almost identical to the ground truth.
+Table 19Mean and standard deviation of ROUGE scores usingTS 10.
+Framework ROUGE-1 ROUGE-2 ROUGE-L
+AutoGen 0.488 (0.257) 0.294 (0.292) 0.441 (0.264)
+AutoGPT 0.473 (0.247) 0.275 (0.274) 0.428 (0.253)
+Dify 0.515(0.291) 0.352 (0.339) 0.479 (0.301)
+Semantic Kernel 0.505 (0.293) 0.344 (0.336) 0.472 (0.300)
+Semantic Kernel Chat 0.472 (0.251) 0.278 (0.276) 0.427 (0.256)
+To aim for a clearer view of the results, we computed and depicted in Table
+19 the mean and standard deviation of the scores represented in Figure 4. As
+can be seen in the table, Dify achieves the highest average ROUGE scores
+(ROUGE-1: 0.515, ROUGE-2: 0.352, ROUGE-L: 0.479), followed by Semantic
+Kernel (ROUGE-1: 0.505, ROUGE-2: 0.344, ROUGE-L: 0.472). The pairwise
+Wilcoxon tests are presented in Figures 5(a), 5(c), and 5(e), in which the
+green cells indicate statistical significance (p <0.05), whilst red cells mean the
+opposite. As can be seen from the figure, Dify and Semantic Kernel exhibited
+similar distributions across all ROUGE metrics (p>0.05), suggesting that
+despite Dify’s higher means, both frameworks perform comparably.
+
+[[page 34]]
+34 Mariama Celi Serafim De Oliveira et al.
+(a) ROUGE-1,TS 10
+ (b) ROUGE-1,TS 50
+(c) ROUGE-2,TS 10
+ (d) ROUGE-2,TS 50
+(e) ROUGE-L,TS 10
+ (f) ROUGE-L,TS 50
+Fig. 4ROUGE scores for prompt optimized withTS 10 andTS 50.
+– Impacts.Our work provides developers with a practical guide to the use
+of different MAS frameworks. For practitioners, our findings emphasize the
+importance of understanding requirements and the complexity of solutions
+in order to select the most appropriate framework. For researchers, this
+research provides a foundation for potential methodologies for evaluating
+LLM-based MAS.
+– Selection of frameworks.The results from both the optimization
+task and qualitative assessments revealed noteworthy differences among
+the frameworks. However, despite these differences, no single framework
+consistently outperforms the others; the effectiveness largely depends on
+the specific context in which the framework will be employed. From this
+statement, it becomes apparent that some trade-offs emerged during the
+analysis. Choosing a tool involves weighing flexibility against ease of use.
+Additionally, there is a choice between delegating orchestration tasks to
+the frameworks, which may reduce control over the agent or investing
+more time and effort into the implementation to maintain that control.
+Ultimately, the optimal choice is context-dependent.
+– Limitations.While the study provides valuable insights, several
+limitations should be acknowledged to properly contextualize the results.
+
+[[page 35]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 35
+
+
+
+
+AutoGenAutoGPTDify Sem. KernelSKC
+AGE — — — — —
+AGP 0.001 — — — —
+DIF 0.001 0.001 — — —
+SEK 0.014 0.001 0.053 — —
+SKC 0.001 0.995 0.001 0.001 —
+(a) ROUGE-1,TS 10
+
+
+
+
+AutoGenAutoGPTDify Sem. KernelSKC
+AGE — — — — —
+AGP 0.001 — — — —
+DIF 0.001 0.001 — — —
+SEK 0.451 0.001 0.001 — —
+SKC 0.095 0.001 0.001 0.678 — (b) ROUGE-1,TS 50
+
+
+
+
+AutoGenAutoGPTDify Sem. KernelSKC
+AGE — — — — —
+AGP 0.001 — — — —
+DIF 0.001 0.001 — — —
+SEK 0.001 0.001 0.488 — —
+SKC 0.106 0.045 0.001 0.001 —
+(c) ROUGE-2,TS 10
+
+
+
+
+AutoGenAutoGPTDify Sem. KernelSKC
+AGE — — — — —
+AGP 0.001 — — — —
+DIF 0.001 0.001 — — —
+SEK 0.061 0.001 0.001 — —
+SKC 0.254 0.001 0.001 0.678 — (d) ROUGE-2,TS 50
+
+
+
+
+AutoGenAutoGPTDify Sem. KernelSKC
+AGE — — — — —
+AGP 0.002 — — — —
+DIF 0.001 0.001 — — —
+SEK 0.001 0.001 0.368 — —
+SKC 0.017 0.522 0.001 0.001 —
+(e) ROUGE-L,TS 10
+
+
+
+
+AutoGenAutoGPTDify Sem. KernelSKC
+AGE — — — — —
+AGP 0.002 — — — —
+DIF 0.001 0.001 — — —
+SEK 0.768 0.001 0.005 — —
+SKC 0.132 0.001 0.001 0.123 — (f) ROUGE-L,TS 50
+Fig. 5Wilcoxon signed-rank test p-values across ROUGE metrics forTS 10 andTS 50
+(Since the matrices are symmetric, we display only one half, omitting the other half and the
+diagonal).
+First, the qualitative assessment was based solely on the author’s subjective
+experience, which may introduce bias in evaluating the frameworks.
+Second, only a limited number of frameworks were analyzed, so caution
+is advised when generalizing the findings to other frameworks with
+similar characteristics. Third, the task-specific analysis concentrated on
+an optimization task, meaning the results may not apply to other types of
+tasks. Fourth, the analysis was conducted using only one model provider,
+OpenAI, which could skew the findings due to the specific capabilities of
+the models from that provider.
+
+[[page 36]]
+36 Mariama Celi Serafim De Oliveira et al.
+– Future Extension.Building on the findings of this study, there are
+several opportunities for future research. Additional studies could explore
+a wider range of frameworks, particularly those within the same category,
+such as low-code frameworks. Another approach could involve engaging
+multiple developers and teams to thoroughly assess their experiences and
+impacts. This could include real-world use case scenarios in companies,
+allowing developers to face situations that closely resemble real-world
+environments. Furthermore, another important area for further exploration
+is the utilization of reusability features and their actual impact on the
+development of LLM-based MAS. While this topic was touched upon in the
+current research, it could benefit from more empirical evidence regarding
+the practical impact of reusability features.
+4.5 Lessons Learned and Challenges
+4.5.1 Lessons learned
+– LL1: Monitoring capabilities are still in their infancy.Even though
+the considered frameworks facilitate the development of MAS in whole
+aspects, advanced monitoring capabilities are not covered, or they rely on
+external telemetry tools. Moreover, such technologies require additional
+configuration and maintenance, which can be a burden for developers.
+Our study sheds light on the need for more integrated and user-friendly
+monitoring solutions within MAS frameworks, although we acknowledge
+that those capabilities might be supported in future releases of the
+considered frameworks.
+– LL2: Agent communications play a crucial role.The interaction
+between agents is a fundamental aspect of MAS, and it is essential to
+ensure that the communication protocols are well-defined and efficient.
+While we focused on text-based communication, we acknowledge that other
+modalities, such as sandboxes environment or physical interaction with
+real-world entities (Guo et al. 2024), increasing the level of complexity while
+designing and developing MAS. In addition, we underline the importance of
+considering the human-agent interaction properly, as demonstrated by the
+introduction of dedicated communication protocols such as Model-context
+protocol (MCP)11 or Agent2agent (A2A) recently announced by Google.12
+– LL3: The need for empirical metrics in MAS.The rise of LLMs
+has led to a growing interest in the software engineering community.
+However, the highly dynamic nature of LLMs, coupled with their faster
+evolution, the poses significant challenges in establishing empirical metrics
+to evaluate their performance and effectiveness. While some attempts
+to measure them in single-agent setting have been made (Sch¨ afer et al.
+2024; Liu et al. 2024c), the complexity of multi-agent systems introduces
+11 https://modelcontextprotocol.io/introduction
+12 https://a2aprotocol.ai/
+
+[[page 37]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 37
+additional paradigms such as the agents’ orchestration and communication,
+increasing the possibility ofhallucinations(Huang et al. 2025) or decreased
+performance in terms of consumed tokens or energy consumption (Cursaru
+et al. 2024; Rubei et al. 2025). While we have conducted a preliminary
+comparison among the examined frameworks concerning this aspect, we
+acknowledge that more comprehensive and standardized measures are
+needed to assess the capabilities and limitations of MAS.
+– LL4: VectorDB is a common solution for supporting long-term
+MAS memory.Our analysis shows that the majority of the considered
+frameworks rely on VectorDB 13 to support long-term memory, which
+is essential for enabling agents to retain and recall information over
+time. VectorDB provides a scalable and efficient solution for storing and
+retrieving large amounts of data, making it a suitable choice for MAS
+applications. However, we acknowledge that the use of VectorDB may not
+be sufficient for all MAS applications, as it may not provide the necessary
+level of granularity or flexibility required for certain tasks. Therefore,
+combining long and short term memory can improve the overall results,
+even though it may require additional configuration and maintenance.
+4.5.2 Challenges
+We identified the following challenges when working with the frameworks.
+– CL1: Tool incompleteness.Our investigations revealed significant
+maturity challenges across the examined frameworks. Many tools were
+incomplete and lacked essential functionalities required to create functional
+multi-agent workflows. Among others, AutoGPT suffers from a lack of
+documentation, making it difficult to implement certain features, as
+much of the work relied on trial and error. In addition, the tool was
+quite buggy, since everything is new. Critical features such as agent
+communication protocols, state management, monitoring capabilities, or
+integration interfaces were often missing or only partially implemented,
+with developers explicitly noting in documentation that these components
+were “still being implemented” or “under development.”
+– CL2: Low-code frameworks are still limited.The low-code paradigm
+aims to simplify the development process by providing a visual interface
+and pre-built components (Sahay et al. 2020). However, the current state
+of low-code frameworks for MAS is still limited, as they often lack
+advanced features and flexibility. While they can be useful for rapid
+prototyping and simple applications by providing curated tutorials and
+instructions, they may not be suitable for more complex tasks that require
+ad-hocsolutions and dedicated scripts. In addition, developing a custom
+component for those platforms can be challenging, as each framework has
+its own requirements and it may be limited in terms of the programming
+languages and libraries that can be used. Our study highlights the need for
+13 https://vectordb.com/
+
+[[page 38]]
+38 Mariama Celi Serafim De Oliveira et al.
+more advanced low-code capabilities that can support the development of
+complex MAS while still providing a user-friendly interface.
+4.6 Threats to Validity
+We discuss the threats to the validity of our study, following existing guidelines
+(Cook et al. 1979).
+–Internal validityconcerns two aspects i.e., the selected MAS frameworks
+and the metrics adopted in the comparison. Concerning the first aspect,
+the selected frameworks can be not representative of the entire MAS
+landscape, as there are many other frameworks available that may have
+different characteristics and performance. Moreover, a potential limitation
+can be also the exclusion of MAS frameworks that, while adopted in
+industrial settings, have not yet been documented or evaluated in peer-
+reviewed academic literature. This is a distinguishing factor of generative
+AI landscape, where the rapid pace of innovation often leads to the
+emergence of tools and frameworks that gain traction in industry before
+being formally studied in academia. However, we have chosen a set of
+well-established frameworks considering the common GitHub popularity
+metrics. In addition, we selected both low-code and high-code frameworks
+to cover a wide range of MAS development scenarios. Future research
+should incorporate practitioner surveys and case studies from industrial
+projects to capture a broader spectrum of MAS tools. Regarding the
+second aspect, the ROUGE metrics might not be enough to evaluate
+the performance. To mitigate this, we compare the frameworks using an
+existing multi-agent framework and a curated dataset.
+–External validityconcerns the generalizability of our findings to other
+contexts. While we have focused on a specific set of frameworks, we believe
+that our results can be applied to other MAS frameworks and applications,
+as they share similar characteristics and challenges. In addition, we elicit a
+set of characteristics that can be used to compare MAS frameworks, which
+can are generic enough to be applied to other frameworks.
+–Construct validityrefers to the extent to which our measures accurately
+capture the concepts we intended to study. In our case, we have used well-
+known metric for summarization task to evaluate the performance of the
+agents and frameworks, which may not fully capture the complexity of
+MAS development. However, we replicate the same experiment proposed
+in the original paper (Nguyen et al. 2025) to ensure that our measures are
+consistent with the original study. We also acknowledge that there may be
+other factors that influence the performance of MAS frameworks, such the
+provided APIs and the inference mechanisms, which are not fully captured
+by our metrics.
+–Conclusion validityconcerns the extent to which our conclusions are
+supported by the data we collected. We have conducted a thorough analysis
+of the results, using appropriate statistical methods and techniques.
+
+[[page 39]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 39
+5 Conclusion and Future Work
+The advent of generative AI models, i.e., large language models (LLMs), has
+impacted the traditional software development. In addition, both academic
+and industrial practitioners have started to explore the usage of multi-agent
+systems (MAS) to enhance the capabilities of LLMs in terms of efficency and
+accuracy. Nevertheless, developing a multi-agent system that can effectively
+utilize LLMs is not a trivial task given the different aspects that need to be
+considered, such as the design of the agents, the communication protocols, and
+the coordination mechanisms. In this paper, we conducted a mixed-methods
+study to evaluate notable MAS framework from the developers’ point of view.
+In particular, we first evaluate the documentation and technical features of
+the framework. Afterward, we select the most promising ones and conduct
+an empirical evaluation based on a specific use case, i.e., the summarization
+of GitHub README files. Thequalitative analysisdemonstrated that the
+existing frameworks can support developers in implementing code MAS
+features even though qualitative aspects like benchmarking and telemetry are
+not well supported, leaving room for improvements. Meanwhile, through the
+quantitative evaluationon the summarization of README.MD files, we found
+that there is no noticeable difference in the recommendation accuracy among
+the considered frameworks. We condensed our results into a set of lessons
+learned that may help practitioners and researchers in selecting the proper
+MAS framework according to the final goal.
+Future work should explore the performance of LLM-based MAS across a
+broader range of software engineering tasks, including code generation, testing,
+and API usage. In particular, systematic evaluations on diverse and well-
+established benchmarks would help assess their effectiveness, generalizability,
+and robustness in real-world development scenarios. Finally, we will examine
+in deep different coordination patterns involving different kinds of agents,
+investigating additional dimensions, e.g., the number of agents, the type of
+agents, and the complexity of the task, to understand how these factors
+influence the performance of the MAS.
+Declarations
+Funding:This paper has been partially supported by the MOSAICO project
+(Management, Orchestration and Supervision of AI-agent COmmunities for
+reliable AI in software engineering) that has received funding from the
+European Union under the Horizon Research and Innovation Action (Grant
+Agreement No. 101189664). The work has been partially supported by the
+EMELIOT national research project, which has been funded by the MUR
+under the PRIN 2020 program (Contract 2020W3A5FY). Last but not least,
+we are grateful to the anonymous reviewers for their valuable comments and
+suggestions, which helped us improve the manuscript substantially.
+
+[[page 40]]
+40 Mariama Celi Serafim De Oliveira et al.
+Ethical approval:This article does not contain any studies with human
+participants or animals performed by any of the authors.
+Informed consent:Not applicable.
+Author Contributions:Mariama Celi Serafim De Oliveira: Software,
+Writing, Revision, Data Visualization; Motunrayo Osatohanmen Ibiyo:
+Software, Writing; Marco Gianrusso: Software, Writing; Claudio Di Sipio:
+Conceptualization, Writing, Revision, Supervision; Davide Di Ruscio:
+Conceptualization, Writing, Revision, Supervision, Funding acquisition;
+Phuong T. Nguyen: Conceptualization, Writing, Data Visualization, Revision,
+Supervision.
+Data Availability Statement:We published the replication package of this
+study in GitHub (De Oliveira et al. 2025).
+Conflict of interest:All the authors declare that they have no conflict of
+interest. Furthermore, they have no known competing financial interests or
+personal relationships that could have appeared to influence the work reported
+in this paper.
+Clinical Trial Number:Not applicable.
+References
+Agno (2025) Agno: Framework for ai-driven decision-making.https://github.com/
+agno-agi/agno, gitHub repository, last accessed 11-02-2025
+Amershi S, Begel A, Bird C, DeLine R, Gall H, Kamar E, Nagappan N, Nushi B,
+Zimmermann T (2019) Software engineering for machine learning: A case study. In:
+2019 IEEE/ACM 41st International Conference on Software Engineering: Software
+Engineering in Practice (ICSE-SEIP), pp 291–300, DOI 10.1109/ICSE-SEIP.2019.00042
+Auto-GPT (2024) Autonomous-gpt: Framework for autonomous gpt-4 agents.https://
+github.com/Significant-Gravitas/Auto-GPT, gitHub repository, last accessed 11-02-
+2025
+AutoGen (2024) Microsoft autogen: Framework for building multi-agent conversational
+systems.https://github.com/microsoft/autogen, gitHub repository, last accessed 11-
+02-2025
+Baltes S, Angermeir F, Arora C, Bar´ on MM, Chen C, B¨ ohme L, Calefato F, Ernst N,
+Falessi D, Fitzgerald B, Fucci D, He J, Treude C, Kalinowski M, Lambiase S, Russo D,
+Lungu M, Montes CM, Prechelt L, Ralph P, van Tonder R, Wagner S (2026) Guidelines
+for Empirical Studies in Software Engineering involving Large Language Models. URL
+https://arxiv.org/abs/2508.15503,2508.15503
+Berini ADE, Jamil N, Benrazek AE, Lakas A, Ismail L, Ferrag MA, Lam KY (2026) Security
+and privacy in llms: A comprehensive survey of threats and mitigation strategies.
+Information Fusion 132:104241, DOI https://doi.org/10.1016/j.inffus.2026.104241, URL
+https://www.sciencedirect.com/science/article/pii/S156625352600120X
+Bhardwaj R, Majumder N, Poria S (2021) Investigating Gender Bias in BERT. Cognitive
+Computation 13(4):1008–1018, DOI 10.1007/s12559-021-09881-2, URLhttps://link.
+springer.com/article/10.1007/s12559-021-09881-2, company: Springer Distributor:
+Springer Institution: Springer Label: Springer Number: 4 Publisher: Springer US
+Biancofiore GM, Di Palma D, Pomo C, Narducci F, Di Noia T (2025) Conversational User
+Interfaces and Agents. In: Germanakos P, Juhasz M, Kongot A, Marathe D, Sacharidis D
+(eds) Human-Centered AI: An Illustrated Scientific Quest, Springer Nature Switzerland,
+Cham, pp 399–438, DOI 10.1007/978-3-031-61375-3 4, URLhttps://link.springer.
+
+[[page 41]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 41
+com/10.1007/978-3-031-61375-3_4, series Title: Human–Computer Interaction Series
+Read Status: New Read Status Date: 2025-04-03T07:39:06.520Z
+Borges H, Tulio Valente M (2018) What’s in a github star? understanding repository starring
+practices in a social coding platform. Journal of Systems and Software 146:112–129,
+DOI https://doi.org/10.1016/j.jss.2018.09.016, URLhttps://www.sciencedirect.com/
+science/article/pii/S0164121218301961
+Borges H, Hora A, Valente MT (2016) Understanding the Factors That Impact the
+Popularity of GitHub Repositories. In: 2016 IEEE International Conference on Software
+Maintenance and Evolution (ICSME), IEEE, Raleigh, NC, USA, pp 334–344, DOI
+10.1109/ICSME.2016.31, URLhttp://ieeexplore.ieee.org/document/7816479/
+Botpress (2024) Botpress.https://botpress.com, last accessed: Mar 19, 2025
+Bucaioni A, Ekedahl H, Helander V, Nguyen PT (2024) Programming with chatgpt:
+How far can we go? Machine Learning with Applications 15:100526, DOI https://
+doi.org/10.1016/j.mlwa.2024.100526, URLhttps://www.sciencedirect.com/science/
+article/pii/S2666827024000021
+Camel-AI (2024) Camel: Communicative agents for ”mind” exploration.https://github.
+com/camel-ai/camel, gitHub repository, last accessed 11-02-2025
+Cassell C, Symon G (2025) Essential guide to qualitative methods
+in organizational research. SAGE Publications Ltd, London, DOI
+10.4135/9781446280119, URLhttps://sk.sagepub.com/dict/edvol/
+essential-guide-to-qualitative-methods-in-organizational-research/toc
+Casta˜ no J, Mart´ ınez-Fern´ andez S, Franch X, et al. (2023) Exploring the Carbon Footprint
+of Hugging Face’s ML Models: A Repository Mining Study. In: 2023 ACM/IEEE
+International Symposium on Empirical Software Engineering and Measurement
+(ESEM), pp 1–12, DOI 10.1109/ESEM56168.2023.10304801, URLhttp://arxiv.org/
+abs/2305.11164, arXiv:2305.11164 [cs, stat]
+Cogo FR, Rajbahadur GK, Lin D, Hassan AE (2024) A tutorial on software engineering
+for fmware. In: Companion Proceedings of the 32nd ACM International Conference on
+the Foundations of Software Engineering, Association for Computing Machinery, New
+York, NY, USA, FSE 2024, p 710–712, DOI 10.1145/3663529.3663820, URLhttps:
+//doi-org.univaq.idm.oclc.org/10.1145/3663529.3663820
+Cook TD, Campbell DT, Day A (1979) Quasi-experimentation: Design & analysis issues for
+field settings, vol 351. Houghton Mifflin Boston
+CrewAI (2024) Crewai: Framework for orchestrating role-playing ai agents.https://github.
+com/crewAIInc/crewAI, gitHub repository, last accessed 11-02-2025
+Cursaru VA, Duits L, Milligan J, Ural D, Sanchez BR, Stoico V, Malavolta I (2024) A
+controlled experiment on the energy efficiency of the source code generated by code
+llama. In: Bertolino A, Pascoal Faria J, Lago P, Semini L (eds) Quality of Information
+and Communications Technology, Springer Nature Switzerland, Cham, pp 161–176
+De Martino V, Palomba F (2025) Classification and challenges of non-functional
+requirements in ml-enabled systems: A systematic literature review. Information
+and Software Technology 181:107678, DOI https://doi.org/10.1016/j.infsof.2025.107678,
+URLhttps://www.sciencedirect.com/science/article/pii/S0950584925000175
+De Oliveira MCS, Ibiyo MO, Gianrusso M, Di Sipio C, Di Ruscio D, Nguyen
+PT (2025) Replication Package. URLhttps://github.com/MDEGroup/
+LLMs-based-MAS-ReplicationPackage
+Deepset (2024) Haystack: End-to-end nlp framework.https://github.com/deepset-ai/
+haystack, gitHub repository, last accessed 11-02-2025
+Di Penta M, Tamburri DA (2017) Combining quantitative and qualitative studies in
+empirical software engineering research. In: 2017 IEEE/ACM 39th International
+Conference on Software Engineering Companion (ICSE-C), pp 499–500, DOI 10.1109/
+ICSE-C.2017.163
+Dify (2024) Dify: Open-source framework for llm applications.https://github.com/
+langgenius/dify, gitHub repository, last accessed 11-02-2025
+Doan TTH, Nguyen PT, Di Rocco J, Di Ruscio D (2023) Too long; didn’t read: Automatic
+summarization of github readme.md with transformers. In: Proceedings of the 27th
+International Conference on Evaluation and Assessment in Software Engineering,
+Association for Computing Machinery, New York, NY, USA, EASE ’23, p 267–272,
+
+[[page 42]]
+42 Mariama Celi Serafim De Oliveira et al.
+DOI 10.1145/3593434.3593448, URLhttps://doi.org/10.1145/3593434.3593448
+Flowise (2024) Flowise: Drag & drop ui framework for building llm flows.https://github.
+com/FlowiseAI/Flowise, gitHub repository, last accessed 11-02-2025
+Garousi V, Felderer M, M¨ antyl¨ a MV (2019) Guidelines for including grey literature and
+conducting multivocal literature reviews in software engineering. Information and
+Software Technology 106:101–121, DOI 10.1016/j.infsof.2018.09.006, URLhttps://
+www.sciencedirect.com/science/article/pii/S0950584918301939, read Status: New
+Read Status Date: 2025-02-04T10:31:39.920Z
+Golchin S, Surdeanu M (2024) Time travel in llms: Tracing data contamination in
+large language models. In: Proceedings of the International Conference on Learning
+Representations (ICLR 2024), OpenReview, Vienna, Austria, URLhttps://arxiv.org/
+abs/2308.08493, published as a conference paper at ICLR 2024
+Guo T, Chen X, Wang Y, Chang R, Pei S, Chawla NV, Wiest O, Zhang X (2024) Large
+Language Model Based Multi-agents: A Survey of Progress and Challenges. arXiv,
+vol 9, pp 8048–8057, DOI 10.24963/ijcai.2024/890, URLhttps://www.ijcai.org/
+proceedings/2024/890, read Status: New Read Status Date: 2025-02-10T21:50:52.078Z
+tex.ids= guoLargeLanguageModel2024a ISSN: 1045-0823
+Hassan AE, Lin D, Rajbahadur GK, Gallaba K, Cogo FR, Chen B, Zhang H, Thangarajah
+K, Oliva G, Lin JJ, Abdullah WM, Jiang ZMJ (2024) Rethinking software engineering
+in the era of foundation models: A curated catalogue of challenges in the development
+of trustworthy fmware. In: Companion Proceedings of the 32nd ACM International
+Conference on the Foundations of Software Engineering, Association for Computing
+Machinery, New York, NY, USA, FSE 2024, p 294–305, DOI 10.1145/3663529.3663849,
+URLhttps://doi-org.univaq.idm.oclc.org/10.1145/3663529.3663849
+He J, Treude C, Lo D (2025) Llm-based multi-agent systems for software engineering:
+Literature review, vision and the road ahead. ACM Trans Softw Eng Methodol DOI
+10.1145/3712003, URLhttps://doi-org.univaq.idm.oclc.org/10.1145/3712003, just
+Accepted
+Hou X, Zhao Y, Liu Y, Yang Z, Wang K, Li L, Luo X, Lo D, Grundy J, Wang H (2024)
+Large language models for software engineering: A systematic literature review. ACM
+Trans Softw Eng Methodol 33(8), DOI 10.1145/3695988, URLhttps://doi.org/10.
+1145/3695988
+Huang L, Yu W, Ma W, Zhong W, Feng Z, Wang H, Chen Q, Peng W, Feng X, Qin B,
+Liu T (2025) A survey on hallucination in large language models: Principles, taxonomy,
+challenges, and open questions. ACM Trans Inf Syst 43(2), DOI 10.1145/3703155, URL
+https://doi.org/10.1145/3703155
+H¨ andler T (2023) A Taxonomy for Autonomous LLM-Powered Multi-Agent Architectures:.
+In: Proceedings of the 15th International Joint Conference on Knowledge
+Discovery, Knowledge Engineering and Knowledge Management, SCITEPRESS
+- Science and Technology Publications, Rome, Italy, pp 85–98, DOI 10.
+5220/0012239100003598, URLhttps://www.scitepress.org/DigitalLibrary/Link.
+aspx?doi=10.5220/0012239100003598, read Status: New Read Status Date: 2025-02-
+10T21:50:37.118Z
+Ji Z, Lee N, Frieske R, Yu T, Su D, Xu Y, Ishii E, Bang YJ, Madotto A, Fung
+P (2023) Survey of Hallucination in Natural Language Generation. ACM Comput
+Surv 55(12):248:1–248:38, DOI 10.1145/3571730, URLhttps://dl.acm.org/doi/10.
+1145/3571730, read Status: New Read Status Date: 2025-02-04T10:31:25.093Z tex.ids=
+jiSurveyHallucinationNatural2023
+Kandpal N, Lester B, Muqeeth M, Mascarenhas A, Evans M, Baskaran V, Huang T, Liu H,
+Raffel C (2023) Git-theta: a git extension for collaborative development of machine
+learning models. In: Proceedings of the 40th International Conference on Machine
+Learning, JMLR.org, ICML’23
+Kibriya H, Khan WZ, Siddiqa A, Khan MK (2024) Privacy issues in large language
+models: A survey. Computers and Electrical Engineering 120:109698, DOI https:
+//doi.org/10.1016/j.compeleceng.2024.109698, URLhttps://www.sciencedirect.com/
+science/article/pii/S0045790624006256
+Kitchenham B, Pretorius R, Budgen D, Pearl Brereton O, Turner M, Niazi M,
+Linkman S (2010) Systematic literature reviews in software engineering – A tertiary
+
+[[page 43]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 43
+study. Information and Software Technology 52(8):792–805, DOI 10.1016/j.infsof.2010.
+03.006, URLhttps://linkinghub.elsevier.com/retrieve/pii/S0950584910000467,
+read Status: New Read Status Date: 2025-02-10T21:50:52.079Z
+Krenesky P (2024) ix: Autonomous agent framework.https://github.com/kreneskyp/ix,
+gitHub repository, last accessed 11-02-2025
+Kruchten P (1995) The 4+1 view model of architecture. IEEE Software 12(6):42–50, DOI
+10.1109/52.469759
+LangChain (2024) Langchain: Building applications with llms through composability.https:
+//github.com/langchain-ai/langchain, gitHub repository, last accessed 11-02-2025
+Lavrinovics E, Biswas R, Bjerva J, Hose K (2025) Knowledge graphs, large language
+models, and hallucinations: An nlp perspective. Journal of Web Semantics
+85:100844, DOI https://doi.org/10.1016/j.websem.2024.100844, URLhttps://www.
+sciencedirect.com/science/article/pii/S1570826824000301
+Li X, Wang S, Zeng S, Wu Y, Yang Y (2024a) A survey on LLM-based
+multi-agent systems: workflow, infrastructure, and challenges. Vicinagearth 1(1):1–
+43, DOI 10.1007/s44336-024-00009-2, URLhttps://link.springer.com/article/
+10.1007/s44336-024-00009-2, company: Springer Distributor: Springer Institution:
+Springer Label: Springer Number: 1 Publisher: Springer Nature Singapore Read Status:
+New Read Status Date: 2025-02-04T10:31:49.500Z
+Li X, Yuan S, Gu X, Chen Y, Shen B (2024b) Few-shot code translation via task-adapted
+prompt learning. Journal of Systems and Software 212:112002, DOI https://doi.org/10.
+1016/j.jss.2024.112002, URLhttps://www.sciencedirect.com/science/article/pii/
+S0164121224000451
+Lin CY (2004) ROUGE: A package for automatic evaluation of summaries. In: Text
+Summarization Branches Out, Association for Computational Linguistics, Barcelona,
+Spain, pp 74–81, URLhttps://aclanthology.org/W04-1013/
+Liu J, Wang K, Chen Y, Peng X, Chen Z, Zhang L, Lou Y (2024a) Large language
+model-based agents for software engineering: A survey. ACM Transactions on Software
+Engineering and Methodology
+Liu Y, Le-Cong T, Widyasari R, Tantithamthavorn C, Li L, Le XBD, Lo D (2024b)
+Refining ChatGPT-Generated Code: Characterizing and Mitigating Code Quality
+Issues. ACM Trans Softw Eng Methodol 33(5):116:1–116:26, DOI 10.1145/3643674, URL
+https://dl.acm.org/doi/10.1145/3643674, read Status: New Read Status Date: 2025-
+02-04T10:31:26.839Z
+Liu Y, Zhang H, Li Z, Miao Y (2024c) Optimizing the utilization of large language
+models via schedule optimization: An exploratory study. In: Proceedings of the
+18th ACM/IEEE International Symposium on Empirical Software Engineering and
+Measurement, Association for Computing Machinery, New York, NY, USA, ESEM ’24,
+p 84–95, DOI 10.1145/3674805.3686671, URLhttps://doi-org.univaq.idm.oclc.org/
+10.1145/3674805.3686671
+Mastropaolo A, Scalabrino S, Cooper N, et al. (2021) Studying the Usage of Text-To-
+Text Transfer Transformer to Support Code-Related Tasks. In: 2021 IEEE/ACM
+43rd International Conference on Software Engineering (ICSE), IEEE, Madrid, ES,
+pp 336–347, DOI 10.1109/ICSE43902.2021.00041, URLhttps://ieeexplore.ieee.org/
+document/9401982/
+Meta (2024) Llama index: Data framework for llm applications.https://github.com/
+run-llama/llama_index, gitHub repository, last accessed 11-02-2025
+MetaGPT (2024) Metagpt: Multi-agent framework for software development.https://
+github.com/geekan/MetaGPT, gitHub repository, last accessed 11-02-2025
+Microsoft (2024) Microsoft semantic kernel: Integration framework for ai models.https:
+//github.com/microsoft/semantic-kernel, gitHub repository, last accessed 11-02-2025
+Molina-Azor´ ın JF (2016) Mixed methods research: An opportunity to improve our studies
+and our research skills. DOI http://dx.doi.org/10.1016/j.redeen.2016.05.001
+Neto GTG, Santos WB, Endo PT, Fagundes RA (2019) Multivocal literature reviews in
+software engineering: Preliminary findings from a tertiary study. In: 2019 ACM/IEEE
+International Symposium on Empirical Software Engineering and Measurement
+(ESEM), pp 1–6, DOI 10.1109/ESEM.2019.8870142, URLhttps://ieeexplore.ieee.
+org/document/8870142, iSSN: 1949-3789 Read Status: New Read Status Date: 2025-02-
+
+[[page 44]]
+44 Mariama Celi Serafim De Oliveira et al.
+04T10:31:28.372Z
+Nguyen DSH, Truong BG, Nguyen PT, Di Rocco J, Di Ruscio D (2025) Teamwork makes the
+dream work: Llms-based agents for github readme.md summarization. In: Proceedings
+of the 33rd ACM International Conference on the Foundations of Software Engineering,
+Association for Computing Machinery, New York, NY, USA, FSE Companion ’25,
+p 621–625, DOI 10.1145/3696630.3728511, URLhttps://doi.org/10.1145/3696630.
+3728511
+Nguyen DSH, Nguyen MT, Nguyen PT, Di Rocco J, Di Ruscio D (2026) Automated
+summarization of software documents: an LLM-based multi-agent approach. Automated
+Software Engineering 33(2):43, DOI 10.1007/S10515-025-00588-4, URLhttps://doi.
+org/10.1007/s10515-025-00588-4
+OpenAI (2024) Openagents: Open platform for language agents.https://github.com/
+xlang-ai/OpenAgents, gitHub repository, last accessed 11-02-2025
+Pham MQ, Indurthi S, Chollampatt S, Turchi M (2023) Select, prompt, filter: Distilling
+large language models for summarizing conversations. In: Bouamor H, Pino J, Bali
+K (eds) Proceedings of the 2023 Conference on Empirical Methods in Natural
+Language Processing, Association for Computational Linguistics, Singapore, pp
+12257–12265, DOI 10.18653/v1/2023.emnlp-main.753, URLhttps://aclanthology.
+org/2023.emnlp-main.753/
+popular-3k python (2023) Dataset — Software Heritage documentation. URLhttps://
+docs.softwareheritage.org/devel/swh-dataset/graph/dataset.html
+Qian C, Liu W, Liu H, Chen N, Dang Y, Li J, Yang C, Chen W, Su Y, Cong X, et al. (2024)
+Chatdev: Communicative agents for software development. In: Proceedings of the 62nd
+annual meeting of the association for computational linguistics (volume 1: Long papers),
+pp 15174–15186
+Rasheed Z, Waseem M, Sami MA, Kemell KK, Ahmad A, Duc AN, Syst¨ a K, Abrahamsson
+P (2025) Autonomous Agents in Software Development: A Vision Paper. In: Agile
+Processes in Software Engineering and Extreme Programming – Workshops, Springer,
+Cham, pp 15–23, DOI 10.1007/978-3-031-72781-8 2, URLhttps://link.springer.
+com/chapter/10.1007/978-3-031-72781-8_2, iSSN: 1865-1356
+Romera-Paredes B, Torr PHS (2015) An embarrassingly simple approach to zero-shot
+learning. In: Proceedings of the 32nd International Conference on International
+Conference on Machine Learning - Volume 37, JMLR.org, ICML’15, p 2152–2161
+Rubei R, Moussaid A, di Sipio C, di Ruscio D (2025) Prompt engineering and its implications
+on the energy consumption of large language models. URLhttps://arxiv.org/abs/
+2501.05899,2501.05899
+Rule A, Tabard A, Hollan JD (2018) Exploration and explanation in computational
+notebooks. In: Proceedings of the 2018 CHI Conference on Human Factors in Computing
+Systems, Association for Computing Machinery, New York, NY, USA, CHI ’18, p
+1–12, DOI 10.1145/3173574.3173606, URLhttps://doi-org.univaq.idm.oclc.org/
+10.1145/3173574.3173606
+Sahay A, Indamutsa A, Di Ruscio D, Pierantonio A (2020) Supporting the understanding
+and comparison of low-code development platforms. In: 2020 46th Euromicro
+Conference on Software Engineering and Advanced Applications (SEAA), pp 171–178,
+DOI 10.1109/SEAA51224.2020.00036, URLhttps://ieeexplore.ieee.org/document/
+9226356/?arnumber=9226356, read Status: In Progress Read Status Date: 2025-03-
+20T10:39:52.812Z
+Sch¨ afer M, Nadi S, Eghbali A, Tip F (2024) An empirical evaluation of using large language
+models for automated unit test generation. IEEE Transactions on Software Engineering
+50(1):85–105, DOI 10.1109/TSE.2023.3334955
+Seaman CB, Hoda R, Feldt R (2025) Qualitative Research Methods in Software Engineering:
+Past, Present, and Future . IEEE Transactions on Software Engineering 51(03):783–
+788, DOI 10.1109/TSE.2025.3538751, URLhttps://doi.ieeecomputersociety.org/
+10.1109/TSE.2025.3538751
+Shapiro SS, Wilk MB (1965) An analysis of variance test for normality (complete samples).
+Biometrika 52(3/4):591–611, URLhttp://www.jstor.org/stable/2333709
+Smolagents (2024) Smolagents: Minimalist framework for building powerful agents.https:
+//github.com/huggingface/smolagents, gitHub repository, last accessed 11-02-2025
+
+[[page 45]]
+Developing LLM-based MAS in SE: A Mixed-Method Experience Report 45
+Vaswani A, Shazeer N, Parmar N, Uszkoreit J, Jones L, Gomez AN, Kaiser u, Polosukhin
+I (2017) Attention is All you Need. In: Advances in Neural Information Processing
+Systems, Curran Associates, Inc., vol 30, URLhttps://proceedings.neurips.cc/
+paper_files/paper/2017/hash/3f5ee243547dee91fbd053c1c4a845aa-Abstract.html
+Wang Y, Yin B (2026) Gcl: Group-shared continual learning fine-tuning for sparse llms.
+Neurocomputing 675:132918, DOI https://doi.org/10.1016/j.neucom.2026.132918, URL
+https://www.sciencedirect.com/science/article/pii/S0925231226003152
+Wei B (2024) Requirements are all you need: From requirements to code with llms. In:
+2024 IEEE 32nd International Requirements Engineering Conference (RE), pp 416–422,
+DOI 10.1109/RE59067.2024.00049
+Wilcoxon F (1945) Individual comparisons by ranking methods. Biometrics Bulletin 1(6):80–
+83, URLhttp://www.jstor.org/stable/3001968
+Xi Z, Chen W, Guo X, He W, Ding Y, Hong B, Zhang M, Wang J, Jin S, Zhou E,
+Zheng R, Fan X, Wang X, Xiong L, Zhou Y, Wang W, Jiang C, Zou Y, Liu X,
+Yin Z, Dou S, Weng R, Qin W, Zheng Y, Qiu X, Huang X, Zhang Q, Gui T
+(2025) The rise and potential of large language model based agents: a survey. Science
+China Information Sciences 68(2):121101, DOI 10.1007/s11432-024-4222-0, URLhttps:
+//doi.org/10.1007/s11432-024-4222-0, read Status: New Read Status Date: 2025-05-
+12T08:57:00.797Z
+Yang G, Zhou Y, Chen X, Zhang X, Zhuo TY, Chen T (2023) Chain-of-Thought in Neural
+Code Generation: From and For Lightweight Language Models. URLhttp://arxiv.
+org/abs/2312.05562, arXiv:2312.05562 [cs]
+Zanartu F, Treude C, Cartaxo B, Borges HS, Moura P, Wagner M, Pinto G (2022)
+Automatically Categorising GitHub Repositories by Application Domain. DOI 10.
+48550/arXiv.2208.00269, URLhttp://arxiv.org/abs/2208.00269, arXiv:2208.00269
+[cs]
+Zeshan MU, Ibiyo M, Di Sipio C, Nguyen PT, Di Ruscio D (2026) Many hands make light
+work: An llm-based multi-agent system for detecting malicious pypi packages. Journal of
+Systems and Software 236:112792, DOI https://doi.org/10.1016/j.jss.2026.112792, URL
+https://www.sciencedirect.com/science/article/pii/S0164121226000269
+Zhang H, Cruz L, van Deursen A (2022) Code smells for machine learning applications.
+In: Proceedings of the 1st International Conference on AI Engineering: Software
+Engineering for AI, Association for Computing Machinery, New York, NY, USA, CAIN
+’22, p 217–228, DOI 10.1145/3522664.3528620, URLhttps://doi-org.univaq.idm.
+oclc.org/10.1145/3522664.3528620
+Zhang Z, Wang C, Wang Y, Shi E, Ma Y, Zhong W, Chen J, Mao M, Zheng Z (2025) Llm
+hallucinations in practical code generation: Phenomena, mechanism, and mitigation.
+Proc ACM Softw Eng 2(ISSTA), DOI 10.1145/3728894, URLhttps://doi.org/10.
+1145/3728894

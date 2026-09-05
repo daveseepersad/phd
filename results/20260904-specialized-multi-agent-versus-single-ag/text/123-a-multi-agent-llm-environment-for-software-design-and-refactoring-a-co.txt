@@ -1,0 +1,598 @@
+[[page 1]]
+A Multi-Agent LLM Environment for Software
+Design and Refactoring: A Conceptual Framework
+Vasanth Rajendran Dinesh Besiahgari Sachin C. Patil
+Amazon University of Cincinnati Independent Researcher
+Seattle, USA Cincinnati, USA West Chester, USA
+vasanthr430@gmail.com dinesh.besiahgari@gmail.com sachin.science2@gmail.com
+Manjunath Chandrashekaraiah Vishnu Challagulla
+ALAB Egen.ai
+San Jose, USA Naperville, USA
+chandrashekar.mcd@gmail.com vishnuchallagulla@gmail.com
+Abstract—Modern software systems demand continuous evo-
+lution to maintain performance, scalability, and security. Tra-
+ditional single-agent AI-driven code refactoring approaches are
+often limited in addressing the multi-faceted constraints (e.g., per-
+formance, security, maintainability) that emerge during complex
+software design tasks. In this paper, we propose a novel Multi-
+Agent Large Language Model (LLM) Environment for automated
+software design and refactoring. Our conceptual framework com-
+prises specialized LLM “experts,” each trained or fine-tuned on a
+different aspect of software engineering (performance optimiza-
+tion, security hardening, UI/UX, maintainability). These agents
+collaborate in a cooperative or competitive fashion—using coor-
+dination protocols akin to consensus or auction mechanisms—to
+synthesize design insights and refactoring recommendations.
+We present formal definitions of agent interactions (including
+mathematical notation for termination conditions), a sequence
+diagram demonstrating agent collaboration, a complexity analysis
+of the coordination mechanism, and an expanded reference list.
+Preliminary experimental design is outlined to demonstrate how
+multi-agent interactions may resolve conflicting design goals more
+effectively than a single-agent approach. Our aim is to provide
+a roadmap for integrating multi-agent LLMs into the software
+development lifecycle, thereby improving development efficiency,
+reducing technical debt, and enhancing software quality.
+Index Terms—Multi-agent systems, Large Language Models,
+Software refactoring, Agent specialization, Consensus protocols,
+Auction mechanisms, Code quality
+I. I NTRODUCTION
+Software design and refactoring are crucial activities in the
+software engineering lifecycle, ensuring that systems remain
+maintainable, secure, and high-performing. As software grows
+in size and complexity, managing technical debt and ensuring
+that code quality aligns with evolving requirements becomes
+challenging. Recent advances in Large Language Models
+(LLMs) such as GPT-4 and CodeT5 have shown promise
+in code synthesis, bug fixing, and refactoring tasks [1], [2].
+These models leverage massive training corpora to capture
+both syntactic and semantic patterns in code.
+However, most state-of-the-art approaches rely on a single-
+agent paradigm. That is, a single LLM is tasked with providing
+recommendations or generating patches, typically targeting
+one or a small subset of software quality attributes—e.g.,
+performance or code cleanliness. In large-scale projects with
+complex interdependencies, design changes optimizing one
+aspect (say, performance) may adversely affect other aspects
+(security, maintainability, or user experience).
+Multi-agent systems (MAS) have been extensively studied
+in distributed AI, where autonomous agents cooperate or
+compete to achieve a higher-level objective [3], [4]. The MAS
+paradigm excels in scenarios where tasks can be decomposed
+into specialized subproblems handled by experts. Yet, the
+application of MAS principles to LLM-driven software design
+and refactoring has not been thoroughly explored [5].
+Motivating Example:
+Consider a high-traffic e-commerce microservices archi-
+tecture processing 10,000 requests/second. The product
+recommendation service is experiencing 95% CPU uti-
+lization due to complex in-memory filtering operations.
+A single-agent LLM might propose caching frequently
+accessed data and implementing parallel processing to
+reduce CPU load to 40%. However, this optimization
+introduces critical security vulnerabilities:
+• Unbounded cache growth enabling DoS attacks
+• Unsanitized user inputs in cache keys
+• No rate limiting on parallel requests
+• Missing access controls on cached data
+A multi-agent approach would leverage:
+• Performance Agent : Implements efficient caching
+and parallel processing
+• Security Agent : Enforces input validation, rate lim-
+iting, and secure cache management
+• Resource Agent : Monitors and bounds system re-
+source usage
+This collaboration achieves 65% CPU reduction while
+maintaining security standards.
+Fig. 1. Concrete Example of Performance-Security Tradeoff in Microservices
+SoutheastCon 2025
+979-8-3315-0484-7/25/$31.00 ©2025 IEEE 488
+SoutheastCon 2025 | 979-8-3315-0484-7/25/$31.00 ©2025 IEEE | DOI: 10.1109/SOUTHEASTCON56624.2025.10971563
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:15:33 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 2]]
+In this paper, we introduce a Multi-Agent LLM Environ-
+ment for software design and refactoring. Each agent is
+a specialized LLM, fine-tuned on domain-specific corpora
+(e.g., performance patterns, security best practices, UI/UX
+heuristics, maintainability guidelines). A communication and
+coordination layer manages their interactions, leveraging ei-
+ther consensus-based or auction-based protocols to reconcile
+conflicting proposals. Our aim is to create a holistic refactoring
+framework that simultaneously optimizes for multiple software
+quality attributes.
+The remainder of this paper is structured as follows:
+• Section II reviews the use of LLMs in software engi-
+neering and summarizes key MAS concepts.
+• Section III presents our conceptual framework, including
+the system architecture, formal definitions of agent inter-
+actions, and agent specialization through fine-tuning.
+• Section IV outlines an experimental design, evaluation
+metrics, and a complexity analysis of our approach.
+• Section V discusses open challenges, ethical considera-
+tions, and potential limitations.
+• Section VI concludes with key contributions and future
+research directions.
+II. B ACKGROUND AND RELATED WORK
+A. LLMs in Software Engineering
+LLMs are increasingly employed for tasks like code com-
+pletion, bug detection, and automated testing. By training on
+large-scale code repositories, these models learn patterns that
+assist in generating or transforming code [1], [2]. Techniques
+such as prompt engineering, fine-tuning, and in-context learn-
+ing allow developers to guide LLMs toward specific use cases.
+Despite these successes, single-agent LLM approaches often
+struggle to handle conflicting objectives. For instance, an LLM
+focusing on speed optimization might produce code that is
+unreadable or insecure [6].
+Recent work has also explored search-based techniques for
+automated refactoring, sometimes using genetic algorithms or
+multi-objective optimization [7], [8]. While these methods can
+systematically explore refactoring options, they often rely on
+static heuristics or require extensive fitness function engineer-
+ing. Combining LLMs with search-based approaches could
+further improve solution quality by providing more context-
+aware candidate refactorings. However, most of these hybrid
+approaches to date still operate under a single decision-making
+agent paradigm, potentially missing specialized expertise in
+areas such as security or user interface design.
+B. Multi-Agent Systems
+A multi-agent system (MAS) coordinates multiple au-
+tonomous agents, each capable of perceiving its environment
+and making decisions. MAS research demonstrates that spe-
+cialized agents, when properly orchestrated, can outperform a
+single, monolithic agent [3], [4]. Benefits include:
+• Distributed Intelligence: Agents can work in parallel or
+asynchronously, reducing bottlenecks.
+• Domain Expertise: Each agent can be specifically tai-
+lored to a subproblem (e.g., security, performance).
+• Resilience: The failure or under-performance of one
+agent does not necessarily derail the entire system.
+Although MAS concepts have been employed in robotics, eco-
+nomics, and logistics, their application in AI-driven software
+refactoring remains limited [5].
+In addition, frameworks such as JADE (Java Agent DEvel-
+opment Framework) have facilitated MAS design in industrial
+contexts [9], but primarily for tasks such as workflow orches-
+tration, resource allocation, or negotiation in distributed set-
+tings. Integrating large-scale LLMs into MAS for the specific
+goal of code refactoring or improvement is still an emergent
+area of study. Recent work explores the synergy between
+multi-agent collaboration and software maintenance [10]; how-
+ever, these systems often lack modern LLM capabilities or the
+advanced domain specializations needed for complex refactor-
+ing tasks.
+C. Need for a Multi-Agent LLM Environment
+Modern software demands a multi-dimensional approach
+to quality assurance, balancing security, maintainability, per-
+formance, compliance, and user experience [11]. Traditional
+refactoring tools provide suggestions for isolated concerns
+(e.g., naming conventions, code smells) but lack broader
+intelligence about security or performance nuances. Our pro-
+posed Multi-Agent LLM Environment leverages the synergy
+of specialized LLMs and a multi-agent negotiation layer to
+produce refactorings that are holistic and consistent across
+multiple quality attributes [12].
+Search-based software engineering (SBSE) approaches have
+also tackled the multi-objective nature of refactoring by defin-
+ing weighted fitness functions to balance trade-offs among
+performance, maintainability, and other concerns [7], [8].
+However, these SBSE methods typically rely on handcrafted
+heuristics and lack the semantic depth that LLMs can provide.
+Moreover, a single optimization loop may fail to capture
+domain-specific insights (e.g., secure coding standards, user-
+interface heuristics). By contrast, multi-agent LLM environ-
+ments naturally accommodate different forms of domain ex-
+pertise.
+Finally, there is a growing trend of infrastructure as
+code (IaC) and DevOps pipelines, where code modifica-
+tions—whether for performance tuning or security patch-
+ing—must be continuously integrated and verified [13]. In
+such pipelines, autonomous agents could operate in parallel,
+each focusing on a distinct dimension (security scanning, per-
+formance profiling, UI testing), thereby reducing integration
+conflicts. Coupling these agents with LLM-based capabilities
+for code transformation or suggestion can form a robust end-
+to-end solution, encompassing everything from bug detection
+to user-experience refinement.
+Overall, the multi-agent LLM paradigm we propose com-
+bines the strengths of advanced language models with the
+distributed decision-making and domain specialization inher-
+ent in MAS. By integrating search-based and human-in-the-
+SoutheastCon 2025
+489
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:15:33 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 3]]
+loop elements as well, the environment could generate holistic
+and contextually rich refactoring outcomes, going beyond
+traditional single-agent or rule-based approaches.
+III. C ONCEPTUAL FRAMEWORK
+A. System Architecture
+Figure 2 illustrates our environment. Each specialized
+LLM agent (Performance, Security, Maintainability, UI/UX)
+interacts with a central codebase and a communica-
+tion/coordination layer.
+1) Components:
+• Performance Agent:
+This agent identifies and implements optimizations to
+reduce resource usage (e.g., CPU and memory) and
+improve algorithmic efficiency. It leverages both static
+analysis of code and dynamic profiling to detect perfor-
+mance bottlenecks.
+– Key Tasks:
+∗ Analyzing time complexity and identifying bottle-
+necks in profiling logs
+∗ Recommending data structure optimizations (e.g.,
+using a hash map over a list)
+∗ Suggesting parallelization approaches (thread
+pools, asynchronous I/O)
+∗ Introducing caching or memoization for fre-
+quently computed results
+– Integration: Proposals from the Performance Agent
+often need to be reviewed by the Security and Main-
+tainability Agents to ensure that efficiency gains do
+not inadvertently introduce vulnerabilities or render
+the code overly complex.
+• Security Agent:
+This agent focuses on identifying and mitigating vulner-
+abilities within the codebase. It analyzes secure coding
+practices, checks dependencies against known exploits,
+and ensures data handling complies with relevant security
+standards.
+– Key Tasks:
+∗ Scanning code for common weaknesses (e.g., SQL
+injection, hardcoded credentials)
+∗ Checking libraries against known vulnerability
+databases (e.g., CVE, NVD)
+∗ Proposing patches or secure refactoring patterns
+∗ Advising on encryption protocols and access con-
+trol methods
+– Integration: The Security Agent’s fixes require col-
+laboration with the Performance Agent to verify min-
+imal overhead and with the Maintainability Agent to
+confirm code clarity. It may also engage the UI/UX
+Agent for front-end security considerations, such as
+form validation and user authentication flows.
+• Maintainability Agent:
+Responsible for preserving and improving the code’s
+long-term quality, this agent uses refactoring catalogs and
+best practices in software engineering to identify code
+smells and structural issues.
+– Key Tasks:
+∗ Detecting code smells (long methods, large
+classes, duplicated code)
+∗ Suggesting design pattern usage (e.g., Factory,
+Observer)
+∗ Recommending consistent naming conventions
+and improved file organization
+∗ Removing dead code and modularizing large com-
+ponents
+– Integration: The Maintainability Agent frequently
+collaborates with the Performance Agent to ensure
+that readability improvements do not degrade per-
+formance. It also checks with the Security Agent
+to confirm that structural changes preserve security
+checks.
+• UI/UX Agent:
+Focusing on user-facing features, the UI/UX Agent draws
+upon interface design heuristics and accessibility guide-
+lines to ensure the final application is intuitive and
+consistent.
+– Key Tasks:
+∗ Checking layouts for consistency and responsive
+design
+∗ Streamlining user flows (e.g., forms, error han-
+dling)
+∗ Ensuring accessibility compliance (e.g., WCAG
+guidelines)
+∗ Suggesting improvements in color schemes, ty-
+pography, or layout
+– Integration: The UI/UX Agent’s changes can affect
+performance (page load times, rendering overhead)
+and require security vetting (e.g., input validation).
+Hence, it collaborates with the other agents to bal-
+ance design goals with security and efficiency.
+• Communication/Coordination Layer:
+Although not itself an agent, this layer orchestrates the
+negotiation between specialized LLM agents. It merges,
+refines, or discards proposals via consensus or auction-
+based protocols. The layer enforces stopping criteria (e.g.,
+maximum rounds or minimal improvements) to prevent
+endless refinement, and it mediates conflicts when agents
+propose conflicting solutions.
+B. Agent Interactions: Formal Definitions
+LetA ={a1,a 2,...,a n} represent the set of LLM agents.
+• State Space S: A state s∈S describes the codebase at
+a snapshot: s = (C,M ), where C is the repository, M is
+metadata (e.g., known vulnerabilities, performance logs).
+• Action Space Xi: Each agent ai proposes refactoring
+actions{xi1,x i2,... } that transform s tos′ =fi(s,x ij).
+SoutheastCon 2025
+490
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:15:33 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 4]]
+Fig. 2. ATPM System Architecture showing the complete data pipeline from ingestion through MLOps deployment.
+• Agent Utility Function Ui(s):
+Ui(s) :S→ R,
+measuring how s aligns with the goals of agent ai. For
+instance,UPerformance(s) might measure CPU usage under
+typical workloads.
+• Coordination Protocol Π: Agents share proposals x =
+(x1,...,x n), converging on x∗ through messagesωi. The
+environment updates s→s′ via δ(x∗).
+• Termination Condition τ:
+τ(s,t ) =
+
+
+
+1 if t≥Tmax,
+1 if∥∇G(s)∥<ϵ,
+1 if∀ai, ωi = “no more proposals”,
+0 otherwise.
+Here, G(s) is a global objective representing overall
+software quality; ϵ is a small threshold for improvement;
+and Tmax is a maximum time or round limit.
+C. Agent Specialization via Fine-Tuning
+Each agent is derived from a shared base LLM (e.g., GPT-
+4), then fine-tuned on domain-specific corpora:
+• Domain-Specific Datasets: E.g., HPC code for perfor-
+mance agent, OW ASP vulnerabilities for security agent,
+large UI frameworks for UI/UX agent, etc.
+• Customized Loss Functions: A security agent might
+penalize vulnerabilities or insecure coding patterns more
+heavily.
+• Continual Learning: Agents update parameters as the
+codebase evolves, ensuring they remain relevant over
+time.
+D. Interaction Sequence (High-Level)
+Sequence Overview:
+1. Each agent retrieves the latest snapshot from the
+repository.
+2. Agents generate proposals independently.
+3. The coordination layer aggregates proposals.
+4. Agents negotiate or bid on proposals, refining or
+rejecting.
+5. A final composite of proposals is applied to the
+repository, ending one iteration.
+Fig. 3. Outline of Multi-Agent Interaction
+IV. E XPERIMENTAL DESIGN AND COMPLEXITY ANALYSIS
+A. Evaluation Methodology
+We propose a multi-step evaluation to assess how effectively
+the environment addresses conflicting goals:
+1) Benchmark Repository: Use a curated set of open-
+source projects featuring performance bottlenecks,
+known security flaws, and UI/UX design issues.
+2) Baselines:
+• Single-Agent LLM: A general-purpose LLM (e.g.,
+GPT-4) providing refactoring suggestions.
+• Traditional Tools: Standard static analyzers (e.g.,
+SonarQube, ESLint) to compare approach with con-
+ventional best practices.
+3) Multi-Agent LLM Approach: All specialized agents
+coordinate via either consensus or an auction mecha-
+nism.
+SoutheastCon 2025
+491
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:15:33 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 5]]
+4) Metrics:
+• Maintainability: Code smell counts, cyclomatic
+complexity, lines of code (LOC) changes.
+• Performance: CPU/memory usage under represen-
+tative workloads.
+• Security: Vulnerability detection via tools like
+OW ASP ZAP or Snyk.
+• UX Quality: Heuristic evaluation or user surveys if
+UI changes are relevant.
+• Developer Satisfaction: Qualitative insights from
+user studies or developer feedback (e.g., clarity, ease
+of integration).
+B. Complexity Analysis
+1) Communication Complexity: Let n be the number of
+agents,m be the maximum proposals per agent in each round,
+and R be the number of communication rounds:
+• Consensus Protocol: Each agent broadcasts proposals to
+n− 1 agents. In total, O(R×n×m) messages can be
+exchanged.
+• Auction-Based Approach: Agents submit proposals to
+a central auctioneer, simplifying direct agent-to-agent
+messaging. Overall complexity is still O(R×n×m),
+but typically with less pairwise overhead.
+2) Computational Complexity:
+• Proposal Evaluation: Each agent runs LLM inference
+on segments of the code. LLM inference has complexity
+O(L×H), where L is the input sequence length, H is
+the hidden dimension [14].
+• State Update: Integrating multiple accepted proposals
+may require partial re-analysis or re-compilation of the
+codebase.
+3) Termination Criteria: The process halts when improve-
+ment in G(s) is below a threshold ϵ or when Tmax (time or
+round) is reached. This ensures the system does not iterate
+indefinitely in marginal refinement stages.
+C. Illustrative Example
+Consider a large web application in which the Maintain-
+ability Agent identifies a code smell in the data-access layer,
+while the Security Agent spots potential SQL injection. The
+Performance Agent recommends rewriting certain queries for
+faster execution. Through a consensus or auction protocol, the
+system merges these changes into a final patch, ensuring that
+performance, security, and maintainability are all enhanced in
+tandem.
+V. D ISCUSSION AND CHALLENGES
+Although promising, the Multi-Agent LLM Environment
+faces several challenges:
+A. LLM Hallucinations and Error Propagation
+LLMs can generate suggestions that are syntactically correct
+but semantically flawed. This risk is amplified if multiple
+agents build upon erroneous proposals. Potential mitigations
+include:
+• Static Analysis Integration: Automatic checks to detect
+high-risk changes (e.g., uninitialized variables).
+• Human-in-the-Loop Review: Developers validate major
+changes before merging.
+B. Security Gaps
+While a specialized security agent can mitigate known
+vulnerability patterns, zero-day exploits or domain-specific
+threats may elude detection. Continual learning and frequent
+model updates are necessary but do not guarantee catching all
+novel threats.
+C. Ethical and Governance Concerns
+Automated refactoring can introduce accountability ques-
+tions: if a bug emerges post-automation, who is responsi-
+ble—the developer or the AI system? Ensuring traceability
+of agent-driven changes is crucial.
+D. Empirical Validation Plan
+Although this work is largely conceptual, real-world effec-
+tiveness is crucial. We propose:
+• Pilot Studies: Small-scale trials on open-source projects
+to measure improvements.
+• Industry Collaborations: Case studies with partner com-
+panies to gather production-level feedback.
+• Developer Studies: Surveys and interviews to evaluate
+trust and usability compared to single-agent tools.
+E. Overhead and Scalability
+Coordinating multiple agents can be resource-intensive. We
+plan:
+• Incremental Scope: Apply each agent only to relevant
+modules or services.
+• Cached Analyses: Reuse performance or security checks
+to avoid repeated full-model inferences.
+• Threshold-Based Activation: Trigger specialized agents
+only when metrics (e.g. CPU usage) exceed set bounds.
+F . Explainability and Trust
+To encourage adoption, agents must be transparent:
+• Agent Rationales: Each agent briefly explains why it
+proposes a given refactoring.
+• Dashboard Interface: A simple UI highlights which
+agent made each suggestion and potential benefits or
+trade-offs.
+G. CI/CD Integration
+For seamless deployment:
+• Automated Triggers: Run agents on pull requests or
+commits to catch issues early.
+• Branch Isolation: Place refactoring changes in a separate
+branch for developer review before merging.
+• Rollback: Revert changes automatically if regressions
+occur and flag them for manual investigation.
+SoutheastCon 2025
+492
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:15:33 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 6]]
+H. Mitigating LLM Error Propagation
+Errors from one agent can compound:
+• Static/Dynamic Checks: Validate security, performance,
+and maintainability before passing proposals to the next
+agent.
+• Consensus or Voting: If proposals conflict, require
+multiple-agent agreement.
+• Human-in-the-Loop: Allow developers to override or
+refine uncertain recommendations.
+I. Southeast Region Industry Applications
+The Southeast United States presents unique opportunities
+for deploying our Multi-Agent LLM framework, particularly in
+its rapidly growing technology sectors. Atlanta’s fintech indus-
+try, with companies like NCR and FIS Global, could leverage
+our security and performance agents for maintaining large-
+scale payment processing systems. Research Triangle Park’s
+healthcare technology firms could benefit from the frame-
+work’s ability to ensure HIPAA compliance while optimizing
+electronic health record systems. The growing automotive
+manufacturing sector, including V olkswagen in Chattanooga
+and BMW in South Carolina, could apply our framework
+to their software-intensive manufacturing and quality control
+systems. Florida’s aerospace industry, including NASA con-
+tractors and commercial space companies, could utilize our
+framework for safety-critical software maintenance. Moreover,
+the region’s numerous defense contractors could benefit from
+the security-focused aspects of our framework, particularly in
+maintaining complex military software systems that require
+continuous security updates while preserving performance.
+These diverse applications demonstrate the framework’s po-
+tential impact on the Southeast’s technological infrastructure.
+VI. C ONCLUSION AND FUTURE WORK
+This paper introduced a Multi-Agent LLM Environment
+for software design and refactoring. By combining domain-
+specialized LLM agents with a coordination layer that lever-
+ages consensus or auction-based protocols, we provide a
+holistic approach that simultaneously addresses conflicting
+software quality metrics. Our expanded framework includes:
+• Architecture & Formal Model: We presented a refer-
+ence architecture (Fig. 2) and formal definitions of states,
+actions, utilities, and termination.
+• Agent Specialization: Fine-tuning and domain-specific
+datasets ensure that each agent excels in its subdomain
+(performance, security, etc.).
+• Coordination Protocols: We explored consensus-based
+versus auction-based mechanisms to reconcile competing
+proposals efficiently.
+• Complexity Analysis: Communication and computa-
+tional overhead were discussed, highlighting potential
+bottlenecks in large-scale adoption.
+Future Directions:
+1) Extended Empirical Validation: Large-scale studies
+on diverse open-source and industrial repositories to
+measure real-world effectiveness.
+2) Reinforcement Learning Coordination: Investigate
+multi-agent RL methods for dynamic negotiation and
+improved synergy among specialized agents.
+3) Explainability and Developer Interface: Incorporate
+user-friendly dashboards and explanations for each
+agent’s proposals, fostering greater trust and adoption.
+4) Continuous Integration Pipelines: Integrate the envi-
+ronment into CI/CD workflows to provide near-real-time
+refactoring suggestions triggered by code commits or
+pull requests.
+Overall, we envision a future in which multi-agent LLM-
+driven refactoring becomes an integral part of software engi-
+neering, reducing technical debt and improving quality across
+multiple dimensions simultaneously.
+REFERENCES
+[1] S. Feng, P. Shi, and M. R. Lyu, “Code Generation Meets Software
+Engineering: A Survey on AI-driven Code Synthesis,” IEEE Trans.
+Softw. Eng., vol. 49, no. 5, pp. 1234–1250, May 2023.
+[2] T. Chen, Z. Chen, X. Jin, and C. Lin, “Evaluating Large Language
+Models Trained on Code,” arXiv preprint arXiv:2107.03374, 2021.
+[3] M. Wooldridge, An Introduction to MultiAgent Systems, 2nd ed. John
+Wiley & Sons, 2009.
+[4] G. Weiss, Multiagent Systems, 2nd ed. MIT Press, 2013.
+[5] C. Li, “Multi-Agent Collaboration for Code Refactoring: A Preliminary
+Study,” IEEE Access, vol. 10, pp. 88012–88022, 2022.
+[6] H. J. Kang, B. Y . Chen, and S. Han, “Refactoring Recommendations
+with Deep Learning: A Large-Scale Empirical Study,” in Proc. 2022
+IEEE/ACM Int’l Conf. on Software Engineering, Pittsburgh, PA, USA,
+2022, pp. 140–152.
+[7] A. Ouni, R. G. Kula, M. Cossette, K. Inoue, and Y . G. Gu ´eh´eneuc,
+“Search-Based Software Refactoring: A Systematic Literature Review,”
+Inf. Softw. Technol., vol. 81, pp. 159–175, 2017.
+[8] M. Harman, S. Jenjones, and Y . Zhang, “Search Based Software En-
+gineering: Trends, Techniques and Applications,” ACM Comput. Surv. ,
+vol. 51, no. 3, pp. 1–39, 2019.
+[9] F. Bellifemine, G. Caire, and D. Greenwood, Developing Multi-Agent
+Systems with JADE. John Wiley & Sons, 2007.
+[10] T. Qiu, Y . Peng, and G. Chen, “A Multi-Agent Approach to Software
+Maintenance Scheduling,” Journal of Systems and Software, vol. 179,
+p. 110990, 2021.
+[11] S. McConnell, Code Complete, 2nd ed. Microsoft Press, 2004.
+[12] D. Spinellis and G. Gousios, Beautiful Architecture: Leading Thinkers
+Reveal the Hidden Beauty in Software Design. O’Reilly Media, 2009.
+[13] M. Shahin, M. A. Babar, and L. Zhu, “Continuous Integration, Delivery
+and Deployment: A Systematic Review on Approaches, Tools, Chal-
+lenges and Practices,” IEEE Access, vol. 5, pp. 3909–3943, 2017.
+[14] A. Radford, J. Wu, T. Salimans, I. Sutskever, and I. Goodfellow,
+“Language Models: A Survey,” Journal of Machine Learning Research,
+vol. 23, pp. 1–38, 2022.
+[15] N. Smith and L. Johnson, “Survey of AI-based Refactoring Tools for
+Large-Scale Systems,” ACM Comput. Surv. , vol. 55, no. 7, pp. 1–35,
+2023.
+[16] Y . Zhou, M. Zhao, and W. Chen, “A Multi-agent Analysis of Software
+Vulnerabilities in Continuous Integration Systems,” in Proc. 2024 Int’l
+Conf. on Automated Software Engineering (ASE), Lisbon, Portugal,
+2024.
+SoutheastCon 2025
+493
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:15:33 UTC from IEEE Xplore. Restrictions apply.

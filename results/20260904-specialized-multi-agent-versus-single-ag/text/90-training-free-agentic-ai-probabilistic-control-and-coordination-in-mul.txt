@@ -1,0 +1,1138 @@
+[[page 1]]
+Training-Free Agentic AI: Probabilistic Control and Coordination in
+Multi-Agent LLM Systems
+Mohammad Parsa Hosseini * 1 Ankit Shah * 1 Saiyra Qureshi 1 Alex Huang 1 Connie Miao 1 Wei Wei1
+Abstract
+Multi-agent large language model (LLM) sys-
+tems enable complex, long-horizon reasoning by
+composing specialized agents, but practical de-
+ployment remains hindered by inefficient routing,
+noisy feedback, and high interaction cost. We
+introduce REDEREF, a lightweight and training-
+free controller for multi-agent LLM collabora-
+tion that improvesrouting efficiency during recur-
+sive delegation. REDEREF integrates (i) belief-
+guided delegation via Thompson sampling to pri-
+oritize agents with historically positive marginal
+contributions, (ii) reflection-driven re-routing us-
+ing a calibrated LLM or programmatic judge, (iii)
+evidence-based selection rather than output aver-
+aging, and (iv) memory-aware priors to reduce
+cold-start inefficiency. Across multi-agent split-
+knowledge tasks, we show that while recursive
+retry alone saturates task success, belief-guided
+routing reduces token usage by 28%, agent calls
+by 17%, and time-to-success by 19% compared
+to random recursive delegation, and adapts grace-
+fully under agent or judge degradation. These re-
+sults demonstrate that simple, interpretable prob-
+abilistic control can meaningfully improve the
+efficiency and robustness of multi-agent LLM sys-
+tems without training or fine-tuning.
+1. Introduction
+Large Language Models (LLMs) such as GPT-4, Gemini,
+and Claude have evolved from narrow text-completion tools
+into broadly capable reasoning engines, surpassing human
+performance on tasks ranging from legal exams (OpenAI,
+2023) to software engineering challenges (Jimenez et al.,
+2024). However, most of these benchmarks aresingle-turn
+interactions. Real-world deployments, in contrast, demand
+persistence and adaptability: evolving software reposito-
+*Equal contribution 1Accenture. Correspondence to:
+Parsa Hosseini <parsa.hosseini@accenture.com>, Ankit Shah
+<ankit.parag.shah@accenture.com>.
+Preprint. March 17, 2026.
+ries over weeks, synthesizing iterative scientific reviews, or
+mediating multistakeholder corporate decisions. These are
+inherently multiturn, long-horizon, and collaborative, push-
+ing beyond what any single monolithic model, no matter
+how large, can reliably achieve.
+Multi-agent LLM systems have emerged as a promising
+direction to scale intelligence by composing the comple-
+mentary skills of multiple agents. For example, one agent
+might specialize in writing unit tests, another in literature
+surveys, and a third in policy analysis. By enabling interac-
+tion between such experts, these systems can address tasks
+outside the scope of any individual model. Yet, their deploy-
+ment remains hampered by three persistent bottlenecks:
+(1) Dynamic task routing.Existing orchestrators often rely
+on fixed pipelines or static vector similarity rules. These
+approaches are brittle: When task requirements change or
+agent performance degrades, the system continues to mis-
+route, invoking wrong experts, and compounding errors.
+(2) Credit assignment across long horizons.In extended
+dialogues, failures may not be visible until dozens of turns
+later. Without timely and fine-grained feedback, the sys-
+tem cannot effectively demote underperforming agents or
+up-weight reliable ones, leading to stagnation in routing
+efficiency.
+(3) Cold-start inefficiency.When a new task arrives, the
+system has no prior evidence about which agents are com-
+petent. Without mechanisms to transfer knowledge from
+previous interactions, early routing is effectively random,
+wasting tokens and agent calls before the system can differ-
+entiate agent quality.
+We propose REDEREF, a lightweight and training-free
+controller for multi-agent LLM systems. REDEREF wraps
+any pool of agents with four components: (1) belief-guided
+delegation via Thompson sampling to prioritize agents with
+historically positive marginal contributions; (2) calibrated
+reflection via a judge that triggers credit assignment and
+re-routing; (3) evidence-checked selection (rather than av-
+eraging); and (4) memory-aware priors to reduce cold-start
+inefficiency and context bloat.
+By combining these elements into a recursive loop, RED-
+1
+arXiv:2603.13256v1 [cs.CL] 24 Feb 2026
+
+[[page 2]]
+Training-Free Agentic AI for Multi-Agent LLM Systems
+EREF enables efficient, belief-guided routing across a pool
+of heterogeneous agents. In controlled experiments on split-
+knowledge tasks, we show that belief-guided routing re-
+duces token usage by 28%, agent calls by 17%, and time-to-
+success by 19% compared to an otherwise identical system
+with uniform random selection, while maintaining matched
+task success rates.
+Contributions.We make the following contributions:
+• We introduce REDEREF, a training-free controller
+for multi-agent LLM systems that improves routing
+efficiency under recursive retry without requiring fine-
+tuning or centralized training.
+• We reinterpret belief updates as modeling an agent’s
+probability of providing apositive marginal contri-
+bution, resolving credit assignment in compositional
+multi-agent tasks.
+• We demonstrate empirically that belief-guided delega-
+tion substantially reduces token usage, agent calls, and
+time-to-success compared to random recursive delega-
+tion at matched success rates.
+• We analyze robustness to agent impairment and judge
+miscalibration, showing graceful degradation rather
+than catastrophic routing failures.
+2. Related Work
+Reasoning, reflection, and search.Methods such as
+ReAct (Yao et al., 2023b), Self-Refine (Madaan et al.,
+2023), Reflexion (Shinn et al., 2023), and Tree-of-Thoughts
+(ToT) (Yao et al., 2023a) improve reasoning by coupling
+tool use, iterative self-feedback, episodic memory, or back-
+tracking search. Agent-R (Yuan et al., 2025) and recent
+surveys (Guo et al., 2024) highlight reflection as central to
+multi-agent LLMs. Unlike these approaches, REDEREF
+uses anexplicit probabilistic controller: Thompson sam-
+pling delegates under uncertainty, while binary judge out-
+comes update interpretable Beta posteriors that drive re-
+routing.
+Orchestration, ensembles, and routing.Frameworks
+such as AutoGen (Wu et al., 2023) coordinate agents via
+scripted protocols, and Mixture-of-Agents (MoA) (Wang
+et al., 2024) aggregate outputs via ensembles. Early or-
+chestrators (e.g., LangChain graphs, AutoGPT workflows)
+hard-code pipelines, while systems like RopMura (Wu et al.,
+2025), DyLAN (Liu et al., 2024), and MLPO (Li et al.,
+2025b) introduce dynamic routing with agent team optimiza-
+tion. In contrast, REDEREF performs online belief-guided
+delegation without retraining, maintaining efficiency and
+decentralization.
+Learning-based coordination.Multi-agent reinforce-
+ment learning has long addressed coordination (Lowe et al.,
+2017; Foerster et al., 2018), with adaptations for LLMs such
+as SWEET-RL (Zhou et al., 2025). Yet RL methods are
+sample-hungry. Probabilistic approaches, e.g., Bayesian
+Delegation (Wu et al., 2021), estimate expertise from sparse
+data. REDEREF combines Thompson sampling with
+reflection-driven control, cooldown-based exploration, and
+memory-aware priors in a unified, training-free orchestra-
+tion loop.
+Benchmarks and positioning.Public environments (We-
+bArena (Zhou et al., 2024), Mind2Web (Deng et al., 2023),
+GAIA (Mialon et al., 2024), SWE-bench (Jimenez et al.,
+2024)) highlight the difficulty of real-world, long-horizon
+tasks (e.g., GPT-4 achieves∼14% on WebArena vs. humans
+at∼78%). Against this backdrop, REDEREF contributes a
+training-free adaptive controller that combines belief-guided
+delegation, embedded reflection and memory to improve
+efficiency, robustness and interpretability over static, ensem-
+ble or RL-based approaches.
+3. The REDEREF Framework
+We formalize multi-agent coordination as a training-free
+probabilistic control loop. Given a taskT with queryq and a
+population ofN heterogeneous agentsA={A 1,...,A N},
+each agent Ai possesses an unobserved task-conditional
+competenceθi∈[0,1] . The controller maintains a Beta pos-
+teriorθi∼Beta(α i,βi), updated online from binary feed-
+backy∈{0,1} indicating success or failure in the evaluated
+results. Unless otherwise stated, priors are α0 =β 0 = 1
+(uninformative) or initialized by the memory-aware scheme
+in Section 3.6. The overall decision-making pipeline of
+REDEREF, including belief-guided delegation, recursive
+reflection, and memory-based adaptation, is illustrated in
+Figure 1. This flowchart highlights how success cases are
+propagated through posterior updates and memory, whereas
+failures trigger refinement, aggregation, and rerouting until
+a satisfactory solution is produced.
+Unlike standard bandit formulations, REDEREF operates
+over compositional multi-agent reasoning trajectories where
+rewards are delayed, aggregated, and non-attributable to
+individual actions.
+Interpretation of Agent Beliefs.The belief parameter θi
+does not represent the probability that agent Ai can inde-
+pendently solve the task. Instead,θi models the probability
+that invoking agentAi at the current recursion step yields
+anet-positive marginal contributionrelative to the current
+candidate set. This aligns Bernoulli feedback with compo-
+sitional multi-agent tasks and avoids counterfactual blame
+assignment to individual agents.
+2
+
+[[page 3]]
+Training-Free Agentic AI for Multi-Agent LLM Systems
+User Queryq
+Belief-Guided
+Delegation
+(Thompson Sampling)
+Selected AgentA i⋆ LLM + Programmatic Judge Success?
+Update Posterior
+& Store in Memory
+Refine Query & Re-routeAggregate Candidates
+(Selection + Evidence)
+Final Answer
+Figure 1.System architecture of REDEREF.Queries pass through belief-guided delegation, agent execution, and judge evaluation.
+Upon success (top path), the posterior is updated and stored in memory before producing the final answer. Upon failure (bottom path), the
+query is refined and re-routed, with candidates aggregated using evidence-based selection.
+3.1. Belief-Guided Delegation via Thompson Sampling
+(Core Policy)
+At recursion depthd for queryqd, REDEREF treats agent
+selection as a multi-armed bandit problem and applies
+Thompson sampling:
+ˆθi∼Beta(α i,βi), i ⋆∈arg max
+i
+ˆθi.(1)
+The selected agentAi⋆ proposes a candidate solution. After
+judging, the posterior updates are in closed form:
+αi⋆←α i⋆ +y, β i⋆←β i⋆ + (1−y),(2)
+wherey=I[success] . Thompson sampling provides a prin-
+cipled exploration–exploitation trade-off: agents with higher
+posterior means are preferred while uncertainty induces ex-
+ploration.
+We denote the posterior mean asµi = αi
+αi+βi
+.
+3.2. Self-Reflection and Judging
+Each candidate is evaluated by a judge J who delivers a
+calibrated binary verdictE∈{SUCCESS,FAILURE} . Two
+evidence channels are integrated:
+1.Programmatic metrics, when available (e.g., EM / F1,
+supporting facts F1, unit test pass rate), which short-
+circuit the success of unambiguous positives.
+2. LLM adjudication, which produces a binary decision
+and a brief rationale when the metrics are absent or
+inconclusive.
+We calibrateJ on a small labeled set (N≈200 ) to estimate
+FP/FN rates and set thresholds. The verdict is mapped to
+the Bernoulli feedback driving Bayesian updates:
+y=I[E=SUCCESS].
+This makes reflection the engine of bothcredit assignment
+(posterior updates) andcontrol(whether to re-route).
+3.3. Text-Appropriate Aggregation
+REDEREF aggregates byselection with evidence, not av-
+eraging. We construct a set of candidates with rationales,
+score them using task metrics or retrieval-grounded entail-
+ment checks (Li et al., 2025a), optionally run a bounded
+debate (up to two refinement turns) among top candidates,
+and select the best-supported answer.
+For structured outputs (e.g., numeric fields, dates, JSON),
+we extract atomic fields, fuse them via competence-
+weighted voting usingµi =α i/(αi +βi) as trust weights,
+then regenerate a coherent output. This modality-aware
+design yields robustness across open-ended and structured
+tasks while maintaining interpretability.
+3.4. Recursive Re-Routing
+If the judged outcome isFAILURE, REDEREF executes
+a budgeted recursive step: (i) update Beta(αi⋆,βi⋆) with
+y= 0 , (ii) refine the query with the judge’s critique, and (iii)
+re-route via Thompson sampling to the next most promising
+expert. The recursion terminates upon any of the following:
+1.Success: the judge returnsSUCCESS;
+2.Depth limit: reaching a maximum recursion depthD;
+3. Budget exhaustion: cumulative cost (tokens, time) ex-
+ceedingB;
+4. Plateau: no judged improvement across recent itera-
+tions.
+This procedure is not full tree search (no rollout value esti-
+mation) but a lightweight, online mechanism that reliably
+3
+
+[[page 4]]
+Training-Free Agentic AI for Multi-Agent LLM Systems
+recovers from local errors and discovers productive multi-
+agent chains with low overhead. The overall recursive pro-
+cedure of REDEREF, combining Bayesian delegation, self-
+reflection, query refinement, and memory-aware updating,
+is summarized in Algorithm 1.
+3.5. Design Rationale
+Several design choices in Algorithm 1 merit justification.
+Why Thompson sampling over UCB or ε-greedy?
+Thompson sampling naturally scales exploration to pos-
+terior uncertainty: when beliefs are diffuse (early rounds), it
+explores broadly; as posteriors concentrate, it exploits. UCB
+requires explicit tuning of the confidence parameter, and
+ε-greedy explores uniformly regardless of evidence, wasting
+budget on agents already known to be weak.
+Why selection over averaging?Averaging multiple agent
+outputs degrades quality when agents have heterogeneous
+competence—a strong answer is diluted by weak ones. Se-
+lection with evidence preserves the best candidate while
+the bounded debate (two rounds) allows targeted refinement
+without the noise of full ensembling.
+Why cooldown?Without cooldown, a single false-positive
+verdict can cause the system to repeatedly select the same
+agent. The cooldown r forces exploration of alternatives
+after each selection, complementing the stochastic explo-
+ration of Thompson sampling with a deterministic diversity
+mechanism.
+Why binary feedback?Richer feedback (e.g., scalar
+scores) could accelerate learning but requires a well-
+calibrated scoring model. Binary success/failure is robust
+to judge miscalibration—the Beta-Bernoulli posterior is a
+conjugate update that remains valid even under moderate
+label noise (Theorem 3.1).
+3.6. Memory-Aware Priors and Cold-Start Mitigation
+To reduce early-round inefficiency, we seed priors with
+similarity- and recency-weighted historical outcomes.
+αi←α 0 +
+X
+m
+K(xd,xm)ymw∆tm,(3)
+βi←β 0 +
+X
+m
+K(xd,xm) (1−y m)w ∆tm,(4)
+where xd = embed(q d), K is a task-similarity kernel
+(e.g., cosine over sentence embeddings), and w∆tm =
+exp(−λ∆tm) applies temporal decay. This initialization
+biases competence posteriors toward agents that recently
+succeeded on similar tasks while preserving adaptability
+under drift.
+Remark (Interpretability).The beta parameters (αi,βi),
+the rationales of the judges ρ, and the selection history
+(agents chosen, verdicts, costs) constitute an auditable de-
+cision trail, which facilitates error analysis and responsible
+deployment.
+3.7. Robustness Considerations
+The controller relies on binary feedback from a judge, which
+may be imperfect. To mitigate this, REDEREF incorpo-
+rates several robustness properties: (i) the Beta posterior is
+inherently resilient to occasional mislabeled feedback be-
+cause individual observations have diminishing influence
+as evidence accumulates; (ii) the cooldown mechanism pre-
+vents the system from repeatedly exploiting a single agent
+based on a single lucky positive verdict; and (iii) ensem-
+ble judges (majority voting over three independent judges)
+can further reduce sensitivity to individual judge errors at
+modest additional cost.
+3.8. Regret Under Noisy Feedback
+We now quantify the cost of imperfect judging. LetεFP =
+Pr[E=SUCCESS|true fail] andεFN = Pr[E=FAILURE|
+true success] denote the judge’s false-positive and false-
+negative rates, and define thediscrimination margin δ=
+1−ε FP−ε FN >0.
+Theorem 3.1(Regret under noisy judge feedback).Con-
+sider N agents with true competences θ1,...,θ N and a
+judge with class-conditional error rates (εFP,ε FN) satisfy-
+ingδ= 1−ε FP−ε FN >0 . Then the Bayesian regret of
+Thompson sampling overTrounds satisfies
+R(T) = 1
+δ
+eR(T) =O
+√NTlogT
+δ
+
+,
+where eR(T) is the regret of Thompson sampling on an
+equivalent noiseless problem with transformed competences
+˜θi =δθ i +ε FP.
+Corollary 3.2.As δ→0 (uninformative judge), regret
+diverges; asδ→1 (perfect judge), we recover the standard
+O(√NTlogT)bound of Agrawal & Goyal (2013).
+The proof is given in Appendix A.5. Theorem 3.1 shows that
+judge noise inflates regret by exactly 1/δ, providing a pre-
+cise budget for investing in judge quality versus accepting
+routing suboptimality.
+3.9. Summary and Preview
+The framework provides one theoretical guarantee and three
+empirically testable properties. Theorem 3.1 bounds regret
+under noisy feedback as O(√NTlogT/δ) , establishing
+that routing quality degrades gracefully with judge noise.
+The remaining properties—that belief-guided routing im-
+4
+
+[[page 5]]
+Training-Free Agentic AI for Multi-Agent LLM Systems
+proves efficiency over uninformed routing (H1), that posteri-
+ors concentrate on domain experts (H2), and that the routing
+policy adapts to agent degradation (H3)—are validated ex-
+perimentally in Sections 4–5.
+4. Experimental Design
+Because recursive retry already achieves high success on
+split-knowledge tasks, we treat task success as aconstraint
+rather than the primary optimization objective. Our evalua-
+tion is therefore a controlled ablation: we isolate the effect
+of Bayesian belief-guided routing within an otherwise iden-
+tical recursive delegation loop, measuring whether informed
+agent selection improves token usage, agent calls, and time-
+to-first-success relative to uninformed (uniform random)
+selection.
+4.1. Research Questions
+We organize evaluation around three dimensions (Figure 2):
+RQ1 Composition efficiency (H1):At matched task success,
+does belief-guided routing reduce token usage, agent
+calls, and time-to-first-success compared to random re-
+cursive delegation?
+RQ2 Specialization (H2):Do belief scores diverge over task
+sequences, with domain experts being preferentially se-
+lected for related tasks?
+RQ3 Adaptability (H3):When a previously reliable agent is
+impaired mid-experiment, does the routing policy detect
+the degradation and redirect queries?
+4.2. Tasks and Agent Population
+We constructed a benchmark of split-knowledge tasks via a
+three-stage pipeline (full details in Appendix): (i) domain-
+specific question generation for each agent (20–22 questions
+each), (ii) multi-agent task synthesis by sampling 4–6 agents
+and composing questions that require non-redundant con-
+tributions from each, and (iii) iterative sampling until the
+question pool was exhausted. By construction, each task
+requires contributions from multiple agents and cannot be
+solved by any single agent alone.
+The agent population comprises 6 specialist RAG agents (bi-
+ology, finance, law, medicine, electrical engineering, math-
+ematics) with retrieval over curated knowledge bases, and
+10 generalist conversational agents (fitness, literature, tech-
+nology, geography, storytelling, politics, academics, career
+guidance, trivia, daily planning). All agents use Azure Ope-
+nAI endpoints with fixed random seeds for reproducibility.
+Agents are initialized with uniform priors α0 =β 0 = 1
+unless memory-aware initialization is enabled.
+4.3. Baseline
+Since split-knowledge tasks are unsolvable by any single
+agent, single-agent baselines are excluded by task design.
+The comparison instead isolates the routing mechanism:
+• Random Delegation:The full recursive loop (judg-
+ing, re-routing, aggregation, budget limits) is retained
+identically, but agent selection at each step is uniformly
+random. This ensures that any observed difference is
+attributable to belief-guided routing rather than to recur-
+sion, judging, or aggregation.
+4.4. Evaluation Metrics
+Performance (constraint):Task success rate (final score
+≥85 as judged by a calibrated LLM) and output quality,
+reported to confirm that both methods achieve compara-
+ble success.Efficiency (H1):Token usage, agent calls,
+and time-to-first-success, reported as ratios normalized to
+Random Delegation (lower is better).Specialization (H2):
+Belief score trajectories over task sequences and rounds-to-
+expert-selection for domain-specific tasks.Adaptability
+(H3):In an impairment test (50 normal followed by 50
+degraded tasks for one agent), we track belief score decline,
+contribution frequency shift, and system output quality. Full
+metric definitions are provided in the Appendix.
+5. Results and Analysis
+We summarize botheffectiveness(success, quality) andeffi-
+ciency/robustness(tokens, calls, latency, routing efficiency,
+and adaptation). Although recursion alone is surprisingly
+strong on our split-knowledge suite, REDEREF consis-
+tently shifts theefficiency frontier: at matched success it
+uses fewer tokens and agent calls, reaches the first success
+faster, and adapts under drift, whereas random delegation
+wastes capacity on unreliable agents.
+5.1. Overall Performance and Efficiency
+Because recursive retry already saturates success on our
+split-knowledge tasks, we report success alongside ef-
+ficiency metrics (tokens, agent calls, and time-to-first-
+success). Random recursive delegation matches RED-
+EREF on success rate, but REDEREF substantially reduces
+wasted calls by prioritizing agents with higher historical
+marginal contribution. We report tokens, agent calls, and
+time-to-success normalized to Random Delegation (1.00×).
+Figure 3 complements the table by visualizing mean perfor-
+mance with confidence intervals, reinforcing that recursive
+retry saturates success, while REDEREF improves effi-
+ciency by reducing wasted calls and tokens.
+5
+
+[[page 6]]
+Training-Free Agentic AI for Multi-Agent LLM Systems
+RQ1: Composition Efficiency
+RQ2: Specialization
+RQ3: Adaptability
+H1: Belief-guided routing reduces
+cost at matched success
+H2: Belief scores diverge,
+reflecting specialization
+H3: Routing adapts to impaired
+agents in real time
+– Success Rate (constraint)
+– Tokens
+– Agent Calls
+– Time-to-first-success
+– Belief Score Evolution
+– Rounds to Expert Selection
+– Impairment Test (pre/post)
+– Belief Score Decline
+– Contribution Frequency
+– Final Output Score
+Figure 2.Evaluation framework.Research questions, testable hypotheses, and associated metrics. Each dimension targets a distinct
+property of the routing mechanism.
+(a)Task success across delegation strategies (mean±95% CI).
+ (b)Output quality across delegation strategies (mean±95% CI).
+Figure 3.Performance comparison across delegation strategies.(a) Task success rates (mean ± 95% CI) are saturated by recursive
+retry. (b) Output quality at convergence. REDEREF primarily improvesefficiency(fewer calls/tokens) while maintaining comparable
+success. Error bars represent 95% confidence intervals.
+5.2. Composition Dynamics and Efficiency
+Beyond aggregate performance, we examined how collabo-
+ration among multiple agents contributes to final outcomes.
+As shown in Figure 4a, average score improvements are
+highest when 3–5 agents contribute meaningfully to the fi-
+nal output. This validates the intuition that composition
+efficiency—not just redundancy—drives quality: a small
+coalition of diverse experts yields larger improvements than
+either a single agent or overly diffuse collaboration.
+5.3. Ablation: Role of Belief Updates
+To isolate the impact of belief-driven delegation, we com-
+pared the full system to a variant in which agents were
+selected uniformly at random during recursive rerouting.
+As shown in Table 2, disabling belief updates leads to a
+17.2% increase in the use of underperforming agents and
+an 8.2% increase in exploratory attempts before reaching a
+successful outcome. Both differences are statistically sig-
+nificant under paired bootstrap tests (p<0.01 ). While the
+number of useful contributors remains similar, the random
+policy wastes capacity on unreliable agents, underscoring
+Table 1.Efficiency comparison at matched task success. Tokens,
+Agent Calls, and Time-to-Success are reported as ratios normalized
+to Random Delegation; lower is better.
+Method Success (%) Tokens (↓) Agent Calls (↓) Time-to-Success (↓)
+Random Delegation 96.46 1.00×1.00×1.00×
+REDEREF (Full)96.65 0.72×0.83×0.81×
+Table 2.Routing behavior with and without belief updates (mean
+±95% CI).
+Method Bad Agent Uses Good Agent Uses Total Attempted
+Random Delegation 6.62±0.4 4.92±0.2 11.54±0.5
+REDEREF (Full)5.65±0.35.01±0.210.67±0.4
+that experience-driven learning enhances both efficiency
+and robustness.
+5.4. Specialization
+We next examined whether agents developed stable spe-
+cializations over time. In a sequence of 55 electrical-
+engineering tasks, the median belief score for the domain ex-
+pert rose from 0.50 (±0.02) to 0.84 (±0.03). Concurrently,
+6
+
+[[page 7]]
+Training-Free Agentic AI for Multi-Agent LLM Systems
+(a)Average quality improvement vs. number of contributing agents. Collabora-
+tion among 3–5 strong contributors yields the largest quality improvements.
+(b)Average rounds until Electrical Engineering ex-
+pert was selected across task halves.
+Figure 4.Collaboration dynamics and specialization.(a) Average quality gain versus number of contributing agents, showing peak
+composition efficiency at 3–5 agents. (b) Decline in rounds required to select the Electrical Engineering expert across task sequence,
+demonstrating specialization via posterior concentration.
+Table 3.Adaptability under impairment: Biology agent perfor-
+mance before and after enforced degradation (mean±95% CI).
+Metric Normal Impaired
+Average Belief Score 0.35±0.02 0.23±0.03
+Agent Contributions 12±1.1 0
+Final Output Score 84.52±0.7 81.80±0.9
+the average number of rounds required before this expert
+was selected declined from 8.11 (±0.4) to 6.86 (±0.3), as
+shown in Figure 4b. This trajectory demonstrates that RED-
+EREF not only improves aggregate performance but also
+learns to preferentially route domain-specific queries to the
+most competent agents—consistent with specialization via
+posterior concentration (supporting H2).
+5.5. Adaptability to Agent Impairment
+To evaluate adaptability (H3), we conducted an impairment
+test in which the Biology RAG Agent was replaced with
+systematically poor outputs after the first 50 tasks. As shown
+in Table 3, the agent’s belief score decreased by almost 50%,
+and its contributions were eliminated completely in subse-
+quent tasks. While the overall output quality decreased mod-
+estly (84.52± 0.7 to 81.80± 0.9), the system dynamically
+reallocated queries to other competent agents, preventing
+catastrophic degradation. This rapid adjustment is also illus-
+trated in Figure 5, which shows diverging belief trajectories
+for the impaired and healthy agents.
+Figure 5.Adaptability under agent impairment.Belief score tra-
+jectories for the Biology agent under normal versus systematically
+impaired conditions. The system rapidly detects degradation and
+down-weights the compromised agent, demonstrating real-time
+adaptability.
+5.6. Qualitative Dynamics
+Qualitative inspection further illustrates REDEREF’s re-
+cursive dynamics. In one representative task, the system
+initially delegated to an electrical-engineering agent, which
+produced a technically correct but incomplete design. After
+a failure judgment, REDEREF re-delegated to a narrative-
+oriented agent, which supplied the missing community-
+education perspective. The final aggregated response inte-
+grated both technical and social dimensions and was judged
+successful. Such trajectories exemplify how recursive re-
+routing enables the system to synthesize complementary
+expertise and recover from early missteps.
+Summary.In summary, belief-guided routing reduces to-
+ken usage, agent calls, and time-to-success at matched suc-
+7
+
+[[page 8]]
+Training-Free Agentic AI for Multi-Agent LLM Systems
+cess rates (H1), belief scores concentrate on domain experts
+over task sequences (H2), and the routing policy adapts
+when an agent is impaired mid-experiment (H3). All three
+hypotheses from Section 4 are supported.
+6. Discussion and Conclusion
+We introduced REDEREF, a lightweight, training-free con-
+troller for multi-agent LLM systems that addresses three
+persistent challenges in multi-agent collaboration: dynamic
+task routing, long-horizon credit assignment, and cold-start
+inefficiency. By combining Thompson-sampling delegation,
+reflection-driven updates, and memory-aware priors, RED-
+EREF maintains saturated task success while improving
+routing efficiency and robustness with minimal overhead.
+Key insights.Our findings support a growing body of
+evidence that lightweight, interpretable mechanisms can
+rival or surpass resource-intensive pipelines. The proba-
+bilistic control formulation resonates with models of agent
+trust (Wu et al., 2021) and bandit methods for online
+decision-making (Chapelle & Li, 2011), while avoiding
+the instability and sample inefficiency of deep RL (Mnih
+et al., 2015). The recursive loop mirrors ideas from search-
+based reasoning such as Monte Carlo Tree Search (Browne
+et al., 2012), yet operates at a fraction of the computational
+cost. In ablations, removing belief-guided routing increased
+poor-agent usage by 17.2% and wasted attempts, underscor-
+ing the critical importance of online feedback for efficient
+coordination.
+Limitations.REDEREF depends critically on judge re-
+liability; biases in machine adjudication are well docu-
+mented (Karpinska et al., 2021) and can distort competency
+updates, potentially entrenching suboptimal routing deci-
+sions. Sequential recursion can add latency in long tasks,
+limiting applicability in real-time scenarios. Early cold-
+start behavior resembles random delegation before sufficient
+evidence accumulates to differentiate agent competencies.
+These limitations highlight the need for robust judge calibra-
+tion, potential parallelization of candidate generation, and
+more informative prior initialization strategies.
+Broader implications.The transparency of REDEREF
+is advantageous for responsible AI deployment: Beta pos-
+teriors, judge verdicts, and natural language rationales cre-
+ate an auditable decision trail (Doshi-Velez & Kim, 2017),
+contrasting sharply with opaque RL policies or heavily
+fine-tuned black-box controllers. However, adaptive down-
+weighting based on early evidence could prematurely ex-
+clude competent agents, particularly in scenarios with tem-
+porary performance fluctuations. Periodic recalibration and
+ensemble judge mechanisms are therefore important for
+reliable deployment in sensitive domains.
+Future directions.Several extensions warrant investiga-
+tion. Hybridizing Bayesian delegation with model-based
+reinforcement learning could combine fast online adaptation
+with long-term strategic planning (Silver et al., 2017). Ex-
+panding beyond binary success/failure feedback into richer
+error taxonomies (e.g., reasoning errors, factual inaccura-
+cies, incomplete coverage) would enable more fine-grained
+credit assignment and targeted agent improvement. Paral-
+lel candidate generation could significantly reduce latency
+while maintaining bounded computational budgets. Finally,
+programmatic verifiers and retrieval-grounded evaluation
+models (Min et al., 2023) offer promising directions for im-
+proving judge reliability and reducing calibration overhead.
+Conclusion.Robust collaboration in LLM collectives
+does not require complex black-box architectures or ex-
+tensive training. Simple probabilistic mechanisms—belief-
+guided delegation, calibrated reflection, and memory-aware
+priors—can transform collections of independent agents into
+cohesive, adaptive systems. This “fast and frugal” approach
+offers a scalable, interpretable, and practically deployable
+path forward for multi-agent LLM research and real-world
+applications.
+References
+Agrawal, S. and Goyal, N. Further optimal regret bounds
+for Thompson sampling. InProceedings of the 16th
+International Conference on Artificial Intelligence and
+Statistics (AISTATS), pp. 99–107, 2013.
+Browne, C. B., Powley, E., Whitehouse, D., Lucas, S. M.,
+Cowling, P. I., Rohlfshagen, P., Tavener, S., Perez, D.,
+Samothrakis, S., and Colton, S. A survey of Monte Carlo
+tree search methods.IEEE Transactions on Computa-
+tional Intelligence and AI in Games, 4(1):1–43, 2012.
+Chapelle, O. and Li, L. An empirical evaluation of Thomp-
+son sampling. InAdvances in Neural Information Pro-
+cessing Systems, volume 24, pp. 2249–2257, 2011.
+Deng, X., Gu, Y ., Zheng, B., Chen, S., Stevens, S., Wang,
+B., Sun, H., and Su, Y . Mind2Web: Towards a generalist
+agent for the web. InNeurIPS Datasets and Benchmarks,
+2023.
+Doshi-Velez, F. and Kim, B. Towards a rigorous sci-
+ence of interpretable machine learning.arXiv preprint
+arXiv:1702.08608, 2017.
+Foerster, J., Farquhar, G., Afouras, T., Nardelli, N., and
+Whiteson, S. Counterfactual multi-agent policy gradients.
+InAAAI Conference on Artificial Intelligence, 2018.
+Guo, T., Chen, X., Wang, Y ., Chang, R., Pei, S., Chawla,
+N. V ., Wiest, O., and Zhang, X. Large language model
+8
+
+[[page 9]]
+Training-Free Agentic AI for Multi-Agent LLM Systems
+based multi-agents: A survey of progress and challenges.
+InIJCAI, pp. 8048–8057, 2024.
+Hugging Face. Hugging face datasets. https://
+huggingface.co/datasets, 2025. Accessed:
+July 2025.
+Jimenez, C. E., Yang, J., Wettig, A., Yao, S., Pei, K., Press,
+O., and Narasimhan, K. SWE-bench: Can language
+models resolve real-world GitHub issues? InICLR, 2024.
+Karpinska, M., Akoury, N., and Iyyer, M. The perils of using
+Mechanical Turk to evaluate open-ended text generation.
+InProceedings of the 2021 Conference on Empirical
+Methods in Natural Language Processing (EMNLP), pp.
+1265–1285, 2021.
+Li, W., Huang, Z., Li, H., Lu, L., Lu, Y ., Tian, X., Shen, X.,
+and Ye, J. Visual evidence prompting mitigates halluci-
+nations in large vision-language models. InProceedings
+of the 63rd Annual Meeting of the Association for Com-
+putational Linguistics (ACL), pp. 4048–4080, 2025a.
+Li, Y ., Xie, G., and Lu, Z. Multi-agent guided policy opti-
+mization.arXiv preprint arXiv:2507.18059, 2025b.
+Liu, Z., Zhang, Y ., Li, P., Liu, Y ., and Yang, D. A dynamic
+LLM-powered agent network for task-oriented agent col-
+laboration. InCOLM, 2024.
+Lowe, R., Wu, Y ., Tamar, A., Harb, J., Abbeel, P., and Mor-
+datch, I. Multi-agent actor-critic for mixed cooperative-
+competitive environments. InAdvances in Neural Infor-
+mation Processing Systems, 2017.
+Madaan, A., Tandon, N., Gupta, P., Hallinan, S., Gao, L.,
+Wiegreffe, S., Alon, U., Dziri, N., Prabhumoye, S., Yang,
+Y ., Gupta, S., Majumder, B. P., Hermann, K., Welleck,
+S., Yazdanbakhsh, A., and Clark, P. Self-refine: Iterative
+refinement with self-feedback. InNeurIPS, 2023.
+Mialon, G., Fourrier, C., Swift, C., Wolf, T., LeCun, Y .,
+and Scialom, T. GAIA: A benchmark for general AI
+assistants. InICLR, 2024.
+Min, S., Krishna, K., Lyu, X., Lewis, M., Yih, W.-t., Koh,
+P. W., Iyyer, M., Zettlemoyer, L., and Hajishirzi, H.
+FActScore: Fine-grained atomic evaluation of factual
+precision in long form text generation. InProceedings of
+the 2023 Conference on Empirical Methods in Natural
+Language Processing (EMNLP), 2023.
+Mnih, V ., Kavukcuoglu, K., Silver, D., Rusu, A. A., Veness,
+J., Bellemare, M. G., Graves, A., Riedmiller, M., Fidje-
+land, A. K., Ostrovski, G., Petersen, S., Beattie, C., Sadik,
+A., Antonoglou, I., King, H., Kumaran, D., Wierstra, D.,
+Legg, S., and Hassabis, D. Human-level control through
+deep reinforcement learning.Nature, 518:529–533, 2015.
+OpenAI. GPT-4 technical report.arXiv preprint
+arXiv:2303.08774, 2023.
+Shinn, N., Cassano, F., Berman, E., Gopinath, A.,
+Narasimhan, K., and Yao, S. Reflexion: Language agents
+with verbal reinforcement learning. InNeurIPS, 2023.
+Silver, D., Schrittwieser, J., Simonyan, K., Antonoglou,
+I., Huang, A., Guez, A., Hubert, T., Baker, L., Lai, M.,
+Bolton, A., Chen, Y ., Lillicrap, T., Hui, F., Sifre, L.,
+van den Driessche, G., Graepel, T., and Hassabis, D.
+Mastering the game of Go without human knowledge.
+Nature, 550:354–359, 2017.
+Wang, J., Wang, J., Athiwaratkun, B., Zhang, C., and Zou,
+J. Mixture-of-agents enhances large language model
+capabilities.arXiv:2406.04692, 2024.
+Wu, F., Li, Z., Wei, F., Li, Y ., Ding, B., and Gao, J.
+Talk to right specialists: Routing and planning in multi-
+agent system for question answering.arXiv preprint
+arXiv:2501.07813, 2025.
+Wu, Q., Bansal, G., Zhang, J., Wu, Y ., Li, B., Zhu, E., Jiang,
+L., Zhang, X., Zhang, S., Liu, J., Awadallah, A. H., White,
+R. W., Burger, D., and Wang, C. AutoGen: Enabling
+next-gen LLM applications via multi-agent conversation.
+arXiv:2308.08155, 2023.
+Wu, S. A., Wang, R. E., Evans, J. A., Tenenbaum, J. B.,
+Parkes, D. C., and Kleiman-Weiner, M. Too many cooks:
+Bayesian inference for coordinating multi-agent collabo-
+ration.Topics in Cognitive Science, 13(2):414–432, 2021.
+Yao, S., Yu, D., Zhao, J., Shafran, I., Griffiths, T. L., Cao,
+Y ., and Narasimhan, K. Tree of thoughts: Deliberate
+problem solving with large language models. InNeurIPS,
+2023a.
+Yao, S., Zhao, J., Yu, D., Du, N., Shafran, I., Narasimhan,
+K., and Cao, Y . ReAct: Synergizing reasoning and acting
+in language models. InICLR, 2023b.
+Yuan, S., Chen, Z., Xi, Z., Ye, J., Du, Z., and Chen, J. Agent-
+R: Training language model agents to reflect via iterative
+self-training.arXiv preprint arXiv:2501.11425, 2025.
+Zhou, S., Xu, F. F., Zhu, H., Zhou, X., Lo, R., Sridhar, A.,
+Cheng, X., Ou, T., Bisk, Y ., Fried, D., Alon, U., and
+Neubig, G. WebArena: A realistic web environment for
+building autonomous agents. InICLR, 2024.
+Zhou, Y ., Jiang, S., Tian, Y ., Weston, J., Levine, S.,
+Sukhbaatar, S., and Li, X. SWEET-RL: Training multi-
+turn LLM agents on collaborative reasoning tasks.arXiv
+preprint arXiv:2503.15478, 2025.
+9
+
+[[page 10]]
+Training-Free Agentic AI for Multi-Agent LLM Systems
+A. Appendix
+A.1. Evaluation Task Generation
+To ensure diversity and rigor, we constructed a multi-stage
+pipeline to generate tasks requiring multi-agent collabora-
+tion.
+A.1.1. STAGE1: SINGLE-AGENTQUESTION
+GENERATION
+We first generated domain-specific questions tailored to two
+classes of agents:
+• RAG Agents: Retrieval-augmented models grounded
+in curated domain datasets (e.g., biology, finance,
+medicine) (Hugging Face, 2025).
+• Conversational Agents: Prompt-based agents cover-
+ing domains such as career guidance, fitness, or litera-
+ture.
+Each agent was tasked with producing 20–22 realistic ques-
+tions, paired with aModel Context Protocol(MCP) captur-
+ing intent, tools, and plausible follow-ups. All outputs were
+archived in structured JSON format.
+A.1.2. STAGE2: MULTI-AGENTTASKSYNTHESIS
+Single-agent questions were combined into multi-agent
+tasks by sampling 4–6 diverse agents and synthesizing 15
+composite tasks per batch. Each task was required to:
+• Necessitate distinct, non-redundant contributions from
+each agent,
+• Require multi-layered reasoning (planning, analysis,
+execution),
+• Include a merged MCP integrating the intents, tools,
+and follow-ups of all contributing agents.
+Examples include generating healthcare policy reports using
+medical, political, and geographic agents, or constructing
+recovery plans with biology, fitness, finance, and scheduling
+agents.
+A.1.3. STAGE3: ITERATIVESAMPLING
+This process was repeated until the pool of questions was
+exhausted, yielding a benchmark suite explicitly designed to
+enforce distributed reasoning. Each task was unsolvable by
+any single agent, thereby ensuring collaborative evaluation.
+A.2. Extended Metric Definitions
+This section provides full definitions of the evaluation met-
+rics summarized in Section 4.
+A.2.1. PERFORMANCE
+• Task Success Rate:Percentage of tasks achieving a
+final answer score≥85as judged by an LLM.
+• Agents Attempted:Average number of agents in-
+voked before reaching a solution.
+A.2.2. SPECIALIZATION(H2)
+• Belief Score Evolution:Temporal trajectories of bi
+for domain experts (e.g., Math agent).
+• Rounds to Expert Selection:Average delegation steps
+before the correct expert is chosen for domain-specific
+tasks, expected to decline as belief updates accumulate.
+A.2.3. ADAPTABILITY(H3)
+• Agent Impairment Test:Across 100 tasks, one agent
+(e.g., Biology) operates normally for the first 50, then
+is forced to fail for the next 50.
+• Belief Score Decline:Comparison of belief trajecto-
+ries pre- and post-impairment.
+• Contribution Frequency:Task participation counts
+across both phases.
+• System Output Score:Average final answer score
+across both segments, reflecting resilience to impaired
+agents.
+A.2.4. COMPOSITIONEFFICIENCY(H1)
+• Time-to-first-success:Number of delegation rounds
+required to produce the first judged-successful candi-
+date.
+• Marginal contribution efficiency:Improvement in
+output score per token consumed by each contributing
+agent.
+A.3. Implementation Details
+A.3.1. FRAMEWORKARCHITECTURE
+The REDEREF framework is implemented as a
+modular pipeline consisting of six core components:
+WorkflowManager, BayesianDelegator,
+SelfReflectionStep, InfoMergeStep,
+MemoryUpdateStep, and RecursiveRouting.
+The WorkflowManager serves as the main orchestrator,
+coordinating agent delegation, reflection, memory updates,
+and recursive re-routing according to Algorithm 1.
+10
+
+[[page 11]]
+Training-Free Agentic AI for Multi-Agent LLM Systems
+Core Classes and Data Structures.The central Task
+class maintains task state including query text, agent out-
+puts, reflection scores, memory updates, and completion
+status. Agent performance is tracked through belief param-
+eters (αi,βi), cooldown counters, and historical success
+rates. The framework supports both Bayesian delegation
+via Thompson sampling and traditional LLM-based ranking
+through a configurableuse bayesianparameter.
+A.3.2. BAYESIANDELEGATIONIMPLEMENTATION
+Thompson sampling is implemented in the
+BayesianDelegator class with the following
+key features:
+• Agent Selection: For each agent i, sample ˆθi ∼
+Beta(αi,βi) and select i∗ = arg maxi ˆθi (subject to
+cooldown constraints).
+• Binary Updates: After judging, updateαi∗←α i∗ +y
+andβi∗←β i∗ + (1−y) wherey∈{0,1} indicates
+success/failure.
+• Cooldown Mechanism: Agents are temporarily ex-
+cluded forr rounds after selection to encourage explo-
+ration. If all agents are cooling, the framework forces
+exploration by selecting the agent with the smallest re-
+maining cooldown.
+• Belief Persistence: Agent beliefs are stored in JSON
+format and loaded across sessions to maintain long-term
+memory.
+A.3.3. MEMORY-AWAREPRIORINITIALIZATION
+Historical performance data is used to initialize belief
+priors via similarity-weighted aggregation: Let sm =
+K(embed(q),embed(q m))·exp(−λ∆t m). Then:
+αi←α 0 +P
+m∈Msm·ym,(5)
+βi←β 0 +P
+m∈Msm·(1−y m),(6)
+whereK(·,·) is cosine similarity over sentence embeddings,
+∆tm is task recency, andλ= 0.1 controls temporal decay.
+This initialization reduces cold-start inefficiency by biasing
+selection toward agents with historically strong performance
+on similar tasks.
+A.3.4. MULTI-LAYEREDJUDGESYSTEM
+The SelfReflectionStep implements a four-stage
+evaluation pipeline:
+1. Agent Output Scoring: Individual agent responses are
+scored on a 0-100 scale using task-specific rubrics.
+2. Binary Success Evaluation: A calibrated LLM judge
+determines whether the merged output satisfies task re-
+quirements, yieldingE∈{SUCCESS,FAILURE}.
+3. Completeness Assessment: The judge evaluates
+whether additional agent input would improve the re-
+sponse quality.
+4. Agent Refinement: Underperforming agent outputs are
+iteratively improved based on judge critiques.
+Judge calibration is performed on a held-out validation set
+of 200 labeled examples to estimate false positive/negative
+rates and set decision thresholds.
+A.3.5. AGENTZOOSPECIFICATION
+The experimental agent population consists of two classes:
+• RAG Agents: Domain-specific agents
+(ExpertAgent) with retrieval augmentation
+over curated knowledge bases. Domains include
+mathematics, law, finance, biology, medicine, and
+electrical engineering. Each agent loads domain-specific
+datasets and uses specialized prompt templates with
+retrieval-grounded context.
+• Conversational Agents: LLM-based agents
+(ConversationalAgent) without retrieval,
+covering fitness, literature, technology, geography,
+storytelling, politics, academics, career guidance, trivia,
+and daily planning. Agent configurations are specified
+in YAML format with domain-specific constraints and
+prompt templates.
+All agents are initialized with uniform priorsα0 =β 0 = 1
+unless memory-aware initialization is enabled.
+A.3.6. INFORMATIONMERGING ANDTRUST
+WEIGHTING
+The InfoMergeStep aggregates agent responses using
+trust-weighted selection:
+1. Compute trust scores ti =α i/(αi +βi) for each con-
+tributing agent.
+2. Filter responses from agents marked as ”bad” (belief
+score below threshold).
+3. Merge remaining responses using LLM-based synthesis
+weighted by trust scores.
+4. Validate merged output through evidence-grounding and
+consistency checks.
+11
+
+[[page 12]]
+Training-Free Agentic AI for Multi-Agent LLM Systems
+A.3.7. EXPERIMENTALINFRASTRUCTURE
+The evaluation framework
+(run belief experiment.py) supports:
+• Configurable Agent Selection: Systematic sampling
+from the agent zoo with controllable population size.
+• Question Processing Pipeline: Batch processing with
+configurable delays and timeout handling.
+• Comprehensive Logging: Results are logged to struc-
+tured JSON files including initial outputs, recursive del-
+egation traces, final merged responses, and detailed per-
+formance metrics.
+• Statistical Validation: Built-in A/B testing, bootstrap
+confidence intervals, and performance benchmarking
+capabilities.
+A.3.8. EVALUATIONMETRICSIMPLEMENTATION
+Quality assessment employs a multi-faceted scoring system:
+• Output Quality: 0-100 scale scoring of initial vs.
+merged outputs using task-specific rubrics.
+• Quality Gains: Absolute improvement (merged - initial)
+and relative improvement ((merged - initial) / initial).
+• Agent Contribution Tracking: Classification of agents
+as ”contributing” (positive impact) vs. ”bad” (negative
+impact) based on comparative evaluation.
+• Routing Statistics: Delegation depth, agent selection
+frequency, and belief evolution trajectories.
+A.3.9. REPRODUCIBILITY ANDCONFIGURATION
+All experiments are reproducible through:
+• Deterministic Sampling: Fixed random seeds for
+Thompson sampling and LLM generation.
+• Configuration Management: Y AML-based agent spec-
+ifications and experimental parameters.
+• Version Control: Git-tracked experimental runs with
+commit hashes logged in results.
+• Environment Specification: Docker containers with
+fixed dependency versions and Azure OpenAI API con-
+figurations.
+A.3.10. COMPUTATIONALREQUIREMENTS
+Typical experimental runs require:
+• Hardware: 16GB RAM, 4-core CPU for coordination
+logic; GPU optional for local LLM inference.
+• API Costs: $0.50-2.00 per task depending on recursion
+depth and agent complexity.
+• Runtime: 2-5 minutes per task with Azure OpenAI;
+30-60 seconds with local models.
+• Storage: 10-50MB per 100 tasks for complete logs and
+belief persistence.
+A.4. LLM-in-the-Loop Evaluation
+Our pipeline uses LLMs for task generation, agent execu-
+tion, and judging, which raises a potential circularity con-
+cern. We mitigate this in three ways: (i) programmatic
+metrics (EM, F1, unit-test pass rates) short-circuit the judge
+for unambiguous cases, grounding a substantial fraction of
+verdicts in non-LLM signals; (ii) the judge is calibrated on
+200 human-labeled examples with measured FP/FN rates,
+so its error profile is quantified rather than assumed reliable;
+and (iii) agent outputs and judge verdicts are produced by
+independent LLM calls with no shared state, preventing self-
+reinforcing feedback loops. The routing controller itself is
+purely probabilistic (Beta-Bernoulli updates) and contains
+no learned LLM parameters. While fully human-grounded
+evaluation remains the gold standard, these safeguards en-
+sure that the LLM-based components are calibrated, par-
+tially redundant with programmatic checks, and structurally
+decoupled.
+A.5. Proof of Theorem 3.1: Regret Under Noisy Judge
+Feedback
+Setup.There are N arms (agents) with true Bernoulli
+success probabilitiesθ1,...,θ N . The judge observes each
+outcome through a binary symmetric–like channel with
+false-positive rateεFP and false-negative rateεFN, so the
+observed success probability of armiis
+˜θi = (1−ε FN)θi +ε FP (1−θ i) =δθ i +ε FP,
+whereδ= 1−ε FP−ε FN >0.
+Lemma A.1(Order preservation).Since δ >0 , the map
+θi7→ ˜θi is strictly increasing. Henceθi∗ >θ j if and only if
+˜θi∗ > ˜θj; the optimal arm is unchanged.
+Lemma A.2(Gap contraction).For any suboptimal arm j,
+the observed gap satisfies ˜∆j = ˜θi∗− ˜θj =δ∆ j, where
+∆j =θ i∗−θj.
+12
+
+[[page 13]]
+Training-Free Agentic AI for Multi-Agent LLM Systems
+Main argument.The controller never sees true outcomes;
+it runs Thompson sampling on theobservedBernoulli prob-
+lem{˜θi}N
+i=1. By Lemma A.1, the optimal observed arm
+coincides with the truly optimal arm i∗. Applying the
+Bayesian regret bound of Agrawal & Goyal (2013) (Theo-
+rem 2 therein) to the observed problem yields
+eR(T) =
+X
+j̸=i∗
+˜∆j E[nj(T)] =O
+ p
+NTlogT
+
+.
+The true regret decomposes as
+R(T) =
+TX
+t=1
+ 
+θi∗−θIt
+
+=
+X
+j̸=i∗
+∆j E[nj(T)]
+=
+X
+j̸=i∗
+˜∆j
+δ E[nj(T)] = 1
+δ
+eR(T) =O
+√NTlogT
+δ
+
+,
+(7)
+where we used Lemma A.2 in the penultimate step. This
+completes the proof.
+Algorithm 1REDEREF: Recursive Delegation and Reflec-
+tion
+Require: Queryq, agentsA1..AN with (αi,βi), memory
+M, judgeJ, max depthD, budgetB, cooldownr
+1:x←embed(q)
+2:initialize(α i,βi)via memory-aware priors fromM
+3:cool[i]←0for alli;spent←0
+4:C←∅{set of all candidates with evidence}
+5:(best,bestScore)←(∅,−∞)
+6:ford= 1toDdo
+7:ifspent≥Bthen break
+8:end if
+9: Sampling:for each i, draw ˆθi∼Beta(α i,βi) if
+cool[i] = 0else set ˆθi←−∞
+10: if maxi ˆθi =−∞ then{all cooling; force one step
+of exploration}
+11: set cool[j]←0 forj= arg max i cool[i]{ or
+the smallest cooldown}
+12:continue
+13:end if
+14:i ⋆ ←arg max i ˆθi{tie-break by larger αi/(αi +
+βi)}
+15:(cand,usage)←A i⋆(q)
+16:spent += usage
+17:ifspent>Bthen break
+18:end if
+19:score prog←programmatic metrics(q,cand)
+20:ifscore prog is unambiguous positivethen
+21:E←SUCCESS;ρ←“programmatic pass”
+22:else
+23:(E,ρ,score judge)←J(q,cand,score prog)
+24:end if
+25:y←I[E=SUCCESS]
+26:α i⋆ +=y;β i⋆ += (1−y)
+27:M←M∪{(x,i ⋆,y,ρ,now())}
+28:C←C∪{(cand,score prog,score judge,i⋆)}
+29:candScore←combine scores(scoreprog,score judge)
+30:ifcandScore>bestScorethen
+31:(best,bestScore)←(cand,candScore)
+32:end if
+33:ify= 1then
+34: return aggregate select(C,{µi =α i/(αi +
+βi)}){selection with evidence}
+35:end if
+36:cool[i ⋆]←r ;for all j: cool[j]←
+max(0,cool[j]−1)
+37:q←refine(q,cand,ρ)
+38: if plateau(C,k) then break {no score improve-
+ment over lastkattempts}
+39:end if
+40:end for
+41:ifC̸=∅then
+42: return aggregate select(C,{µi}){ best-so-far
+with evidence checks}
+43:else
+44:returnFAILURE{no candidate produced}
+45:end if
+13

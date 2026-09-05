@@ -1,0 +1,2134 @@
+[[page 1]]
+Developing and Evaluating an LLM-based 
+Agent for ExplorViz Using CopilotKit 
+Karim Issa 
+2026 
+ 
+Kiel Software Engineering Research 
+KSER, Volume 3 
+ 
+Edited by 
+Prof. Dr. Wilhelm Hasselbring (hasselbring@email.uni-kiel.de) 
+ 
+DOI: 10.38071/2026-00397-5 
+ 
+ 
+ 
+This work is published under the Creative Commons Attribution 4.0 International license 
+(https://creativecommons.org/licenses/by/4.0/deed.en). 
+The electronic open access version of this work is permanently available on MACAU 
+(https://macau.uni-kiel.de), Open Access Repository of Kiel University 
+eISSN: 3053-4186
+
+[[page 2]]
+Abstract
+ExplorViz is an interactive software visualization tool that supports program comprehen-
+sion by presenting complex software systems using a 3D city metaphor and communication
+links. While these visualizations provide a rich overview, they also introduce an interac-
+tion challenge: users must navigate a three-dimensional landscape, interpret architectural
+structures, and translate observations into concrete follow-up actions.
+This thesis designs and implements a large-language-model (LLM) assistant embedded
+in the ExplorViz frontend that allows users to ask questions about the currently visualized
+system and trigger visualization actions through natural language. The assistant combines
+selective, privacy-aware snapshots of the current visualization state with deterministic,
+tool-based actions for querying landscape structures, highlighting landscape components,
+camera controls, and settings access. In addition, an experimental workﬂow supports
+agent-initiated edits with explicit user conﬁrmation.
+A controlled usability study with 11 participants evaluated both comprehension support
+and action execution. Participants rated the assistant’s generated summaries and expla-
+nations as largely correct (mean ratings 4.64/5 and 4.55/5) and reported high ease-of-use
+for deterministic actions such as bulk highlighting and theme creation (mean 4.82/5).
+In contrast, open-ended agent-driven editing showed mixed expectation match (mean
+3.00/5), indicating the need for stronger guardrails and feedback mechanisms. Overall, the
+assistant was perceived as usable and promising for reducing interaction overhead during
+exploratory program comprehension tasks.
+v
+
+[[page 3]]
+Contents
+1 Introduction 1
+1.1 Motivation ....................................... 1
+1.2 Document Structure ................................. 2
+2 Goals 3
+2.1 G1: Basic Chat Assistant ............................... 3
+2.2 G2: Visual Assistance and Navigation ....................... 3
+2.3 G3: Architectural Improvement Suggestions ................... 4
+2.4 G4: Tutorial and Onboarding Support ....................... 4
+2.5 G5: Qualitative Evaluation .............................. 4
+3 Foundations and T echnologies 5
+3.1 ExplorViz ........................................ 5
+3.2 Large Language Models and Agentic Systems .................. 6
+3.3 Model/Message Context Protocol (MCP) ..................... 7
+3.4 CopilotKit ....................................... 8
+3.5 Interaction Context and Visual Grounding .................... 8
+4 Related Work 11
+4.1 LLM Support for Software Understanding .................... 1 1
+4.2 Conversational Interfaces and Visual Analytics .................. 1 2
+4.3 Tool-Using Agents and Protocol-Based Integrations ............... 1 3
+5 System Design 15
+5.1 Design Goals and Constraints ............................ 1 5
+5.1.1 Functional Goals ............................... 1 5
+5.1.2 Non-Functional Requirements ....................... 1 6
+5.1.3 Constraints and Assumptions ....................... 1 7
+5.2 Architecture Overview ................................ 1 7
+5.2.1 Frontend Embedding and Interaction Surfaces .............. 1 9
+5.2.2 CopilotKit Boundary: Context Resources and Action Tools ...... 1 9
+5.2.3 AI Chat Service and Deployment Topology ................ 2 1
+5.2.4 End-to-End Interaction Flow ........................ 2 1
+vii
+
+[[page 4]]
+Contents
+6 Implementation 25
+6.1 Implementation Map and Modiﬁed Artifacts ................... 2 5
+6.2 Integration in the Rendering Tree .......................... 2 7
+6.3 Chatbot Provider: Runtime Conﬁguration and Context Contract ....... 2 8
+6.3.1 Responsibilities of ChatbotProvider .................... 2 8
+6.3.2 Connection and availability semantics ................... 2 9
+6.4 Copilot Runtime Service ............................... 2 9
+6.4.1 HTTP interface ................................ 2 9
+6.4.2 Provider registry and adapter construction ................ 3 0
+6.4.3 Runtime request routing ........................... 3 1
+6.4.4 CORS and header contract ......................... 3 1
+6.4.5 Conﬁguration and operational integration ................ 3 2
+6.5 Chat UI Surface and User Controls ......................... 3 2
+6.6 Copilot Resources for Context Provisioning .................... 3 3
+6.7 Copilot Actions and Tool Binding ......................... 3 4
+6.7.1 Querying Landscape Data .......................... 3 7
+6.7.2 Settings Updates with Stable Identiﬁers .................. 3 8
+6.7.3 Visual Grounding Tools: Screenshots and Click Simulation ...... 3 8
+6.8 Reusing Existing Panels via Imperative Controllers ............... 3 8
+6.9 Landscape Editing and History Integration .................... 3 9
+6.10 Tool Call Feedback and Spatial Grounding .................... 4 0
+6.11 Summary ........................................ 4 0
+7 Evaluation 43
+7.1 Evaluation Goals ................................... 4 3
+7.2 Study Design ..................................... 4 3
+7.3 Participants ...................................... 4 5
+7.4 Measures and Data Collection ............................ 4 5
+7.5 Data Preparation and Analysis ........................... 4 6
+7.6 Results ......................................... 4 7
+7.6.1 Summary of Quantitative Ratings ..................... 4 7
+7.6.2 Comprehension Support (Tasks 2 and 3) ................. 4 7
+7.6.3 Correctness and Usability for Deterministic UI Actions (Tasks 4 and 5) 48
+7.6.4 Reliability of Agent-Driven Editing (Task 6) ............... 4 8
+7.6.5 Overall Usability and Performance ..................... 4 8
+7.7 Discussion ....................................... 4 8
+7.8 Threats to Validity .................................. 4 9
+8 Conclusions and Future Work 51
+8.1 Conclusions ...................................... 5 1
+8.2 Future Work ...................................... 5 1
+viii
+
+[[page 5]]
+Contents
+Bibliography 55
+ix
+
+[[page 6]]
+
+
+[[page 7]]
+Chapter 1
+Introduction
+Software developers spend a considerable amount of time understanding existing systems
+before they can safely change them [Xia et al. 2018]. In practice, this includes navigating
+through source code, runtime traces, architectural documentation, and historical context
+across multiple tools. Software visualization approaches aim to reduce this cognitive
+overhead by providing structured overviews that can be explored interactively . ExplorViz
+follows this idea by visualizing software systems as a 3D city , thereby making runtime and
+structural characteristics accessible at a glance[Hasselbring et al. 2020; Krause et al. 2021].
+At the same time, the usefulness of such a visualization depends heavily on the user’s
+ability to interpret what is shown and to efﬁciently navigate within the visualization.
+Recent progress in large language models (LLMs) enables conversational interfaces that
+can translate user intent into explanations and actions. Research indicates that LLMs can
+support code understanding and program comprehension tasks[Nam et al. 2024; Lehtinen
+et al. 2024]. This thesis builds on these observations and investigates how an LLM-based
+assistant can enhance the ExplorViz user experience.
+Adding an AI assistant to an interactive visualization is not only a question of model
+capability , but also a software engineering problem: the assistant must be connected to
+domain operations, given reliable context, and constrained so that it remains predictable
+and helpful. Without such grounding, a conversational interface risks becoming generic
+and disconnected from the actual application state. This thesis therefore focuses on the
+design and implementation of an LLM-based assistant inside ExplorViz that can explain
+what users observe in the visualization and interact with the visualization and other UI
+elements through well-deﬁned actions.
+1.1 Motivation
+Modern software systems often consist of numerous interconnected components distributed
+across multiple services and layers. ExplorViz is a tool developed at Kiel University that
+helps developers and architects comprehend such systems by offering runtime visualiza-
+tions in the form of interactive 3D city metaphors[Hasselbring et al. 2020; Krause et al. 2021].
+These visualizations represent software components as buildings, packages as districts, and
+communication links as directed arcs between buildings.
+While ExplorViz provides powerful insights, its usability and effectiveness depend
+1
+
+[[page 8]]
+1. Introduction
+heavily on the user’s ability to navigate the software and the 3D landscape and interpret
+what they see. Especially for new users or less experienced developers, understanding
+architectural patterns or runtime behavior can be overwhelming. LLM-based assistants
+can mitigate this problem by providing contextual explanations, by guiding users through
+interaction steps, and by automating repetitive navigation or highlighting tasks.
+The central problem addressed in this thesis is the gap between (1) rich but visually
+complex runtime visualizations and (2) the user’s ability to quickly derive actionable
+insights. Concretely , the following challenges motivate the work:
+Ź Orientation and navigation: Users must ﬁnd relevant components and communication
+links in a potentially large 3D landscape.
+Ź Interpretation effort: Users must map visual elements to architectural concepts and
+runtime behavior.
+Ź Interaction friction: Even when users know what they want to do (e.g., highlight a
+component), the how may require a sequence of UI actions.
+To address these challenges, this thesis contributes:
+Ź A design for integrating a conversational assistant into the ExplorViz frontend.
+Ź A CopilotKit-based implementation that exposes ExplorViz-speciﬁc actions to an LLM
+through tool/function calling[CopilotKit 2025b; c].
+Ź A usability evaluation study for assessing the assistant’s impact on user experience and
+task performance.
+1.2 Document Structure
+Chapter 2 deﬁnes the goals and success criteria for the proposed assistant. Chapter 3
+introduces the required foundations, including ExplorViz, large language models, and
+the agent/tool interaction paradigm used in this thesis. Chapter 4 positions the work
+in the context of prior research on software visualization, program comprehension, and
+conversational/agent-based interfaces.
+Chapter 5 presents the system design, focusing on the embedding of the assistant into
+the ExplorViz frontend, context selection, and the architecture of the supporting backend
+service. Chapter 6 describes the concrete implementation, including the CopilotKit-based
+integration, resource snapshots, and the implemented tool set.
+Chapter 7 reports the controlled user study , including study design, participants,
+measures, results, and discussion. Finally , Chapter 8 concludes the thesis and outlines
+future work.
+2
+
+[[page 9]]
+Chapter 2
+Goals
+The central goal of this thesis is to design, implement, and evaluate an LLM-based assistant
+that supports users while working with ExplorViz. The implementation should be ﬂexible
+enough to be extended with additional capabilities, and it should integrate into the existing
+frontend without requiring intrusive changes to the visualization pipeline.
+The pursued goals are structured similarly to a feature roadmap. Each goal describes a
+capability that can be validated through concrete user tasks.
+2.1 G1: Basic Chat Assistant
+Implement a chat-based assistant that answers natural language questions related to
+ExplorViz and the currently opened landscape. At minimum, the assistant should:
+Ź explain ExplorViz concepts and UI elements,
+Ź answer questions about visible components and their relationships,
+Ź provide short, actionable guidance rather than generic deﬁnitions.
+2.2 G2: Visual Assistance and Navigation
+Extend the assistant with visual assistance capabilities. In ExplorViz, this includes interac-
+tions such as:
+Ź highlighting or selecting components,
+Ź focusing the camera on speciﬁc objects,
+Ź guiding the user step-by-step through the UI.
+From an implementation perspective, this goal requires exposing selected frontend
+operations as callable actions and ensuring that the assistant can invoke them reliably .
+3
+
+[[page 10]]
+2. Goals
+2.3 G3: Architectural Improvement Suggestions
+Enable the assistant to support architecture improvement tasks based on the currently
+displayed landscape. Beyond comprehending and explaining the visualization, the as-
+sistant should be able to propose improvement suggestions and, when asked to, apply
+selected changes directly in ExplorViz by performing structural edits on the landscape
+model. This goal deliberately focuses on decision support and enable the exploration of
+architectural alternatives. It enables users to reason about these alternatives directly inside
+the visualization.
+Concretely , the assistant should:
+Ź identify potential issues or improvement opportunities from structural information (e.g.,
+oversized packages),
+Ź provide improvement suggestions together with a rationale and expected impact,
+Ź apply the subset of suggestions that can be expressed through ExplorViz editing opera-
+tions (e.g., adding applications, adding classes, removing components) and keep these
+changes reversible via undo/redo.
+2.4 G4: T utorial and Onboarding Support
+Implement tutorial-like assistance for ExplorViz, focusing on onboarding and feature
+explanation. The assistant should be able to:
+Ź answer "how do I" questions in a context-sensitive manner,
+Ź provide interaction sequences (e.g., which menu to open),
+Ź optionally adapt the explanation depth to the user’s experience level.
+2.5 G5: Qualitative Evaluation
+Evaluate the implemented assistant through a usability study with human participants.
+The evaluation should capture:
+Ź perceived usefulness and usability ,
+Ź user trust and error tolerance,
+Ź strengths and limitations of the chosen interaction style.
+4
+
+[[page 11]]
+Chapter 3
+Foundations and T echnologies
+This chapter summarizes the conceptual and technological foundations that are required
+to understand the remainder of this thesis. It introduces the software visualization tool
+ExplorViz and its core concepts, outlines relevant principles of large language models
+(LLMs) and agentic systems, and discusses approaches for connecting an assistant to
+application-speciﬁc context and actions. Because the contribution of this thesis is imple-
+mented directly in a browser-based frontend, the section on protocol-based integrations
+also contrasts the Model Context Protocol (MCP) with CopilotKit as a frontend-oriented
+alternative.
+3.1 ExplorViz
+Software visualization aims to support program comprehension by externalizing aspects of
+a software system that are otherwise difﬁcult to grasp, especially for large and continuously
+evolving systems. Surveys highlight that visualization techniques can reduce the cognitive
+effort required for understanding structure and behavior by providing overviews, enabling
+interactive exploration, and by offering multiple coordinated perspectives on the same
+underlying system model[Diehl 2007; Teyseyre and Campo 2009]. Among the established
+metaphors, software cities represent hierarchies (e.g., packages and classes) through districts
+and buildings, leveraging the familiarity of urban environments to convey locality and
+scale[Wettel and Lanza 2007]. While 3D metaphors are not inherently superior to 2D
+representations, they are a natural ﬁt when the goal is to provide both a compact overview
+and an interactive environment that can be navigated and incrementally explored.
+ExplorViz builds on these ideas and targets the visual runtime analysis of distributed
+software systems[Hasselbring et al. 2020]. Its core goal is to help developers and operators
+understand large software landscapes, i.e., systems composed of many communicating
+services and applications, by combining structural information with runtime behavior.
+The visualization centers around an interactive 3D representation that supports overview
+and drill-down: at higher levels, users can explore a landscape of applications and their
+communication relationships; at lower levels, they can inspect internal structures, traces, and
+metrics in a more detailed view[Fittkau et al. 2017]. This multi-level approach is particularly
+relevant for modern, service-oriented architectures where understanding emergent behavior
+requires connecting static structure (what exists) with dynamic interactions (what happens
+5
+
+[[page 12]]
+3. Foundations and Technologies
+at runtime).
+A distinguishing feature of ExplorViz is its emphasis on integrating distributed tracing
+data into the visualization[Fittkau et al. 2017]. Live traces provide concrete evidence of run-
+time behavior and help users relate high-level questions (e.g., “which service communicate
+with one another?”) to speciﬁc execution paths. In addition to traces, ExplorViz and related
+work explore ways to overlay operational metrics (e.g., latency or error rates) directly
+onto the city representation, enabling continuous monitoring and anomaly detection in a
+spatially contextualized form[Krause et al. 2021]. Recent extensions further investigate how
+the same software landscape can be explored across different visual output devices (e.g.,
+large displays or immersive environments), underlining that software visualization is not
+limited to a single interaction setting[Hansen et al. 2024].
+For this thesis, ExplorViz is the host environment in which the assistant operates.
+Consequently , the assistant needs to be able to refer to entities that are meaningful in
+ExplorViz (e.g., applications, nodes, or classes) and to trigger the same kinds of interactions
+that users perform manually (e.g., highlighting, ﬁltering, navigation, or opening detail
+views). This requirement connects the visualization foundation with the later design goal
+of providing a contextualized (grounded) conversational interface, where natural language
+requests can be mapped to concrete UI actions and domain objects.
+3.2 Large Language Models and Agentic Systems
+Large language models (LLMs) are neural networks trained to predict and generate
+text based on large-scale corpora. Most contemporary LLMs build on the Transformer
+architecture, which replaces recurrent processing with attention mechanisms and enables
+efﬁcient parallel training[Vaswani et al. 2017]. By scaling both data and model capacity ,
+LLMs can acquire broad linguistic competence and exhibit emergent capabilities such as
+few-shot and zero-shot generalization[Brown et al. 2020]. For user-facing systems, raw
+next-token prediction is typically adapted to an instruction-following setting, for example
+by ﬁne-tuning on curated prompts and using reinforcement learning from human feedback
+(RLHF) to align outputs with human preferences[Ouyang et al. 2022]. This alignment step
+is particularly important in interactive applications, where unhelpful, unsafe, or misleading
+outputs would directly affect user trust and system usability .
+Despite their strengths, LLMs have well-known limitations that are relevant for this
+thesis. First, LLMs operate on a ﬁnite context window and therefore require careful selection
+and summarization of relevant information from the application state. Second, LLMs may
+produce plausible but incorrect statements (hallucinations), especially when asked for
+speciﬁc details that are not present in the provided context. Third, the probabilistic nature
+of generation can lead to variability in outputs, which is undesirable when the model is
+expected to initiate deterministic actions in a software tool. These limitations motivate
+architectural patterns that combine LLMs with external sources of truth and with structured
+interfaces for action execution.
+6
+
+[[page 13]]
+3.3. Model/Message Context Protocol (MCP)
+A common approach to mitigate these issues is to augment an LLM with tools and to
+interpret the model’s output not only as text but also as structured action requests. The
+literature increasingly describes such systems as agentic, i.e., systems in which an LLM
+can plan, decide when to call tools, and incorporate tool results into subsequent reasoning.
+The ReAct paradigm demonstrates that interleaving explicit reasoning traces with tool
+actions can improve effectiveness and interpretability , for example by allowing an LLM to
+retrieve information from an external API and to ground intermediate steps in veriﬁable
+evidence[Yao et al. 2022]. Complementary work such as Toolformer shows that language
+models can also be trained to decide when and how to use tools in a self-supervised
+manner, providing a scalable path towards tool-using behavior beyond hand-written
+prompting[Schick et al. 2023]. Retrieval-Augmented Generation (RAG) further formalizes
+the idea of combining parametric model knowledge with non-parametric memory , where a
+retriever provides relevant documents or records that the generator can condition on[Lewis
+et al. 2020].
+In the software engineering domain, LLMs have been applied to tasks ranging from
+code generation to documentation and explanation. Code-specialized models such as Codex
+are ﬁne-tuned on large code corpora and demonstrate strong performance on program
+synthesis benchmarks, while also raising questions about reliability , security , and the role of
+human oversight[Chen et al. 2021]. For this thesis, the relevance of these developments lies
+less in generating code and more in enabling natural language access to complex software
+artifacts and their architectural structure.
+3.3 Model/Message Context Protocol (MCP)
+Connecting an LLM-based assistant to an existing software tool requires two complemen-
+tary capabilities: (1) providing the model with relevant context about the current state of
+the tool, and (2) exposing a controlled set of actions that the model can trigger on behalf
+of the user. Recent ecosystems address this integration problem through standardization
+efforts and through application frameworks.
+The Model Context Protocol (MCP) is an open protocol proposed to standardize how
+LLM applications connect to external tools and data sources[Anthropic 2024]. MCP follows
+a client–server approach: MCP servers expose capabilities (e.g., tools, resources, prompts)
+and MCP clients consume them to provide an assistant with a consistent interface across
+heterogeneous backends. The motivation is comparable to the role of APIs in traditional
+software integration: rather than building ad-hoc connectors for every application, an
+assistant can rely on a shared protocol for discovery , invocation, and structured responses.
+While MCP is a powerful abstraction for integrating LLMs with backend services, it is
+less suitable as the primary integration mechanism for the browser-based frontend context
+considered in this thesis. The most important reason is the locality and volatility of UI state.
+In ExplorViz, key context such as the current selection, camera position, ﬁlters, and hovered
+entities exists and changes inside the frontend at interactive rates. Exposing this state via
+7
+
+[[page 14]]
+3. Foundations and Technologies
+an external MCP server would require continuous synchronization, careful event modeling,
+and additional latency . Moreover, typical MCP deployments assume a long-running host
+environment that can securely store credentials and provide access to privileged resources.
+In contrast, a browser frontend is a constrained environment where secrets should not
+be embedded and where running a server component locally is not feasible in the same
+way as in a desktop or backend setting. As a result, an MCP-based solution would either
+(a) push most integration logic to a backend, thereby losing direct access to ﬁne-grained
+UI state, or (b) introduce a complex bridging layer between backend tools and frontend
+interactions.
+3.4 CopilotKit
+For these reasons, the implementation in this thesis uses CopilotKit as a frontend-oriented
+integration layer[CopilotKit 2025a]. CopilotKit is a JavaScript/TypeScript library designed
+to build agentic user interfaces in React applications. Conceptually , it provides two prim-
+itives that map well to the needs of an in-app assistant: readables (structured context
+extracted from application state) and actions (typed functions the assistant can invoke).
+Compared to protocol-based approaches, CopilotKit aligns with the fact that the most
+relevant context and many of the actions are inherently UI-bound. Instead of exporting the
+entire frontend as an external service, the assistant is embedded into the application and
+can access state through explicit, developer-controlled interfaces.
+It is important to note that this contrast does not imply that MCP is inferior in general.
+Rather, the choice is driven by the deployment constraints and by where the authoritative
+state resides. MCP is well-suited when the assistant primarily needs access to backend
+resources (e.g., databases, ﬁles, CI pipelines) and when tools can be hosted safely in a
+trusted environment. CopilotKit, on the other hand, is a pragmatic ﬁt when the assistant is
+primarily expected to mediate interaction with a web-based UI and to operate on rapidly
+changing frontend state.
+3.5 Interaction Context and Visual Grounding
+Embedding a conversational assistant into an interactive visualization environment intro-
+duces a central challenge: the assistant must interpret user requests in context and must
+produce responses and actions that are grounded in the current visual and semantic state
+of the system. In practice, users rarely formulate fully self-contained requests; instead,
+they rely on shared context and deictic references (e.g., “zoom into this service” or “why
+is that component red?”). Supporting such interactions requires mechanisms for context
+management, reference resolution, and feedback.
+A key constraint is that LLMs do not have direct access to the visualization; they only op-
+erate on the information that is explicitly provided to them. Consequently , the system must
+8
+
+[[page 15]]
+3.5. Interaction Context and Visual Grounding
+decide which parts of the application state to serialize and include in the model prompt. In
+interactive systems, this state can be high-dimensional and continuously changing (camera
+pose, selections, ﬁlters, metric overlays, trace playback state). A naive approach—dumping
+large amounts of raw state into the prompt—does not scale due to context length limits and
+because it burdens the model with irrelevant details. Instead, effective integration requires
+curated context representations that emphasize stable identiﬁers, user-visible labels, and
+task-relevant attributes.
+In addition, conversational interfaces for visual exploration must address ambiguity
+and iterative reﬁnement. Prior work on natural language interfaces for visual analysis
+emphasizes that users often explore by asking partial questions and by reﬁning them based
+on system feedback. Systems such as DataTone explicitly study ambiguity management
+in natural language interaction, showing that clarifying questions and incremental dis-
+ambiguation are essential for usable interfaces[Gao et al. 2015]. Other research similarly
+demonstrates that natural language queries can be mapped to visualization operations,
+but also highlights the need to connect language to concrete visual encodings and inter-
+actions[Setlur et al. 2016]. These insights carry over to the ExplorViz context: mapping
+language to visualization actions is not only a technical problem but also an interaction
+design problem where the assistant must balance helpfulness with transparency and user
+control.
+Finally , the notion of visual grounding becomes particularly salient in 3D environments.
+Even when an assistant has access to the semantic model (e.g., the list of services and their
+metrics), it may still struggle to answer questions that depend on purely visual features
+(e.g., occlusion, spatial arrangement, or what is currently in view). One possible strategy is
+to provide screenshots or other rendered views to a multimodal model; another strategy
+is to represent the visible scene through structured descriptors (e.g., identiﬁers of visible
+entities, current camera parameters, and highlights). Both strategies have trade-offs in
+terms of cost, privacy , and interpretability . In this thesis, grounding is achieved primarily
+through structured application context and explicit UI actions, enabling the assistant to
+operate on the same conceptual objects as the user while keeping control over what the
+model can observe and manipulate. At the same time, established human-AI interaction
+guidelines suggest that such systems should make capabilities clear, provide meaningful
+feedback, and support recovery from errors (e.g., through undo or conﬁrmations) to sustain
+user trust[Amershi et al. 2019].
+9
+
+[[page 16]]
+
+
+[[page 17]]
+Chapter 4
+Related Work
+This chapter positions the contribution of this thesis within existing research at the in-
+tersection of software visualization, natural language interfaces, and LLM-based agentic
+systems. The focus is on work that (a) applies LLMs to software understanding tasks, (b)
+studies conversational interaction for analytical tools and visualizations, and (c) proposes
+mechanisms for connecting language models to external tools via structured actions and
+integration protocols.
+4.1 LLM Support for Software Understanding
+Recent advances in large language models have substantially broadened the scope of what
+can be addressed through natural language interaction in software engineering. LLMs can
+generate, transform, and explain code, and they can be used as conversational interfaces
+for navigating large code bases and associated artifacts such as documentation, tickets,
+or failing tests. A prominent example is Codex, a GPT-style model ﬁne-tuned on code,
+which is evaluated on program synthesis tasks and demonstrates that LLMs can capture
+non-trivial programming patterns while also exposing new risks and limitations.[Chen
+et al. 2021]
+Beyond generation, multiple works investigate LLMs speciﬁcally for code understanding
+and developer support. Nam et al. summarize opportunities and challenges for LLM-based
+code understanding and emphasize that useful explanations must be grounded in project-
+speciﬁc context and must be evaluated beyond surface-level plausibility .[Nam et al. 2024]
+Lehtinen et al. discuss “Ask-Your-Programs” as a paradigm in which users query program
+behavior conversationally; they highlight both technical requirements (access to program
+state and behavior) and interaction challenges (how users formulate questions and interpret
+answers).[Lehtinen et al. 2024] These code understanding capabilities are especially relevant
+in the ExplorViz context, because the underlying data model of the 3D city landscape
+is based on the Java programming language, thus making code-related questions and
+explanations a natural use case for the assistant.
+In parallel, research increasingly considers agentic approaches in which an LLM is
+augmented with tools (e.g., search, retrieval, execution, static analysis) and operates in
+an iterative loop. A survey on LLM-based agents for software engineering categorizes
+a growing body of work and outlines trends such as tool-augmented workﬂows, multi-
+11
+
+[[page 18]]
+4. Related Work
+agent collaboration, and human-in-the-loop designs.[ Large Language Model-Based Agents
+for Software Engineering: A Survey ] These directions are relevant because they suggest that
+effectiveness often depends less on a single monolithic model and more on how the model
+is embedded into an environment that provides tools and feedback.
+A recurring technical theme is that useful software understanding requires context that
+is often not present in the model parameters. Retrieval-augmented generation (RAG) is
+one approach to inject relevant external information into the prompt and thereby improve
+factuality and provenance.[Lewis et al. 2020] Tool-use paradigms such as ReAct demonstrate
+that interleaving reasoning and tool calls can reduce hallucination and make agent behavior
+more interpretable, because intermediate tool results can be inspected and can ground
+subsequent reasoning.[Yao et al. 2022] For interactive software tools, these ideas translate
+into a practical design principle: the assistant should rely on explicit system state and tool
+feedback whenever possible, rather than inferring details from natural language alone.
+Recent work in software visualization also explores LLMs not only as text-based
+assistants but as components of interactive visual environments. Brown and Mulder extend
+an immersive VR platform for binary reverse engineering with an LLM agent that can query
+analysis tools, answer technical questions, and dynamically generate 3D visualizations
+such as call graphs. Their study reports that the quality of generated visualizations varies
+widely , illustrating the risks of relying on unconstrained generative output for visualization
+construction.[Brown and Mulder 2025]
+Compared to this body of work, the contribution of this thesis is situated at a different
+abstraction level. Instead of focusing on code editing or repository-wide question answering,
+this thesis integrates an assistant into an interactive visualization tool and studies support
+for visual exploration and runtime-oriented understanding tasks. This shifts the emphasis
+from purely textual artifacts to a hybrid context that includes structural information and
+the user’s ongoing interaction state.
+4.2 Conversational Interfaces and Visual Analytics
+Natural language interfaces have long been studied as a way to lower the interaction barrier
+for analytical tools. In visual analytics, language can complement direct manipulation by
+allowing users to express high-level intent (“compare these two services”) while the system
+performs low-level interaction steps (ﬁltering, grouping, zooming). The classic “information
+seeking mantra”—“overview ﬁrst, zoom and ﬁlter, then details on demand”—captures an
+interaction style that is common in exploratory analysis and highlights why conversational
+interfaces must be designed to support both overview and detail.[Shneiderman 1996]
+Several systems demonstrate how natural language can be integrated with interactive
+visualization. DataTone investigates how ambiguity arises in natural language interfaces
+and proposes interaction techniques for disambiguation and iterative reﬁnement.[Gao et al.
+2015] Eviza presents a natural language interface for visual analysis that translates user
+utterances into interactive operations on a visualization, supports follow-up queries, and
+12
+
+[[page 19]]
+4.3. Tool-Using Agents and Protocol-Based Integrations
+enables users to adjust interpretations.[Setlur et al. 2016] While these works target data
+visualization rather than software landscapes, they provide transferable insights: language-
+based commands rarely map to a single deterministic operation, and usable systems often
+need clariﬁcation strategies and intermediate feedback.
+Conversational interaction further introduces requirements regarding continuity and
+trust. Users ask follow-up questions that refer to prior context (“now compare it to the
+previous one”) and expect the system to maintain conversational state. At the same time,
+users need to understand what the system did and why , especially when the interface
+triggers changes to a visualization or executes actions.[Amershi et al. 2019]
+This interplay of conversational guidance and interactive exploration is also addressed in
+gamiﬁed software comprehension tools. HeapKeep frames codebase exploration as an RPG
+and introduces an LLM-powered non-player character (NPC) that accompanies the player
+and answers code-related queries, providing a concrete example of how conversational
+support can be embedded into a visual exploration workﬂow.[Bissett et al. 2025]
+In software visualization, the city metaphor has been explored as a way to support com-
+prehension of large systems by mapping software artifacts to urban structures.[Wettel and
+Lanza 2007] ExplorViz extends this line of work towards distributed systems and runtime
+analysis by integrating structural cities with live tracing and monitoring data.[Fittkau et al.
+2017; Hasselbring et al. 2020] Related work on monitoring-oriented 3D cities emphasizes
+continuous updates and metric overlays as a means to provide operational insight at a
+glance.[Krause et al. 2021] These works provide the visualization foundation on which this
+thesis builds.
+This thesis contributes to this direction by integrating natural language interaction
+directly into a 3D software city visualization and by focusing on usability . The assistant is
+designed to support exploratory tasks without replacing direct manipulation: it comple-
+ments the visualization by providing explanations, suggestions, and by executing repetitive
+interaction steps through high-level commands. This positions the work between conversa-
+tional analytics systems (which map language to visualization operations) and software
+visualization research (which provides the structural and runtime models).
+4.3 T ool-Using Agents and Protocol-Based Integrations
+The last years have seen a rapid evolution from “chat-only” LLM applications towards
+tool-using and agentic systems. ReAct formalizes the idea of interleaving reasoning and
+acting, enabling an LLM to call tools when needed and to ground its conclusions in
+tool results.[Yao et al. 2022] Toolformer provides complementary evidence that language
+models can be trained to decide when to call tools and how to incorporate tool outputs into
+generation.[Schick et al. 2023] Together with retrieval-based techniques such as RAG,[Lewis
+et al. 2020] these approaches motivate the architecture pattern used in many assistant
+systems: the model proposes structured tool calls, tools return results, and the model
+produces ﬁnal natural language responses grounded in those results.
+13
+
+[[page 20]]
+4. Related Work
+At the integration level, a central challenge is to expose tools and context in a manner
+that is expressive, composable, and safe. Protocol approaches such as the Model Context
+Protocol (MCP) propose uniform interfaces for connecting LLM applications to external
+tools and resources.[Anthropic 2024] Such protocols are particularly attractive when an
+assistant needs to interact with heterogeneous backends (ﬁles, repositories, services),
+because they decouple the assistant from the concrete implementation details of individual
+tool providers. In contrast, application frameworks such as CopilotKit focus on embedding
+assistants directly into user interfaces, providing primitives for application state (readables)
+and typed actions that can be invoked from a conversational interface.[CopilotKit 2025a]
+For the frontend-centered scenario of this thesis, this UI-oriented approach reduces the
+need for additional infrastructure and enables tight coupling between the assistant and the
+rapidly changing visualization state.
+A recurring theme in the literature is reliability and user trust. Tool use can reduce
+hallucinations by grounding responses in external evidence, but it also introduces failure
+modes: tools may fail, results may be incomplete, and the model may select inappropriate
+actions. Human–AI interaction guidelines emphasize that systems should make uncer-
+tainties visible, support user control, and enable recovery from mistakes.[Amershi et al.
+2019] For the design in this thesis, these considerations translate into constraining the
+assistant to a well-deﬁned set of UI actions, validating action parameters against the current
+system model, and ensuring that users can always override or correct the assistant’s actions
+through direct interaction with the visualization.
+14
+
+[[page 21]]
+Chapter 5
+System Design
+This chapter describes the system design of the LLM-based assistant integrated into the
+ExplorViz frontend. The goal is to explain the architecture-level decisions that shape
+where responsibilities are placed (frontend vs. backend), how the assistant is connected to
+application state, and which mechanisms keep assistant-triggered behavior transparent and
+controllable for the user. The design is presented with an explicit focus on trade-offs and
+quality attributes, because the integration extends an existing interactive 3D visualization
+system where responsiveness and user trust are central.
+5.1 Design Goals and Constraints
+5.1.1 Functional Goals
+The assistant is designed to support the goals deﬁned in Chapter 2. However, system
+design requires a higher level of abstraction than the goal list. The functional goals can be
+grouped into four capability clusters:
+Conversational information access (G1). The assistant should answer questions about Ex-
+plorViz concepts and about the current session state (e.g., which landscape and appli-
+cation is loaded, which elements are selected, and which metrics or relationships are
+visible). This capability requires access to domain objects and identiﬁers that exist in
+ExplorViz, as well as a mechanism to provide a compact but reliable snapshot of that
+state to the model.
+Interaction mediation in the UI (G2). The assistant should be able to bridge from a high-level
+natural language intent to concrete UI operations such as highlighting entities, focusing
+the camera, opening tool panels, or applying ﬁlters. This capability implies that the
+integration must expose a controlled set of UI actions that are (i) deterministic, (ii)
+parameterizable, and (iii) aligned with existing ExplorViz interaction semantics.
+Guided workﬂows and onboarding (G4). The assistant should not only execute actions, but also
+guide users through multi-step procedures (e.g., “open the entity ﬁltering panel and
+ﬁlter by . . .”) and adapt explanations to the user’s local context. From an architectural
+standpoint, this cluster requires that the assistant can both observe relevant UI state
+(e.g., which panel is open) and change that state in small, composable steps.
+15
+
+[[page 22]]
+5. System Design
+Architecture improvement suggestions and editing (G3). The assistant should support archi-
+tecture and runtime comprehension by identifying potentially relevant structures or
+communication patterns and by proposing improvement ideas. Beyond that, it should
+be able to apply selected improvements inside ExplorViz by invoking structural editing
+operations on the currently loaded landscape. The assistant should always provide
+rationale for its decisions and edits, even when not explicitly asked to. It then executes
+bounded edits (e.g., add an application/module, add classes, remove components), and
+makes the resulting changes visible and reversible through undo/redo. This positions
+the assistant as a decision-support tool rather than an autonomous refactoring system.
+Across all clusters, a key design implication is that the assistant cannot be treated as a
+separate application. Meaningful behavior depends on the current ExplorViz session and
+must therefore be embedded into the same runtime context as the visualization.
+5.1.2 Non-Functional Requirements
+In addition to functionality , the integration is shaped by non-functional requirements that
+are typical for interactive, visualization-heavy applications:
+Low-friction interaction. The assistant must be available as an additional interaction modality
+without forcing a context switch to external tools. This motivates an in-app UI integra-
+tion that reuses established ExplorViz interaction surfaces (sidebars, panels) instead of
+introducing a separate window or workﬂow.
+T ransparency and user control. Assistant-triggered actions must be visible and attributable:
+users should be able to understand what was executed, and the assistant should not
+perform hidden state changes. This requirement motivates explicit tool-call visualization
+in the UI and a strict separation between free-form text generation and structured action
+execution.
+Reversibility of side effects. Whenever the assistant triggers actions that modify the visual-
+ization state, the resulting changes should be undoable using the same mechanisms
+as manual interaction (e.g., undo/redo where available). Architecturally , this favors
+reusing existing interaction logic and state transitions, because it keeps all changes
+within a single history model.
+Performance and responsiveness. The assistant must not noticeably degrade interaction re-
+sponsiveness or rendering performance. Two aspects are critical: (i) prompt context
+must remain compact to avoid expensive serialization and network overhead, and (ii)
+chat interaction and tool execution must not block the responsiveness of the rest of the
+application. This requirement motivates a design based on compact summaries plus
+on-demand queries instead of transmitting full landscape structures by default.
+16
+
+[[page 23]]
+5.2. Architecture Overview
+Privacy and security. The assistant integration must not leak secrets (e.g., provider API keys)
+to the browser and should minimize the amount of potentially sensitive system data
+sent to the model. This motivates a dedicated backend service for provider access and a
+frontend context strategy that is selective and purpose-driven.
+5.1.3 Constraints and Assumptions
+Several constraints follow directly from the fact that ExplorViz is a browser-based, React-
+driven 3D visualization:
+Ź Frontend as system of record: The authoritative session state (selection, camera, ﬁlters,
+panel visibility) resides in the frontend and changes at interactive rates. The integration
+must therefore access state locally and cannot assume that a backend has an always-
+consistent copy .
+Ź Context window and cost limits: LLM requests have ﬁnite context windows and
+incur cost and latency that scale with prompt size. The design must control the size
+of transmitted context and avoid sending full, deeply nested landscape data unless
+explicitly required.
+Ź Asynchronous and reactive state updates: Rendering and UI state changes are event-
+driven and may involve animations, debounced updates, and collaboration events. Tool
+execution must be compatible with asynchronous state transitions and must return
+meaningful feedback when an action cannot be applied in the current state.
+Ź T rust boundary of model output: Model responses are probabilistic and may be in-
+correct. The integration must treat model output as untrusted input, i.e., validate
+parameters, constrain capabilities, and surface failures rather than silently applying
+unsafe operations.
+5.2 Architecture Overview
+The assistant extends ExplorViz through a client–server architecture in which the frontend
+remains responsible for visualization and interaction, while a separate backend service
+mediates access to external LLM providers. CopilotKit is used as the integration framework
+to connect a conversational interface to structured frontend state (resources/readables)
+and to a constrained set of deterministic frontend operations (actions/tools). This section
+describes the architecture through three complementary perspectives: (1) frontend embed-
+ding and interaction surfaces, (2) the context/action boundary that isolates the LLM from
+direct UI control, and (3) backend service responsibilities and deployment topology .
+17
+
+[[page 24]]
+5. System Design
+ ExplorViz frontend
+ (react app)
+ existing features
+ (3D context, UI, stores, ...)
+ CopilotKit integration 
+ (resources + actions)
+ AI chat service
+ (CopilotKit runtime + providers)
+OpenAI
+state
+/providers
+ /copilot (GraphQL)
+Anthropic
+Google
+tool calls
+LLM API Calls
+Figure 5.1. Component diagram of the assistant integration in ExplorViz. The CopilotKit module
+in the React frontend reads visualization and UI state from existing ExplorViz features and issues
+deterministic tool calls back into them. A dedicated AI chat service exposes /providers and the
+CopilotKit runtime endpoint /copilot (GraphQL) and forwards requests to external LLM providers
+(e.g., OpenAI, Anthropic, Google).
+Component diagram. Figure 5.1 separates the assistant integration into frontend and
+backend responsibilities. In the frontend, CopilotKit acts as a mediator: it (i) turns selected
+session state into read-only resources that are attached to chat requests and (ii) maps model-
+triggered tool calls to existing ExplorViz interaction logic (e.g., highlighting entities or
+moving the camera). In the backend, the AI chat service encapsulates provider credentials
+and a uniform interface for multiple LLM APIs; it provides the provider list used by the UI
+and hosts the CopilotKit runtime endpoint that implements the chat/tool-call protocol.
+18
+
+[[page 25]]
+5.2. Architecture Overview
+5.2.1 Frontend Embedding and Interaction Surfaces
+The assistant is embedded into the existing ExplorViz user interface rather than provided
+as a separate overlay , as can be seen in Figure 5.2. Concretely , it is integrated into the
+customization sidebar, which already hosts conﬁguration- and tool-oriented panels. This
+placement supports the low-friction requirement: users can ask questions and trigger
+actions without leaving the visualization context or learning a new interaction model.
+From an architectural perspective, the frontend has three roles:
+Ź User-facing interaction: rendering the chat UI, provider/model selection, and visual
+feedback for assistant-triggered actions;
+Ź Access to authoritative state: reading current visualization and UI state from the same
+stores and contexts that drive manual interaction;
+Ź Deterministic action execution: applying tool calls by mapping them to existing Ex-
+plorViz interaction mechanisms (highlighting, camera control, ﬁltering, editing).
+A central design decision is that tool execution happens inside the frontend. This avoids
+a fragile replication of UI semantics in a backend and ensures that actions operate on the
+same state representation as the rest of ExplorViz. It also aligns with the constraint that
+much relevant state (e.g., hovered entities or currently opened panels) is not meaningfully
+available outside the browser runtime.
+To sustain user trust, assistant-triggered behavior is surfaced at two levels: (1) within
+the chat UI through tool-call status cards that indicate what was executed and whether it
+succeeded, and (2) within the 3D view through lightweight visual cues (e.g., pings/high-
+lights) that connect textual references to spatial objects. This dual feedback intuitively
+connects the conversational output with a dense visual scene. The ping animation can also
+be re-triggered by clicking the magnifying glass button in the tool-call card.
+5.2.2 CopilotKit Boundary: Context Resources and Action T ools
+The architectural core of the integration is a strict boundary between the stochastic LLM
+and the deterministic ExplorViz frontend. CopilotKit provides this boundary through two
+explicit mechanisms:
+Ź Resources/readables: structured, read-only context derived from the current session
+state;
+Ź Actions/tools: a ﬁxed set of typed operations that can be invoked by the assistant and
+are implemented deterministically in the frontend.
+This separation is essential for transparency and control. Instead of granting the model
+general UI control, the model can only request actions from a curated tool set. Each tool
+19
+
+[[page 26]]
+5. System Design
+Figure 5.2. Screenshot of the assistant chat UI embedded in the ExplorViz settings sidebar. The
+conversation shows a user request, an assistant response, and two tool-call status cards indicating that
+the assistant moved the camera to and highlighted an application in the 3D view. The highlighted
+application is visually indicated in the city landscape, as the screenshot was taken during the ping
+animation.
+is documented with a purpose, a parameter schema, and a constrained side-effect scope.
+Architecturally , the tool set functions as an explicit provided interface of the assistant
+subsystem, and it deﬁnes what is and is not possible for the model to do.
+Context strategy: compact by default, expandable on demand. A naive context strategy
+would serialize the full landscape and UI state into every prompt. In ExplorViz, this is
+infeasible: landscapes can become large and deeply nested, and many ﬁelds are irrelevant
+for a given request. Therefore, the design provides compact summaries (e.g., the list of
+available applications, selected entity identiﬁers, current view conﬁguration) as default
+context and complements this with on-demand access. When additional detail is required,
+the model can invoke dedicated query tools to retrieve targeted subsets of landscape data.
+This resembles a retrieval pattern inside the application: the prompt stays small unless the
+current request warrants deeper inspection.
+Action design: small, composable, and validated. Tools are designed to be composable,
+enabling multi-step workﬂows without requiring monolithic “do everything” actions. For
+20
+
+[[page 27]]
+5.2. Architecture Overview
+example, opening a panel and applying a ﬁlter are separate steps; this yields clearer
+feedback and reduces the risk that the model triggers a large unintended state change.
+Because model output is treated as untrusted input, tool handlers validate parameters
+against the current frontend model (e.g., whether an entity identiﬁer exists in the current
+landscape). If validation fails, the tool returns an error result that is surfaced to the user,
+rather than attempting heuristic corrections that could lead to surprising behavior.
+Side-effect management and reversibility. Where tools change state, the preferred design
+is to reuse existing state transitions and history mechanisms (undo/redo) instead of adding
+assistant-speciﬁc shortcuts. This keeps assistant-triggered modiﬁcations within the same
+user mental model as manual interaction and reduces architectural complexity by avoiding
+parallel state management.
+5.2.3 AI Chat Service and Deployment T opology
+A dedicated backend service is introduced as part of the architecture, even though the
+assistant is embedded in the frontend. This service exists for two main reasons: (1) ex-
+ternal LLM providers require credentials that must not be shipped to the browser, and
+(2) provider/model conﬁguration should be changeable independently of the frontend
+deployment.
+In the reference deployment, the frontend communicates with the service via two HTTP
+endpoints:
+Ź /providers, which returns the list of available model providers and models for UI
+selection,
+Ź /copilot, which implements the CopilotKit runtime endpoint used to process chat
+requests and tool-call exchanges.
+The endpoints are reverse-proxied through the existing ExplorViz web server conﬁgura-
+tion, resulting in a same-origin setup from the browser perspective. This reduces CORS
+complexity and keeps deployment aligned with the existing multi-service architecture of
+ExplorViz.
+5.2.4 End-to-End Interaction Flow
+At runtime, a user request typically follows the sequence below:
+1. The user enters a message in the in-app chat UI.
+2. The frontend sends the message together with the current set of CopilotKit resources
+(context snapshot) to the backend runtime endpoint.
+21
+
+[[page 28]]
+5. System Design
+3. The backend forwards the request to the selected LLM provider and returns either (a) a
+direct answer or (b) a structured tool-call request.
+4. If a tool call is requested, the frontend executes the corresponding action locally , validates
+parameters, and produces a typed tool result.
+5. The tool result is sent back to the backend so that the model can incorporate it into a
+grounded response.
+6. The ﬁnal assistant response is rendered in the chat UI together with the tool-call status
+cards.
+This interaction loop makes the assistant’s behavior inspectable: both the invoked
+tools and their outputs are explicit artifacts in the conversation UI. It also ensures that
+the frontend remains the authoritative executor of UI actions, which avoids duplicating
+UI logic in the backend and keeps assistant-triggered behavior consistent with manual
+interaction.
+Sequence diagram. Figure 5.3 details the interaction loop described above. After the
+initial request to /copilot, the backend streams partial response chunks to the frontend,
+which enables incremental UI updates while the model is still generating. Whenever the
+model emits a tool call, the tool name and each of its arguments are streamed separately;
+the frontend updates a tool status card, executes the corresponding handler locally , and
+sends the tool result back so that generation can continue with grounded information.
+22
+
+[[page 29]]
+5.2. Architecture Overview
+Frontend
+stream argument chunks
+Chatbot Service
+select provider
+and call CopilotKit
+runtime
+for each tool call
+end generating response
+LLM APIUser
+enter chat message POST /copilot
+(resources + messages)
+loop for each response chunk
+response chunkappend chunk to
+displayed response
+start generating response
+process messages
+update UI (thinking)
+loop
+add/update tool card
+call tool handler
+finished streaming
+read complete response
+return handler result
+update UI (complete)
+append result as message
+Figure 5.3. Sequence diagram of the end-to-end chat interaction, including streaming responses and
+tool-call execution. The frontend sends a chat message to POST /copilot (GraphQL); the chat service
+selects the conﬁgured provider and calls the LLM API. Response chunks are streamed back to update
+the UI, while tool calls are streamed as argument chunks, visualized as tool cards, and executed
+locally in the frontend before generation completes.
+23
+
+[[page 30]]
+
+
+[[page 31]]
+Chapter 6
+Implementation
+This chapter documents the concrete implementation of the assistant integration in the
+ExplorViz frontend. The goal of the implementation is not to introduce a parallel interaction
+stack, but to expose existing ExplorViz capabilities—such as highlighting, navigation,
+ﬁltering, and in-memory editing—through CopilotKit’s resource and action interfaces.
+Accordingly , the implementation can be read as a thin integration layer that binds three
+subsystems: (i) the CopilotKit runtime and chat UI, (ii) the ExplorViz state and interaction
+primitives (Zustand stores and UI panels), and (iii) the editing subsystem with undo/redo
+support.
+6.1 Implementation Map and Modiﬁed Artifacts
+The assistant integration was implemented as a small, cohesive module under
+src/components/chatbot, complemented by targeted adaptations in existing visualization
+and sidebar components. Table 6.1 provides a code-oriented map of the most relevant
+implementation artifacts and their responsibilities.
+T able 6.1.Implementation artifact map for the assistant integration.
+File / component Responsibility and key implementation details
+browser-rendering.tsx Integration point in the visualization tree. Wraps
+the existing rendering UI with <EditingProvider>
+and <ChatbotProvider>, forwards sidebar state
+(showToolsSidebar, showSettingsSidebar) and the
+currently opened sidebar components, and wires
+controller refs for existing panels (Entity Filtering and
+Application Search).
+chatbot-context.tsx Deﬁnes ChatbotContext and implements
+ChatbotProvider. Fetches available providers/mod-
+els from /providers (based on VITE_COPILOT_SERV_URL),
+persists selections in localStorage, exposes landscape
+data and UI state to the rest of the frontend, and renders
+transient screen-level pings for spatial grounding.
+25
+
+[[page 32]]
+6. Implementation
+File / component Responsibility and key implementation details
+chatbot-chat.tsx Chat UI wrapper around CopilotChat. Provides
+ExplorViz-speciﬁc system instructions and enables im-
+age uploads for vision-capable models.
+copilot-resources.tsx Registers Copilot readables (context resources). Ex-
+poses a compact application summary , interaction state
+(highlighted/hovered/closed/removed IDs), undo/redo
+availability , visualization settings (current and default),
+and sidebar state.
+copilot-tools.tsx Registers Copilot actions (tools). Implements demand-
+driven landscape retrieval ( query-landscape-data), UI
+control for sidebars/panels, delegation to existing search
+and ﬁltering panels via controller refs, visualization set-
+tings updates, structural editing actions (add/remove
+plus undo/redo), and visual grounding tools (screenshot
+capture and screen click simulation).
+tool-call-card.tsx Renders tool execution feedback inside the chat UI, in-
+cluding status messaging, error highlighting, and click-
+able affordances for locating affected entities (3D ping
+or information popup).
+ping-indicator.tsx and _cha
+tbot.scss
+Implements a short-lived screen overlay ping (CSS-
+animated) used to visually conﬁrm click targets and
+other screen-space actions.
+provider-dropdown.tsx and
+model-dropdown.tsx
+User-facing selection of provider and model. Provider
+switching validates the current model selection and re-
+sets the chat conversation to avoid mixed-model histo-
+ries.
+study-download-button.tsx Exports a structured JSON snapshot for the user study:
+model/provider selection, full chat messages, a land-
+scape snapshot/summary , and a serialized snapshot of
+the Copilot-readable context and visualization settings.
+editing-context.tsx and la
+ndscape-structure-helpers.t
+s
+Extends the editing subsystem to accept structured
+class deﬁnitions ( SimpleClass) with optional method
+stubs and integrates assistant edits into the history (un-
+do/redo) mechanism.
+application-search.tsx Adds an imperative controller interface ( forwardRef
++ useImperativeHandle) so the assistant can trigger
+searches and selections through the existing Applica-
+tion Search UI logic.
+26
+
+[[page 33]]
+6.2. Integration in the Rendering Tree
+File / component Responsibility and key implementation details
+entity-filtering.tsx Adds controller interfaces to Entity Filtering and its sub-
+components (trace start, trace duration, class method
+count), allowing tools to set threshold sliders program-
+matically without duplicating ﬁlter semantics.
+default.conf.template and
+variable-substitute.sh
+Deployment wiring. Adds reverse-proxy routes for
+/providers and /copilot and extends runtime substi-
+tution.
+index.ts (chatbot service) Copilot runtime service entry point. Conﬁgures Ex-
+press and CORS, exposes /providers for provider/-
+model discovery , and routes /copilot requests to
+the appropriate CopilotKit service adapter based on
+x-explorviz-provider and x-explorviz-model.
+providers.ts (chatbot service) Provider/model registry for the Copilot runtime ser-
+vice. Conditionally registers providers based on conﬁg-
+ured API keys and constructs per-model service adapters
+(OpenAI/Google/Anthropic) from an explicit allowlist.
+The upstream ExplorViz frontend is developed publicly 1. The chatbot backend service
+used for this thesis is implemented separately 2 as a small Node.js/Express backend (Sec-
+tion 6.4). The remainder of this chapter follows the runtime data ﬂow from the visualization
+tree entry point, through the assistant provider and context resources, to the action layer
+that binds tool calls to ExplorViz behavior.
+6.2 Integration in the Rendering T ree
+The assistant must be able to (i) read the current landscape state, (ii) trigger existing
+interactions, and (iii) participate in the same editing/history context as the manual UI.
+For that reason, the integration is anchored in the visualization rendering component
+browser-rendering.tsx, where the existing rendering subtree is wrapped as:
+<EditingProvider>
+<ChatbotProvider ...>
+...rendering subtree...
+</ChatbotProvider>
+</EditingProvider>
+This placement has three practical consequences.
+1https://github.com/ExplorViz/frontend
+2https://github.com/ExplorViz/ai-chat-serivce
+27
+
+[[page 34]]
+6. Implementation
+First, assistant-triggered edits and (in the future implemented) manual edits are uniﬁed
+because they go through the same EditingContext instance.
+Second, all tool handlers run in a scope where the relevant Zustand stores are already
+available, which enables the tool layer to call the same primitives that the UI uses (e.g.,
+useVisualizationStore() and useCameraControlsStore()).
+Third, if the user navigates back to the list of available landscapes, the browser rendering
+component and therefore the chatbot provider are unmounted. This resets the chat and all
+provided context, which is repopulated, when a new landscape is selected.
+The browser rendering component also acts as the bridge between the assistant and
+existing sidebar panels. It creates refs for the Entity Filtering and Application Search
+controllers and passes them into ChatbotProvider. Those refs are then used by tool handlers
+to drive the corresponding UI panel logic (Section 6.8). This approach keeps the ownership
+of panel state inside the original components, while exposing only a minimal imperative
+surface for automation.
+For screenshot support, canvas-wrapper.tsx sets the preserveDrawingBuffer ﬂag on the
+@react-three/fiber canvas. Without this, screenshots taken from the DOM may capture
+an empty or partially rendered WebGL buffer, depending on the browser and GPU driver
+behavior.
+6.3 Chatbot Provider: Runtime Conﬁguration and Context
+Contract
+6.3.1 Responsibilities of ChatbotProvider
+The central integration component is ChatbotProvider in chatbot-context.tsx. It encapsu-
+lates all assistant-speciﬁc runtime wiring and exposes a typed ChatbotContext to the rest
+of the frontend. In implementation terms, this component provides a single contract that
+other modules can rely on, rather than spreading assistant state across unrelated parts of
+the codebase.
+The provider has four closely related responsibilities.
+First, it conﬁgures CopilotKit by embedding the visualization subtree in a <CopilotKit>
+wrapper. The Copilot runtime endpoint is derived from import.meta.env.VITE_COPILOT_-
+SERV_URL (copilotUrl) and is expected to provide both the tool runtime endpoint ( /copilot)
+and a provider discovery endpoint ( /providers). In production, these routes can be reverse-
+proxied by nginx to keep the assistant trafﬁc under the same origin (Section 6.4).
+Second, it performs provider and model discovery . On mount, the provider fetches
+${copilotUrl}/providers and stores the resulting list of providers (and their models) in
+local React state. Selections are persisted via localStorage using the keys explorviz-copil
+ot-provider and explorviz-copilot-model . On startup, ChatbotProvider attempts to restore
+these persisted selections; if a persisted value is no longer valid (e.g., the provider was
+28
+
+[[page 35]]
+6.4. Copilot Runtime Service
+removed), the implementation falls back to the ﬁrst available provider/model. This selection
+logic is implemented directly in the fetch resolution branch in chatbot-context.tsx.
+Third, the provider exposes assistant-relevant UI state. Rather than duplicating sidebar
+state, ChatbotProvider receives the current sidebar visibility and active panel selection as
+props from browser-rendering.tsx and re-exports these values (and setters) via the chatbot
+context. This design ensures that there remains a single source of truth for whether the tool
+sidebar or settings sidebar is open, while still allowing tools to change that state through
+context setters.
+Fourth, it implements screen-space pinging for spatial grounding. The method pingScre
+enAtPoint(x,y) stores the click position in local state and renders a PingIndicator overlay
+for a ﬁxed time window (3 s). This overlay is used by tools that operate on the GUI outside
+the 3D scene (notably the click simulation tool) to provide immediate, visible feedback
+about the selected screen coordinate.
+6.3.2 Connection and availability semantics
+The integration intentionally keeps connectivity semantics simple. The only explicit health
+signal that is currently implemented is the initial provider discovery request to /providers;
+the code does not implement an independent, periodic health check loop. Consequently ,
+service availability is surfaced implicitly: if /providers fails or returns an empty provider
+list, the provider/model dropdowns remain unpopulated and tool calls cannot be executed
+meaningfully . This behavior is preferable to guessing availability state in the frontend
+and allows connection-related errors to propagate through the same mechanisms as other
+network failures.
+6.4 Copilot Runtime Service
+While CopilotKit provides the client-side integration layer in the ExplorViz frontend,
+the actual LLM calls and the tool runtime are executed by a backend service. In this
+implementation, the service acts as a lightweight gateway that (i) hosts the CopilotKit
+runtime endpoint, (ii) keeps provider credentials server-side, and (iii) exposes a discovery
+API so the frontend can offer a provider/model dropdown without hardcoding availability .
+The service is implemented in TypeScript using Express, with the entry point in index.ts
+and the provider registry in providers.ts.
+6.4.1 HTTP interface
+The service exposes two routes: a discovery endpoint ( /providers) and the Copilot run-
+time endpoint ( /copilot). Table 6.2 summarizes the external contract as consumed by
+ChatbotProvider (Section 6.3).
+29
+
+[[page 36]]
+6. Implementation
+T able 6.2.Copilot service HTTP interface.
+Path V erb Inputs Outputs and semantics
+/providers GET No parameters. Availabil-
+ity depends on conﬁg-
+ured API keys.
+Returns {providers: [{id,
+name, models: [{id, name}]}]} .
+The response intentionally ex-
+poses only metadata; credentials
+and adapter conﬁguration stay
+server-side.
+/copilot CopilotKit
+client
+HTTP
+requests
+(typically
+POST)
+HTTP request body as
+produced by the Copi-
+lotKit client, plus two
+custom selection headers:
+x-explorviz-provider
+and x-explorviz-model.
+Routes the request to the Copi-
+lotKit runtime handler created
+with the selected service adapter.
+If the header combination can-
+not be resolved to a known
+adapter, returns 400 with {error:
+"Invalid provider or model."} .
+The route implementation uses app.use(’/copilot’, ...) rather than a method-speciﬁc
+handler, which keeps the service compatible with CopilotKit’s runtime HTTP semantics
+without duplicating verb logic.
+6.4.2 Provider registry and adapter construction
+The selectable providers and models are deﬁned in providers.ts as an in-memory registry
+(providers: Provider[] ). The registry is constructed at startup and is environment-driven:
+each provider entry is appended only if its corresponding API key is present in the conﬁg-
+uration module env (exported values openaiApiKey, googleApiKey, anthropicApiKey). This
+design yields two practical properties. First, the discovery response automatically reﬂects
+the capabilities of a deployment (e.g., a local instance may only show OpenAI if only
+openaiApiKey is conﬁgured). Second, the runtime routing logic can validate provider/-
+model selections deterministically against the same registry that populated the frontend
+dropdowns.
+For each provider, the implementation deﬁnes an explicit model allowlist and con-
+structs a CopilotKit service adapter instance per model. OpenAI models are wrapped
+with OpenAIAdapter (backed by the ofﬁcial OpenAI SDK client), Google models use
+GoogleGenerativeAIAdapter, and Anthropic models use AnthropicAdapter (backed by @ant
+hropic-ai/sdk ). Table 6.3 summarizes the provider entries and the currently whitelisted
+model identiﬁers.
+30
+
+[[page 37]]
+6.4. Copilot Runtime Service
+T able 6.3.Provider registry entries constructed in providers.ts.
+Provider id Adapter type Activation Model allowlist (ids)
+openai OpenAIAdapter
+(OpenAI SDK
+client)
+Conﬁgured if
+openaiApiKey is
+present
+gpt-5, gpt-5-mini, gpt-4.1,
+gpt-4.1-mini, gpt-4o, gpt-4o-mini
+google GoogleGenerativeAI
+Adapter
+Conﬁgured if
+googleApiKey is
+present
+gemini-3-pro-preview,
+gemini-2.5-pro, gemini-2.5-flash,
+gemini-2.5-flash-lite
+anthropic AnthropicAdapter
+(Anthropic SDK
+client)
+Conﬁgured if
+anthropicApiKey
+is present
+claude-sonnet-4-5,
+claude-haiku-4-5,
+claude-opus-4-5, claude-opus-4-1
+From the frontend perspective, the id values in this table are part of the wire protocol:
+ChatbotProvider persists them in localStorage and the CopilotKit client sends them back
+to the service as x-explorviz-provider and x-explorviz-model headers.
+6.4.3 Runtime request routing
+The service entry point index.ts creates a single CopilotRuntime instance at process startup
+and reuses it across requests. Routing is implemented inside the /copilot middleware:
+the handler resolves the provider from req.headers[’x-explorviz-provider’] and then
+resolves the model from req.headers[’x-explorviz-model’] . The matched model entry
+supplies a concrete serviceAdapter, which is passed into copilotRuntimeNodeHttpEndpoint.
+If resolution fails, the service responds with a 400 error. This explicit validation is important
+because it prevents arbitrary model identiﬁers from reaching upstream providers and
+makes the runtime behavior predictable for study setups.
+Because the endpoint factory copilotRuntimeNodeHttpEndpoint({... }) requires the
+adapter as a parameter, the middleware creates the concrete handler only once the model
+has been selected. The resulting handler is then invoked with the original req and res
+objects. Operationally , this architecture keeps provider-speciﬁc logic out of the request path:
+the Express service does not implement provider-dependent HTTP calls itself but delegates
+them to CopilotKit adapters.
+6.4.4 CORS and header contract
+The frontend runs in a browser context and must send custom headers for provider/model
+selection. Accordingly , the service conﬁgures the cors middleware with an explicit allowlist
+of request headers ( allowedHeaders) and response headers ( exposedHeaders). Besides the
+two selection headers, the allowlist includes x-copilotkit-runtime-client-gql-version ,
+which is used by the CopilotKit client for runtime protocol negotiation. Without explicitly
+31
+
+[[page 38]]
+6. Implementation
+allowing these headers, modern browsers would block the requests at the preﬂight stage,
+preventing model selection from working reliably .
+6.4.5 Conﬁguration and operational integration
+The service loads runtime conﬁguration through a dedicated module ( env) and enables
+dotenv/config to support local development via environment ﬁles. At minimum, the
+process requires a port to bind to and a logLevel to control CopilotKit runtime logging.
+Provider activation depends on which API keys are conﬁgured (Table 6.3); deployments
+therefore control the exposed model surface by adjusting environment variables rather
+than modifying the frontend.
+In production, the service can be deployed either as a separate origin (leveraging the
+CORS conﬁguration above) or behind the same reverse proxy as the frontend. The latter
+option is implemented in the frontend deployment template ( default.conf.template)b y
+proxying /providers and /copilot to the service. This keeps assistant trafﬁc under the
+same origin as the static frontend and simpliﬁes conﬁguration: the frontend can address
+the runtime via relative paths while still allowing the service to be replaced independently
+of the built artifact.
+6.5 Chat UI Surface and User Controls
+The user-facing chat UI is implemented by combining a CopilotKit chat component with
+ExplorViz-speciﬁc controls.
+The conversation view is deﬁned in chatbot-chat.tsx as a thin wrapper around
+CopilotChat. It is enabling image uploads ( imageUploadsEnabled), which allows the assistant
+to receive screenshots as image messages when a vision-capable model is selected and
+provides the LLM with a static meta prompt describing the ExplorViz environment it is
+situated in.
+The chat is exposed to the user through the existing settings/customization sidebar. In
+chatbot-box.tsx, the assistant toolbar combines stateful controls from multiple subsystems:
+undo/redo buttons from the editing history , a reset button for the Copilot chat state, and
+dropdowns for provider/model selection. This co-location is deliberate: it makes model
+selection and reversible editing operations discoverable exactly where assistant actions are
+triggered.
+Provider changes have two noteworthy side effects implemented in provider-dropdown.
+tsx. First, when switching to a provider that does not offer the currently selected model, the
+implementation selects a valid fallback model (the ﬁrst model of the new provider). Second,
+the chat conversation is reset on provider changes using useCopilotChat().reset() to
+avoid mixing conversation history across different or backend providers. Between models
+of the same provider, chat history is preserved, as it is expected, that models of the same
+32
+
+[[page 39]]
+6.6. Copilot Resources for Context Provisioning
+provider have similar capabilities. The full history is always available to the model, as all
+messages are send to the LLM backend every time the user send a new message.
+6.6 Copilot Resources for Context Provisioning
+Copilot resources (“readables”) form the structured context that is available to the LLM
+alongside the natural-language conversation. They are implemented in copilot-resources
+.tsx using useCopilotReadable().
+A guiding constraint is to provide context that is (i) stable across renders, (ii) compact
+enough to be included frequently , and (iii) semantically aligned with the tools. For instance,
+the assistant is not given the full landscape by default; instead, it receives a bounded
+application summary and can request additional details through query-landscape-data
+(Section 6.7.1). Similarly , settings are ﬂattened into a simple Record<string, unknown> snap-
+shot so that tool calls can reference setting IDs directly .
+Table 6.4 lists the registered resources, their serialized shapes, and the frontend state
+they are derived from.
+T able 6.4.Copilot-readable resources registered in copilot-resources.tsx.
+Resource Source Serialized value and purpose
+Application sum-
+maries
+Derived from
+applications inside
+ChatbotProvider
+List of per-application objects {id, name,
+language, originOfData, packageCount,
+classCount, methodCount} computed by
+traversing package hierarchies. Serves
+as the default, low-cost architectural
+context without transferring full trees.
+closedComponentIds useVisualizationSt
+ore()
+Array of model IDs that are currently
+closed in the 3D view. Allows the as-
+sistant to reason about current visibility
+state and to avoid redundant open/close
+actions.
+highlightedEntityI
+ds
+useVisualizationSt
+ore()
+Array of model IDs that are currently
+highlighted. Supports follow-up ques-
+tions such as “why is this highlighted?”
+and tool decisions such as unhighlight-
+ing before applying a new highlight.
+hoveredEntityId useVisualizationSt
+ore()
+Single model ID (or null) for the entity
+currently under the cursor. Provides a
+minimal grounding signal for deictic user
+utterances (e.g., “what is this?”).
+33
+
+[[page 40]]
+6. Implementation
+Resource Source Serialized value and purpose
+removedComponentId
+s
+useVisualizationSt
+ore()
+Array of model IDs removed from the
+current visualization/session. Enables
+the assistant to avoid referencing entities
+that are no longer present.
+canGoBack, canGoFor
+ward
+EditingContext Two booleans indicating undo/redo
+availability . These are used both for as-
+sistant decisions (whether an undo tool
+call is meaningful) and for study export
+snapshots.
+visualizationSetti
+ngs
+useUserSettingsSto
+re()
+Flattened map from setting ID to its cur-
+rent value. This serialization makes tool
+parameters independent of internal set-
+ting object structure.
+defaultVisualizati
+onSettings
+defaultVizSettings Flattened map from setting ID to its de-
+fault value. Used by the assistant to re-
+set settings deterministically and by the
+study export to allow later reconstruc-
+tion.
+showToolsSidebar ,
+showSettingsSideba
+r
+ChatbotContext (prop-
+agated from browse
+r-rendering.tsx)
+Two booleans that describe the current
+high-level UI state. These values allow
+tools to reason about whether a panel is
+visible before invoking panel controllers.
+openedToolComponen
+t, openedSettingCom
+ponent
+ChatbotContext Identiﬁers of the currently opened side-
+bar components (or null). These identi-
+ﬁers are the same strings used by the
+sidebar rendering logic and therefore
+form a stable interface between tool han-
+dlers and UI panels.
+6.7 Copilot Actions and T ool Binding
+All assistant tools are registered in copilot-tools.tsx through CopilotKit’s useCopilotActi
+on() API. Each action deﬁnition provides a name, a parameter schema, a handler function
+that performs the side effect in ExplorViz, and a render function that produces an in-chat
+ToolCallCard while the tool is running. Most tools set _isRenderAndWait: true to ensure
+that tool calls are reﬂected synchronously in the user-visible chat ﬂow.
+Table 6.5 summarizes the implemented tool surface with inputs and outputs/side
+effects.
+34
+
+[[page 41]]
+6.7. Copilot Actions and Tool Binding
+T able 6.5.Copilot actions (tools) implemented in copilot-tools.tsx.
+T ool name Inputs Output and side effects
+query-landscape-d
+ata
+Optional ﬁlters
+(applicationIds,
+applicationName,
+packageName, className,
+methodName); detailLevel
+in { summary, packages,
+classes, methods}; op-
+tional per-level limits
+Returns a bounded JSON object contain-
+ing (i) ﬁltered application summaries and,
+depending on detailLevel, ﬂattened pack-
+ages/classes/methods with stable iden-
+tiﬁers. Enables demand-driven retrieval
+rather than prompting with full landscape
+trees.
+highlight-compone
+nt
+id: string plus a high-
+light/unhighlight mode
+(tool schema); applies to
+applications/packages/-
+classes
+Delegates to existing highlighting primi-
+tives and updates the visualization store.
+The rendered tool card remains clickable
+to re-ping the referenced entity for spatial
+grounding.
+open-close-compo
+nent
+id: string plus open:
+boolean (tool schema).
+Targets applications or
+nested entities.
+Calls existing open/close utilities (used by
+the manual UI) to toggle visibility and up-
+dates closedComponentIds. This tool is also
+used as a preparation step before camera
+moves or pings.
+ping-component id:string Triggers a 3D ping animation via
+pingByModelId(id) to visually locate the
+referenced entity .
+focus-camera id:string Computes the world position for the
+model via getWorldPositionOfModel and
+moves the camera to a ﬁxed offset ( +2 on
+each axis) while looking at the entity .
+reset-camera (no parameters) Resets the camera to the default position
+through useCameraControlsStore().rese
+tCamera().
+open-close-tools
+-sidebar
+open:boolean Toggles the tools sidebar by up-
+dating showToolsSidebar through
+ChatbotContext.
+open-close-setti
+ngs-sidebar
+open:boolean Toggles the settings sidebar by updating
+showSettingsSidebar through ChatbotCon
+text.
+open-close-tools
+-component
+id:string, open:boolean Opens/closes a speciﬁc component inside
+the tools sidebar (e.g., entity-filtering ,
+application-search ); opening forces the
+sidebar visible.
+35
+
+[[page 42]]
+6. Implementation
+T ool name Inputs Output and side effects
+open-close-setti
+ngs-component
+id:string, open:boolean Opens/closes a speciﬁc component in-
+side the settings sidebar (e.g., Chatbot,
+Settings); opening forces the sidebar visi-
+ble.
+filter-entities Optional thresholds minT
+raceStartTimestamp, minT
+raceDuration, minClassMe
+thodCount
+Opens the Entity Filtering panel and ap-
+plies thresholds by invoking entityFilt
+eringControllerRef.current.applyFilt
+ers(...) after a short mount delay . This
+reuses the existing slider/ﬁlter seman-
+tics rather than re-implementing ﬁltering
+logic.
+search-application
+-components
+query:string; optional se
+lectAll:boolean
+Opens the Application Search panel and
+executes a search through the panel con-
+troller. With selectAll, the panel selects
+and pings all matches programmatically .
+update-visualizati
+on-settings
+Optional settings:obje
+ct; optional resetIds:st
+ring[] or resetAll:bool
+ean
+Updates existing visualization settings
+through useUserSettingsStore. The han-
+dler supports deterministic resets to de-
+faults and ignores unknown setting IDs to
+avoid corrupting state. The tool card links
+back to the Settings panel for traceability .
+add-application name:string ; classes:Si
+mpleClass[] with fqn and
+optional method stubs
+Creates a new application in the in-
+memory landscape by delegating to Ed
+itingContext.addApplication . Class in-
+sertion derives packages from FQNs and
+marks inserted elements as originOfData
+=Editing.
+add-classes-to-a
+pplication
+applicationId:string; cl
+asses:SimpleClass[]
+Adds classes (and optionally method
+stubs) to an existing application via Ed
+itingContext.addClasses . Tool call cards
+display the number of inserted classes for
+transparency .
+remove-component id:string Removes an entity from the current land-
+scape/session by delegating to EditingC
+ontext.removeComponent . The tool card is
+rendered as an information popup trigger
+to surface removal details via the existing
+popup mechanism.
+36
+
+[[page 43]]
+6.7. Copilot Actions and Tool Binding
+T ool name Inputs Output and side effects
+undo-edit (no parameters) Calls EditingContext.goBack() if canGoB
+ack is true, reverting the landscape to the
+previous history state.
+redo-edit (no parameters) Calls EditingContext.goForward() if ca
+nGoForward is true, reapplying the next
+history state.
+take-screenshot (no parameters) Captures the full page DOM via
+html-to-image, scales the image down
+to max. 1280 ˆ720 if required, and ap-
+pends it as a user image message through
+useCopilotChatInternal().sendMessage .
+If capture fails, the error is surfaced in the
+tool card.
+click-on-screen Normalized coordinates
+x, y in [0, 1]
+Maps normalized coordinates to viewport
+pixels, dispatches a synthetic click event
+on document.elementFromPoint , and trig-
+gers a screen ping at the click target via
+pingScreenAtPoint . The tool description
+instructs the assistant to compute coordi-
+nates from a screenshot rather than guess-
+ing.
+6.7.1 Querying Landscape Data
+The query-landscape-data action is the primary retrieval mechanism for structural in-
+formation beyond the always-available summaries. Its implementation is intentionally
+deterministic: it normalizes ﬁlters by trimming and lowercasing ( normalizeText) and then
+performs substring matching ( matchesText) on application, package, class, and method
+names. This design avoids fuzzy matching artifacts in tool outputs and makes the results
+easy to explain and to debug.
+A key implementation detail is the explicit detailLevel parameter, which controls the
+amount of returned structure: at summary level the tool returns per-application counts
+only; the higher levels add ﬂattened packages, classes, and (optionally) method matches.
+Because package hierarchies are nested in the ExplorViz data model, the tool ﬂattens them
+using flattenPackages (built on the recursive getAllSubPackages helper). Response sizes
+are bounded by optional limits (e.g., maxClasses), implemented via a shared truncation
+helper (limitList).
+37
+
+[[page 44]]
+6. Implementation
+6.7.2 Settings Updates with Stable Identiﬁers
+Visualization settings in ExplorViz are represented as typed objects, but for tool calling the
+critical interface is the setting identiﬁer. The update-visualization-settings tool therefore
+performs two transformations. First, it optionally resets a selected subset (or all) settings
+back to defaultVizSettings. Second, it applies updates only if a provided key exists in
+the current visualizationSettings object, thereby ignoring unknown keys rather than
+introducing inconsistent state.
+To make this tool usable without hardcoding a separate schema, copilot-tools.tsx con-
+structs a prompt-time description string ( settingsPromptDescription)f r o mdefaultVizSettings.
+This list is included directly in the tool description so that the LLM can reference setting
+IDs consistently .
+6.7.3 Visual Grounding T ools: Screenshots and Click Simulation
+Two tools extend the assistant beyond the 3D scene by giving it controlled access to the
+surrounding GUI.
+The screenshot tool ( take-screenshot) uses html-to-image.toBlob(document.body) and
+converts the blob into a base64-encoded PNG data URL. If the resulting image exceeds
+1280ˆ720 pixels, it is downscaled using an intermediate canvas to control payload size
+and to reduce token usage when the image is fed into a multimodal model. Due to
+technical limitation of CopilotKit, the ﬁnal image can only be injected into the chat as a
+user message (empty textual content plus image bytes), but it still keeps the conversational
+order consistent.
+The click tool ( click-on-screen) operates purely on normalized coordinates, which
+makes it resolution-independent. The implementation converts normalized coordinates
+to pixel positions based on window.innerWidth and window.innerHeight , dispatches a
+MouseEvent(’click’) with bubbling enabled, and visually conﬁrms the click location
+using the PingIndicator overlay . The action description explicitly instructs the assistant to
+compute coordinates from a screenshot (read dimensions, locate pixel center, normalize),
+which is a practical safeguard against random or unsafe clicking.
+6.8 Reusing Existing Panels via Imperative Controllers
+Several assistant tools intentionally reuse existing UI panels because those panels al-
+ready implement non-trivial domain logic (e.g., generating candidate entities for search
+or computing trace statistics for ﬁltering). To make these panels callable by tools without
+refactoring them into a different architecture, the implementation introduces minimal
+controller interfaces using forwardRef and useImperativeHandle.
+For Application Search ( application-search.tsx ), the exported controller ( Applic
+ationSearchController in chatbot-context.tsx ) supports search({query,selectAll}) ,
+38
+
+[[page 45]]
+6.9. Landscape Editing and History Integration
+selectEntities(ids), and reset(). Internally , the component maintains its original state
+(searchString, selected, entityNames) and constructs a lookup map from model IDs to
+selectable entries. The controller methods do not bypass UI semantics; instead, they call
+the same selection and ping logic that is triggered when a user selects items manually . A
+small additional state ( menuOpen) is used to control whether the dropdown stays open after
+an assistant-triggered search, which avoids UI ﬂicker when selectAll is requested.
+For Entity Filtering ( entity-filtering.tsx ), the controller surface is deﬁned as
+EntityFilteringController with applyFilters(filters) and reset(). The implementation
+composes this controller from two sub-controllers: one for trace ﬁltering and one for struc-
+ture ﬁltering. Concretely , the Trace Filtering subtree (trace-filtering.tsx, trace-start.tsx,
+trace-duration.tsx) exposes methods to set the minimum start timestamp and minimum
+duration by updating the same slider state that the user manipulates. Similarly , the Struc-
+ture Filtering subtree ( structure-filtering.tsx , class-method-filtering.tsx ) exposes a
+method-count threshold setter. This layered controller design keeps the logic localized: the
+assistant never constructs ﬁltered landscapes itself, but triggers the same rendering-service
+calls that the existing panel uses.
+Because React mounts panels conditionally based on sidebar state, tool handlers in
+copilot-tools.tsx invoke controller methods only after opening the corresponding sidebar
+component. The implementation uses a short setTimeout delay (200 ms) before calling the
+controller ref to ensure that the panel and its refs have been mounted. While this is a
+pragmatic solution, it keeps the integration lightweight and avoids introducing additional
+synchronization mechanisms between sidebars and tools.
+6.9 Landscape Editing and History Integration
+The assistant’s editing tools are designed to produce reversible, in-session “what-if” mod-
+iﬁcations of the landscape model. Implementation-wise, this is achieved by routing all
+assistant edits through the existing editing subsystem in src/components/editing/editing
+-context.tsx.
+A core extension is the introduction of structured class deﬁnitions ( SimpleClass)i n src/
+utils/landscape-structure-helpers.ts . Where earlier editing functions accepted classes
+as plain FQNs, the updated interface accepts objects with an fqn ﬁeld and an optional list of
+method stubs ( name, private, parameters, returnType). This change is propagated through
+EditingContext.addApplication and EditingContext.addClasses, enabling the assistant to
+create richer architectural hypotheses that include method-level structure when appropriate.
+Insertion logic is centralized in packagesFromFlatClasses, which derives a package
+hierarchy from FQNs by splitting on . separators and creating intermediate packages
+on demand. When method stubs are provided, the helper maps them into ExplorViz’
+internal method representation, including parameters and a return type. Because these
+methods are not derived from runtime traces, ﬁelds such as methodHash are initialized with
+placeholder values, and inserted elements are marked via originOfData as editing-derived
+39
+
+[[page 46]]
+6. Implementation
+data ( TypeOfAnalysis.Editing). This marking is important to avoid conﬂating measured
+runtime information with hypothetical refactorings.
+Undo/redo support is preserved by design. The editing provider maintains a history
+buffer and a cursor into that history . Assistant-triggered edits call the same insertion/re-
+moval functions as manual edits, and they are therefore appended to the same history . Two
+dedicated tools ( undo-edit and redo-edit) expose goBack and goForward to the assistant,
+while canGoBack and canGoForward are made available as Copilot resources (Table 6.4) so
+that the assistant can avoid no-op undo/redo calls.
+6.10 T ool Call Feedback and Spatial Grounding
+Tool executions are surfaced in the chat UI using ToolCallCard (tool-call-card.tsx ).
+Each tool action renders such a card while running and after completion, which provides
+traceability for automated UI changes and makes tool execution part of the conversational
+transcript.
+Two implementation details are critical for usability . First, tool call cards remain in-
+teractive: when a tool call references an entity ID, the card can re-trigger a 3D ping
+(pingByModelId) to help users locate the affected entity again. The card implementa-
+tion resolves entity names opportunistically by querying the model repository store
+(useModelStore.getState().getApplication/getComponent/getClass ) and falls back to
+shortened IDs if no name is available. Second, cards can be conﬁgured to open an informa-
+tion popup ( usePopupHandlerStore().addPopup) instead of pinging; this is used for actions
+such as remove-component, where an immediate popup can communicate removal details
+more directly than a ping.
+Error handling is integrated into the same UI surface. Cards can be rendered in an error
+state (e.g., screenshot capture failures) and display an error message derived from the tool
+result. This design makes failures explicit and auditable rather than silently dropping tool
+effects.
+For screen-space actions, PingIndicator provides additional grounding. The indicator
+is rendered by ChatbotProvider whenever pingScreenAtPoint is invoked, and it is styled
+via _chatbot.scss as a short-lived, animated overlay . This feedback loop is particularly
+important for click simulation, where the user needs to validate that the assistant targeted
+the intended UI control.
+6.11 Summary
+The assistant integration is implemented as a narrow adapter layer that embeds CopilotKit
+into the ExplorViz rendering tree and binds tool calls to existing interaction and editing
+primitives. Context is provided through compact, serializable Copilot resources, while
+richer structural information is retrieved on demand through a deterministic query tool.
+40
+
+[[page 47]]
+6.11. Summary
+Automation of existing UI panels is achieved via minimal controller APIs rather than
+duplicated logic, and all assistant-triggered edits remain reversible by integrating them
+into the existing undo/redo history .
+41
+
+[[page 48]]
+
+
+[[page 49]]
+Chapter 7
+Evaluation
+This chapter evaluates the AI/LLM-based agent integration for ExplorViz described in
+Chapter 6. The evaluation is based on an in-person user study in which participants
+performed exploration and manipulation tasks on a prepared software landscape, both with
+and without the agent. The goal is to assess how the agent affects program comprehension,
+how usable the chat-based interface is in a realistic workﬂow, and how reliable agent-
+triggered actions are.
+7.1 Evaluation Goals
+The goal of the study is to characterize how the integrated assistant affects program
+comprehension and interaction with ExplorViz. The evaluation is designed to surface
+observed advantages, drawbacks, and trade-offs across three aspects:
+1. Comprehension support: Which kinds of questions about services, packages, and
+responsibilities do participants address with the assistant, and what perceived beneﬁts
+and limitations emerge (e.g., in conﬁdence, clarity , and perceived correctness)?
+2. Action execution: What advantages and disadvantages arise when deterministic vi-
+sualization actions (e.g., highlighting or theming) are triggered via natural language
+compared to direct UI interaction, in terms of perceived effort, interaction ﬂow, and
+perceived correctness?
+3. Agent-driven editing: Which strengths, limitations, and failure modes occur when the
+assistant proposes and applies edits, how well do outcomes align with user intent, and
+which safeguards do participants expect for reliable use?
+7.2 Study Design
+The study followed a controlled, supervised design. Each participant used a standard
+desktop PC with ExplorViz running in a browser from a locally executed feature branch
+(the same build for all participants). The survey was opened simultaneously on a second
+monitor to minimize context switching between the interactive tasks and the questionnaire.
+For the user study deployment, we used pinned Docker image tags to ensure a reproducible
+43
+
+[[page 50]]
+7. Evaluation
+setup across all sessions. The following images were used: explorviz/demo-supplier:chatbo
+t-study-2025 , explorviz/ai-chat-service:chatbot-study-2025 , and explorviz/frontend:
+chatbot-study-2025 .
+Apparatus The study was conducted on a workstation with the following hardware and
+software setup:
+Ź CPU: Intel Core i5-6500 @3.2Ghz
+Ź RAM: 16GB DDR4
+Ź GPU: Nvidia GTX 1070
+Ź Operating system: Debian GNU/linux 13
+Ź Browser: Firefox 140.6.0esr
+Ź Displays: Survey displayed on 1920x1200 NEC EA243WM on the left side, ExplorViz
+displayed on 2560x1080 LG 34UB67-B in the center
+Ź Input devices: Mouse and keyboard
+The evaluated landscape was based on the distributed version of the PetClinic example
+system1. The study ﬂow consisted of a short tutorial to familiarize participants with
+navigation and built-in UI functions, followed by a sequence of task blocks. Task blocks
+were designed to contrast manual interaction without the agent against an equivalent
+agent-assisted workﬂow with the agent, except for the ﬁnal editing task which intentionally
+had no manual baseline because the corresponding features were exposed exclusively
+through the agent.
+T ask structure. The survey comprised the following task blocks:
+Ź T ask 1 (tutorial): Participants completed a brief tutorial covering navigation, entity in-
+spection, highlighting, searching, ﬁltering, and settings adjustment to ensure familiarity
+with core ExplorViz features. No data was collected for this block.
+Ź T ask 2 (service comprehension): Participants ﬁrst inspected a service using ExplorViz
+features (packages/classes/hover information). Afterwards they prompted the agent
+for a service summary and rated how much additional understanding they gained and
+how correct the response appeared.
+Ź T ask 3 (package comprehension + concept explanation): Participants described a
+package with an unfamiliar name ( dto) and rated their conﬁdence. Then they asked the
+agent for an explanation and rated information gain, perceived correctness, and whether
+the concept “DTO” was explained.
+1https://github.com/spring-projects/spring-petclinic
+44
+
+[[page 51]]
+7.3. Participants
+Ź T ask 4 (bulk highlighting): Participants manually highlighted all classes within pack-
+ages containing a name pattern ( model), then used the agent to perform the same
+operation and rated correctness, mistakes, and relative ease-of-use.
+Ź T ask 5 (theme customization): Participants created a color theme manually in the
+settings, then asked the agent to generate a different theme variant and rated expectation
+match and relative ease-of-use.
+Ź T ask 6 (agent-only editing): Participants asked the agent to improve or change the
+landscape (e.g., adding new components/services, restructuring). They rated expectation
+match, explanation quality , overall correctness, and whether additional conﬁrmation
+prompting was required.
+7.3 Participants
+A total of N = 11 participants completed the survey . All participants reported consent
+to participate. The sample largely consisted of participants with a software engineering
+background, which is consistent with the target audience of ExplorViz[Issa 2026].
+Self-reported background. Participants rated their programming experience, ExplorViz
+experience, and frequency of using AI/LLM-based tools on a ﬁve-point Likert scale.
+T able 7.1.Participant background (Likert 1–5, higher is more experienced / more frequent usage;
+N = 11).
+Measure Mean SD Median Range
+Programming experience 4.00 0.77 4 3–5
+ExplorViz experience 2.82 0.98 3 1–4
+Frequency of LLM tool usage 3.91 1.14 4 2–5
+All participants reported prior use of ChatGPT, while usage of other tools was more
+heterogeneous (e.g., GitHub Copilot and Google Gemini were each used by roughly
+one third of participants). Most participants reported using LLMs primarily for code
+generation/refactoring and debugging/explanation tasks, indicating that the sample was
+familiar with conversational AI interaction patterns.
+7.4 Measures and Data Collection
+The survey contained both quantitative and qualitative items:
+45
+
+[[page 52]]
+7. Evaluation
+Ź Quantitative ratings: Most evaluation questions used a ﬁve-point Likert scale where
+1 represented a negative/low assessment (e.g., “very bad”, “no match”, “unintuitive”)
+and 5 represented a positive/high assessment (e.g., “very good”, “expectations fully
+satisﬁed”, “easy to use”).
+Ź Qualitative comments: Several Likert questions offered optional comment ﬁelds. In
+addition, tasks asking for manual descriptions (e.g., service/package functionality) were
+captured as free text. These responses were used to contextualize the ratings and identify
+recurring failure modes.
+In addition to questionnaire responses, the assistant’s resource consumption were
+recorded using the provider’s usage exports. All study sessions used the Claude Sonnet
+4.5 model ( claude-sonnet-4-5), selected primarily for its low response latency . Across the
+study period (December 10–15, 2025; UTC), the assistant processed 11,401,606 input tokens
+and generated 135,431 output tokens, resulting in a total API cost of $36.24. No prompt
+caching was used (all input tokens were billed as non-cached). The study results and the
+exported cost/token usage statistics are publicly archived on Zenodo[Issa 2026].
+T able 7.2.LLM usage and cost during the user study (Anthropic API usage export, December 10–
+15, 2025; UTC).
+Metric V alue
+Model Claude Sonnet 4.5
+Total input tokens 11,401,606
+Total output tokens 135,431
+Total cost $36.24
+7.5 Data Preparation and Analysis
+The exported responses include tutorial and workﬂow conﬁrmation prompts that were
+represented as checkbox items with values such as Done. These ﬁelds do not measure user
+perception and were removed from analysis. For Likert-style responses, textual labels of
+the form “ k – label” were converted to numeric values k P {1, 2, 3, 4, 5}.
+Given the small sample size ( N = 11), the analysis emphasizes descriptive statistics
+(mean, standard deviation, median) and response distributions. While mean values provide
+a compact summary , medians and qualitative feedback are used to avoid over-interpreting
+Likert ratings as interval-scaled measurements.
+46
+
+[[page 53]]
+7.6. Results
+7.6 Results
+This section reports descriptive, task-level results from the study . Unless stated otherwise,
+questionnaire items used a 5-point Likert scale (1 = strongly disagree, 5 = strongly agree).
+“Positive” responses are deﬁned as ratings ě 4.
+7.6.1 Summary of Quantitative Ratings
+Table 7.3 summarizes the main Likert-based measures collected across the task blocks[Issa
+2026].
+T able 7.3. Summary of quantitative ratings ( N = 11). Higher values indicate a more positive self-
+reported assessment.
+Measure Mean SD Median Positive
+Task 2: Information gain (service summary) 3.55 0.69 4 64%
+Task 2: Perceived correctness (service summary) 4.64 0.67 5 91%
+Task 3: Conﬁdence without agent (DTO package) 3.36 1.21 3 45%
+Task 3: Information gain (DTO explanation) 4.18 0.60 4 91%
+Task 3: Perceived correctness (DTO explanation) 4.55 0.52 5 100%
+Task 4: Conﬁdence without agent (manual high-
+lighting)
+4.55 0.69 5 91%
+Task 4: Perceived correctness (agent highlighting) 5.00 0.00 5 100%
+Task 4: Ease-of-use (agent vs. manual highlighting) 4.82 0.40 5 100%
+Task 5: Expectation match (agent theme generation) 4.27 1.01 5 82%
+Task 5: Ease-of-use (agent vs. manual theming) 4.82 0.40 5 100%
+Task 6: Expectation match (agent-driven editing) 3.00 1.41 3 36%
+Task 6: Quality of explanation (editing changes) 3.73 1.19 4 55%
+Task 6: Overall perceived correctness (editing task) 3.27 1.49 3 45%
+Overall: Response time 4.09 0.94 4 82%
+Overall: Chat UI ease-of-use 5.00 0.00 5 100%
+Overall: Overall experience 4.36 0.50 4 100%
+7.6.2 Comprehension Support (T asks 2 and 3)
+T ask 2: Service comprehension. Participants rated the perceived information gain from
+the service summary with a mean of 3.55 (SD 0.69, median 4; 7 /11 positive). Perceived
+correctness of the service summary was rated with a mean of 4.64 (SD 0.67, median 5;
+10/11 positive).
+T ask 3: Package comprehension and concept explanation. Participants reported their
+conﬁdence without the assistant when locating the relevant package (mean 3.36, SD 1.21,
+47
+
+[[page 54]]
+7. Evaluation
+median 3; 5 /11 positive). For the assistant’s explanation of the concept “DTO”, participants
+rated perceived information gain with a mean of 4.18 (SD 0.60, median 4; 10 /11 positive)
+and perceived correctness with a mean of 4.55 (SD 0.52, median 5; 11/11 positive).
+7.6.3 Correctness and Usability for Deterministic UI Actions (T asks 4
+and 5)
+T ask 4: Bulk highlighting. Baseline conﬁdence when performing manual highlighting
+was 4.55 on average (SD 0.69, median 5; 10/11 positive). For agent-triggered highlighting,
+perceived correctness was rated 5.00 (SD 0.00, median 5; 11 /11 positive); all participants
+selected “No mistakes” for the highlighting outcome. Ease-of-use of agent-triggered high-
+lighting compared to manual highlighting was rated with a mean of 4.82 (SD 0.40, median
+5; 11 /11 positive). For identifying targets prior to highlighting, 7 /11 participants explicitly
+reported using the application’s search functionality .
+T ask 5: Theme manipulation. Expectation match for agent-generated theme changes was
+rated with a mean of 4.27 (SD 1.01, median 5; 9 /11 positive). Ease-of-use of agent-triggered
+theming compared to manual theming was rated with a mean of 4.82 (SD 0.40, median 5;
+11/11 positive). All participants reported being able to set their chosen colors manually via
+the settings.
+7.6.4 Reliability of Agent-Driven Editing (T ask 6)
+Task 6 evaluated the assistant’s agent-driven editing workﬂow. Expectation match was
+rated with a mean of 3.00 (SD 1.41, median 3; 4 /11 positive). The quality of the assistant’s
+explanation of the applied changes was rated with a mean of 3.73 (SD 1.19, median 4; 6 /11
+positive). Overall perceived correctness of the editing outcome was rated with a mean of
+3.27 (SD 1.49, median 3; 5 /11 positive). In the free-text feedback, participants explicitly
+mentioned the repeated conﬁrmation step (e.g., described as “annoying”).
+7.6.5 Overall Usability and Performance
+Participants rated overall response time with a mean of 4.09 (SD 0.94, median 4; 9 /11
+positive). Chat UI ease-of-use was rated 5.00 (SD 0.00, median 5; 11 /11 positive), and the
+overall experience was rated with a mean of 4.36 (SD 0.50, median 4; 11/11 positive).
+7.7 Discussion
+Across the three evaluation aspects (Section 7.1), the results highlight different trade-offs
+depending on how tightly the assistant is grounded in application state and deterministic
+tool execution.
+48
+
+[[page 55]]
+7.8. Threats to Validity
+Comprehension support (T asks 2 and 3). For comprehension-oriented tasks, participants
+reported positive perceived correctness and information gain, with particularly high ratings
+for the concept explanation in Task 3. At the same time, baseline conﬁdence without the
+assistant for locating the relevant package was lower and more variable, suggesting that the
+assistant’s value is not limited to “answering questions” but also to supporting orientation
+in the information space. A downside of explanation-style assistance is that perceived
+correctness is still a subjective proxy; even plausible answers can be misleading if they
+are not grounded in the currently visible structures. This reinforces the need for agent
+designs that encourage veriﬁcation (e.g., linking explanations to concrete elements in the
+visualization, surfacing evidence or provenance, and supporting quick cross-checks).
+Deterministic UI actions (T asks 4 and 5). Deterministic commands (bulk highlighting
+and theming) received consistently high ratings for perceived correctness and ease-of-use.
+This suggests that natural-language triggering can reduce interaction overhead especially
+for multi-step operations, while still producing predictable outcomes when commands
+map to well-deﬁned UI actions. However, the interaction does not eliminate all manual
+work: participants still needed to identify targets (often using search) and, for theming,
+some requests can remain underspeciﬁed. An advantage of the assistant is consolidation of
+steps into a single command; a potential drawback is that underspeciﬁed or ambiguous
+prompts can require reﬁnement and may beneﬁt from lightweight parameter controls or
+previews.
+Agent-driven editing (T ask 6). Editing was rated lower and showed higher variance
+across participants. This points to a different risk proﬁle: multi-step edits combine open-
+ended intent interpretation with state-changing actions. The reported conﬁrmation loop
+illustrates a tension between safety and efﬁciency—conﬁrmation can mitigate risk, but
+repeated prompting can disrupt ﬂow. To make agent-driven editing more reliable, addi-
+tional guardrails are likely required, such as staged previews (diff-like summaries), explicit
+scoping of the edit target, undo/redo support, and clearer mappings between user intent
+and the concrete operations performed.
+Implications. Taken together, the study suggests that the assistant delivers more robust
+beneﬁts when it is used for bounded explanatory tasks and deterministic tool execution,
+while more autonomous editing workﬂows need stronger interaction design and safeguards
+to be perceived as reliable.
+7.8 Threats to V alidity
+Internal validity. Task ordering was ﬁxed (manual ﬁrst, agent second) for Tasks 2–5,
+which can introduce learning effects that inﬂate perceived agent performance. However,
+49
+
+[[page 56]]
+7. Evaluation
+this ordering was intentional to ensure that participants could compare the agent against a
+concrete manual baseline rather than against unfamiliarity with the landscape.
+Construct validity. Most outcomes are self-reported perceptions (information gain, cor-
+rectness, ease-of-use). Perceived correctness does not necessarily imply factual correctness,
+particularly for summarization tasks where participants may not fully verify claims during
+the study . Additionally , the open-ended nature of prompts (encouraged by the protocol)
+introduces variability that is appropriate for realism but complicates strict comparability .
+External validity. The sample is small ( N = 11) and dominated by participants with
+programming experience and prior exposure to LLM tools. Results may not generalize to
+novice users. The study also evaluated a single example system (PetClinic) and a ﬁxed
+model selection, so results may differ for other landscapes, other domains, or other models.
+Ecological validity. The study was conducted in person with a locally running feature
+branch and a preconﬁgured machine. This improves controllability and reduces technical
+disruptions, but it may underestimate performance variability and integration challenges
+that occur in production deployments (e.g., network latency , different hardware, concurrent
+usage).
+50
+
+[[page 57]]
+Chapter 8
+Conclusions and Future Work
+8.1 Conclusions
+This thesis investigated how a large-language-model (LLM) assistant can be embedded
+into ExplorViz to support program comprehension and reduce interaction overhead when
+working with complex software visualizations. The main contribution is the design and
+implementation of an assistant that is grounded in ExplorViz through a tool-based interface:
+instead of producing only free-form answers, the assistant can query visualization state
+and trigger deterministic UI actions such as highlighting elements or changing settings. A
+supporting backend service enables routing requests to different model providers while
+keeping the integration modular and maintainable.
+A controlled usability study with 11 participants evaluated the assistant in tasks that
+covered both comprehension (summarization and explanation) and action execution (high-
+lighting, theming, and editing). The quantitative results indicate that participants perceived
+generated summaries and explanations as largely correct (mean ratings 4.64/5 and 4.55/5),
+and that deterministic actions were considered easy to use (e.g., bulk highlighting and
+theming with a mean ease-of-use of 4.82/5). These ﬁndings suggest that tool-grounded
+assistants can effectively complement interactive software visualization, especially when
+the assistant is constrained to well-deﬁned operations and is given UI-relevant context.
+At the same time, the study revealed limitations when the assistant was used for open-
+ended, agent-driven editing. Participants’ ratings for expectation match in editing were
+notably lower (mean 3.00/5), indicating that editing workﬂows require stronger safeguards,
+more transparent previews, and better user control. Overall, the assistant was perceived as
+usable and promising, but its beneﬁts depend on how well the assistant is grounded in
+application state and how predictable its actions are.
+8.2 Future Work
+Several directions can further improve LLM-based assistance in software visualization:
+Richer and more precise context. Future versions could provide the assistant with more
+structured, task-speciﬁc context (e.g., summaries of selected subgraphs, ﬁltered views, or
+user-deﬁned focus areas) while still maintaining privacy and scalability . A key challenge is
+51
+
+[[page 58]]
+8. Conclusions and Future Work
+to ensure that the context remains compact, consistent, and aligned with what is shown to
+the user.
+Guardrails and conﬁrmation for edits. Editing should remain a controlled workﬂow.
+Improvements include explicit multi-step conﬁrmations, diff-based previews, and constraint
+checking before applying changes. A useful extension would be a "proposal mode" in
+which the assistant only suggests edits and the user performs the ﬁnal execution.
+Model and tool orchestration. The backend could support dynamic routing based on task
+type (e.g., cheaper models for deterministic tool calls, stronger models for explanations). It
+may also be beneﬁcial to log tool outcomes to enable iterative repair strategies when tool
+execution fails.
+Longer-term assistance and learning from users. Integrating lightweight memory (e.g.,
+per-session notes, recurring terminology , or user preferences) could reduce repeated expla-
+nations. However, such memory needs careful design to avoid storing sensitive data.
+Broader evaluation and comparative baselines. Future studies should compare the
+assistant against a manual baseline in controlled conditions, consider larger and more
+diverse participant groups, and measure objective task success and time-to-completion in
+addition to perceived correctness and usability . Also a study comparing different model
+providers and conﬁgurations is likely to produce valuable data for further optimization
+tasks.
+Explore Editing Workﬂows. As the implementation for the editing history and live land-
+scape re-layouting in the ExplorViz system is now in a more progressed state, future work
+could explore more complex editing workﬂows and input methods, such as collaborative
+editing with multiple users or version-controlled landscape modiﬁcations. Implementing
+and testing live-interactive software architecture planing is a promising perspective.
+52
+
+[[page 59]]
+Appendix
+Use of AI-assisted tools
+During the writing process, I used AI-assisted language tools to improve the thesis’ clarity
+and readability (grammar, spelling, phrasing, and consistency) and to obtain suggestions
+for higher-level chapter structure (section ordering, headings). The AI output served only
+as editorial support: I reviewed each suggestion critically , adapted it where appropriate,
+and ensured that all technical statements, interpretations, and references were based on
+my own work and veriﬁed sources. No AI tool was used to generate baseline content and
+results; responsibility for the ﬁnal content remains entirely with the author.
+53
+
+[[page 60]]
+
+
+[[page 61]]
+Bibliography
+[Amershi et al. 2019] S. Amershi, D. Weld, M. V orvoreanu, A. Fourney, B. Nushi, P .
+Collisson, J. Suh, S. Iqbal, P . N. Bennett, K. Inkpen, J. Teevan, R. Kikin-Gil, and E.
+Horvitz. Guidelines for human-AI interaction. In: Proceedings of the 2019 CHI Conference
+on Human Factors in Computing Systems . 2019. doi: 10.1145/3290605.3300233. (Cited on
+pages 9, 13, 14)
+[Anthropic 2024] Anthropic. Introducing the model context protocol . Web page. Accessed:
+2025-07-21. 2024. url: https : / / www . anthropic . com / news / model - context - protocol.
+(Cited on pages 7, 14)
+[Bissett et al. 2025] R. Bissett, J. Loane, and P . Morris. Heapkeep: exploring novel codebases
+through an rpg interface. In: 2025 IEEE Working Conference on Software Visualization
+(VISSOFT). 2025, pages 149–153. doi: 10.1109/VISSOFT67405.2025.00032 . (Cited on
+page 13)
+[Brown and Mulder 2025] D. Brown and S. Mulder. Large language models as visualization
+agents for immersive binary reverse engineering. In: 2025 IEEE Working Conference on
+Software Visualization (VISSOFT). 2025, pages 84–88. doi: 10.1109/VISSOFT67405.2025.0
+0019. (Cited on page 12)
+[Brown et al. 2020] T. B. Brown, B. Mann, N. Ryder, M. Subbiah, J. Kaplan, P . Dhariwal,
+A. Neelakantan, P . Shyam, G. Sastry, A. Askell, S. Agarwal, et al. Language models
+are few-shot learners. In: Advances in Neural Information Processing Systems . 2020. doi:
+10.48550/arXiv.2005.14165. (Cited on page 6)
+[Chen et al. 2021] M. Chen, J. Tworek, H. Jun, Q. Yuan, H. P . d. O. Pinto, J. Kaplan,
+et al. Evaluating large language models trained on code . arXiv preprint. 2021. doi:
+10.48550/arXiv.2107.03374. (Cited on pages 7, 11)
+[CopilotKit 2025a] CopilotKit. Copilotkit: build in-app ai copilots . Website. Accessed:
+2026-01-04. 2025. url: https://copilotkit.ai/. (Cited on pages 8, 14)
+[CopilotKit 2025b] CopilotKit. Copilotkit: the agentic frontend . GitHub repository. Accessed:
+2025-12-30. 2025. url: https://github.com/CopilotKit/CopilotKit. (Cited on page 2)
+[CopilotKit 2025c] CopilotKit. Usecopilotaction — copilotkit documentation . Web page.
+Accessed: 2025-12-30. 2025. url: https://docs.copilotkit.ai/reference/hooks/useCop
+ilotAction. (Cited on page 2)
+[Diehl 2007] S. Diehl. Software visualization: visualizing the structure, behaviour, and evolution
+of software. Springer, 2007. (Cited on page 5)
+55
+
+[[page 62]]
+Bibliography
+[Fittkau et al. 2017] F. Fittkau, A. Krause, and W. Hasselbring. Software landscape and
+application visualization for system comprehension with ExplorViz. Information and
+Software T echnology(2017). doi: 10.1016/j.infsof.2017.01.006. (Cited on pages 5, 6, 13)
+[Gao et al. 2015] T. Gao, M. Dontcheva, E. Adar, Z. Liu, and K. Karahalios. Datatone:
+managing ambiguity in natural language interfaces for data visualization. In: Proceedings
+of the 28th Annual ACM Symposium on User Interface Software and T echnology (UIST) . 2015,
+pages 489–500. doi: 10.1145/2807442.2807478. (Cited on pages 9, 12)
+[Hansen et al. 2024] M. Hansen, A. Krause, and W. Hasselbring. A software visualization
+approach for multiple visual output devices. In: 2024 Working Conference on Software
+Visualization (VISSOFT). 2024. doi: 10.1109/VISSOFT64034.2024.00020. (Cited on page 6)
+[Hasselbring et al. 2020] W. Hasselbring, A. Krause, and C. Zirkelbach. Explorviz: research
+on software visualization, comprehension and collaboration. Software Impacts 6 (2020),
+page 100034. doi: 10.1016/j.simpa.2020.100034. (Cited on pages 1, 5, 13)
+[Issa 2026] K. Issa. Study results for: developing and evaluating an llm agent integration for
+explorviz. 2026. doi: 10.5281/zenodo.18184372. (Cited on pages 45–47)
+[Krause et al. 2021] A. Krause, M. Hansen, and W. Hasselbring. Live visualization of
+dynamic software cities with heat map overlays. In: 2021 Working Conference on Software
+Visualization (VISSOFT). IEEE, 2021, pages 125–129. doi: 10.1109/VISSOFT52517.2021.0
+0024. (Cited on pages 1, 6, 13)
+[Large Language Model-Based Agents for Software Engineering: A Survey ]. Large language
+model-based agents for software engineering: a survey . arXiv preprint. 2024. (Cited on
+page 12)
+[Lehtinen et al. 2024] T. Lehtinen, C. Koutcheme, and A. Hellas. Let’s ask AI about their
+programs: exploring chatgpt’s answers to program comprehension questions . arXiv preprint.
+2024. doi: 10.48550/ARXIV.2404.11734. (Cited on pages 1, 11)
+[Lewis et al. 2020] P . Lewis, E. Perez, A. Piktus, F. Petroni, V . Karpukhin, N. Goyal, H.
+Küttler, M. Lewis, W. -t. Yih, T. Rocktäschel, S. Riedel, and D. Kiela. Retrieval-augmented
+generation for knowledge-intensive NLP tasks . arXiv preprint. 2020. doi: 10.48550/arXiv.2
+005.11401. (Cited on pages 7, 12, 13)
+[Nam et al. 2024] D. Nam, A. Macvean, V . Hellendoorn, B. Vasilescu, and B. Myers. Using an
+LLM to help with code understanding. In: Proceedings of the IEEE/ACM 46th International
+Conference on Software Engineering (ICSE ’24) . ACM, 2024. doi: 10.1145/3597503.3639187.
+(Cited on pages 1, 11)
+[Ouyang et al. 2022] L. Ouyang, J. Wu, X. Jiang, D. Almeida, C. L. Wainwright, P . Mishkin,
+C. Zhang, S. Agarwal, K. Slama, A. Ray, J. Schulman, J. Hilton, F. Kelton, L. Miller,
+M. Simens, A. Askell, P . Welinder, P . F. Christiano, J. Leike, and R. Lowe. T raining
+language models to follow instructions with human feedback . arXiv preprint. 2022. doi:
+10.48550/arXiv.2203.02155. (Cited on page 6)
+56
+
+[[page 63]]
+Bibliography
+[Schick et al. 2023] T. Schick, J. Dwivedi-Yu, R. Dessi, R. Raileanu, M. Lomeli, L. Zettlemoyer,
+N. Cancedda, and T. Scialom. T oolformer: language models can teach themselves to use tools .
+arXiv preprint. 2023. doi: 10.48550/arXiv.2302.04761. (Cited on pages 7, 13)
+[Setlur et al. 2016] V . Setlur, S. E. Battersby, M. Tory, R. Gossweiler, and A. X. Chang. Eviza:
+a natural language interface for visual analysis. In: Proceedings of the 29th Annual ACM
+Symposium on User Interface Software and T echnology (UIST) . 2016, pages 365–377. doi:
+10.1145/2984511.2984588. (Cited on pages 9, 13)
+[Shneiderman 1996] B. Shneiderman. The eyes have it: a task by data type taxonomy
+for information visualizations. In: Proceedings of the 1996 IEEE Symposium on Visual
+Languages. 1996, pages 336–343. doi: 10.1109/VL.1996.545307. (Cited on page 12)
+[Teyseyre and Campo 2009] D. Teyseyre and M. Campo. An overview of 3d software
+visualization (2009). (Cited on page 5)
+[Vaswani et al. 2017] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N.
+Gomez, L. Kaiser, and I. Polosukhin. Attention is all you need. In: Advances in Neural
+Information Processing Systems . 2017. doi: 10.48550/arXiv.1706.03762. (Cited on page 6)
+[Wettel and Lanza 2007] R. Wettel and M. Lanza. Visualizing software systems as cities. In:
+Proceedings of the 4th IEEE International Workshop on Visualizing Software for Understanding
+and Analysis (VISSOFT) . 2007. doi: 10.1109/VISSOFT.2007.4339230. (Cited on pages 5,
+13)
+[Xia et al. 2018] X. Xia, L. Bao, D. Lo, Z. Xing, A. E. Hassan, and S. Li. Measuring
+program comprehension: A large-scale ﬁeld study with professionals. IEEE T ransactions
+on Software Engineering 44.10 (2018), pages 951–976. doi: 10.1109/TSE.2017.2734091 .
+(Cited on page 1)
+[Yao et al. 2022] S. Yao, J. Zhao, D. Yu, N. Du, I. Shafran, K. Narasimhan, and Y . Cao.
+React: synergizing reasoning and acting in language models . arXiv preprint. 2022. doi:
+10.48550/arXiv.2210.03629. (Cited on pages 7, 12, 13)
+57

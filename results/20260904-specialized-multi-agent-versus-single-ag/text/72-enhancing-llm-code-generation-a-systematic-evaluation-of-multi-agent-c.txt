@@ -1,0 +1,516 @@
+[[page 1]]
+Enhancing LLM Code Generation: A Systematic
+Evaluation of Multi-Agent Collaboration and
+Runtime Debugging for Accuracy, Reliability, and
+Latency
+Nazmus Ashrafi
+Department of Computer Science and Software Engineering
+United Arab Emirates University
+Al Ain, United Arab Emirates
+nazmus.ashrafi@uaeu.ac.ae
+Salah Bouktif
+Department of Computer Science and Software Engineering
+United Arab Emirates University
+Al Ain, United Arab Emirates
+salahb@uaeu.ac.ae
+Mohammed Mediani
+Department of Computer Science and Software Engineering
+United Arab Emirates University
+Al Ain, United Arab Emirates
+mohammed.mediani@uaeu.ac.ae
+Abstract—Large language models (LLMs) have shown promis-
+ing code generation capabilities; however, they still face chal-
+lenges in generating successful code for non-trivial programming
+tasks. To enhance the LLM’s code generation abilities, we
+investigate, in this paper, the combination of two complementary
+inference-time strategies: multi-agent collaboration and runtime
+execution-based debugging. We conduct an extensive empirical
+study to evaluate our proposed framework using 19 diverse LLMs
+on two established coding benchmarks, measuring functional
+accuracy as a code quality characteristic. Our study reveals
+that that our combination outperforms the basic performance
+of LLMs and the individual approaches. In particlular, on
+HumanEval benchmark, across 19 LLMs, our approach achieves
+64.82% accuracy compared to 56.48% achieved by the basic
+one-shot prompting approach. It also outperforms the individual
+multi-agent collaboration approach by more than 7.66%. More-
+over, our extensive empirical study revealed that optimal combi-
+natory improvement is achieved when both individual strategies
+perform at similar levels. The proposed framework can be readily
+deployed in existing development pipelines to enhance the relia-
+bility of code generation while maintaining reasonable generation
+speeds, offering a practical solution to improve automated code
+generation in enterprise environments. Our code is available at:
+https://github.com/nazmus-ashrafi/multiagent vs debugger
+Keywords—Program Synthesis, Multi-Agent Systems, Runtime
+Debugging, LLM Enhancement, AI-Driven Software Development,
+Code Reliability
+I. I NTRODUCTION
+The emergence of Large Language Models (LLMs) has
+revolutionized Natural Language Processing (NLP), enabling
+progress across numerous applications such as conversational
+AI systems, document summarization, and automated con-
+tent creation. Code generation stands out as a particularly
+noteworthy use case for LLMs, attracting considerable re-
+search interest due to its capacity to automate complex pro-
+gramming tasks [3, 12, 16]. The pursuit of improving code
+quality and reliability in LLM-generated outputs has spurred
+the creation of diverse inference-time approaches, including
+retrieval-augmented generation (RAG), collaborative multi-
+agent feedback systems, and iterative code refinement through
+runtime debugging. These inference-time methods enhance
+task performance by implementing computational techniques
+solely at the inference stage, without modifying the model’s
+learned parameters [6]. These approaches enable performance
+gains in less powerful models while preserving computational
+cost-effectiveness.
+The collaborative multi-agent strategy [10, 11, 15] utilizes
+multiple LLM-powered agents working in concert, with each
+agent addressing distinct components of code generation. AI
+agents, broadly defined as autonomous goal-driven systems,
+are implemented in this work as separate LLM instances
+with specific roles and objectives, guided by system prompts.
+Through establishing interactive role-based exchanges among
+agents, this technique fosters a collaborative framework that
+emulates the task distribution commonly found in professional
+software engineering teams. The alternative strategy employs
+runtime execution feedback to enable more informed debug-
+ging procedures [5, 9, 17]. Through analyzing the execution
+correctness of code components, this method offers crucial in-
+sights into potential defects and program behavior. These two
+inference-time methodologies present compelling opportuni-
+ties for advancing LLM-based code generation. While existing
+research has explored these approaches independently, there
+remains limited comprehensive evaluation of their sequential
+integration and combined effectiveness.
+In this work, we present a framework (Figure 1) that
+sequentially applies two inference-time techniques: first, multi-
+agent collaboration as a process-oriented pipeline to gener-
+ate code, followed by a runtime execution feedback as a
+2025 IEEE 19th International Conference on Application of Information and Communication Technologies (AICT) | 979-8-3315-9342-1/25/$31.00 ©2025 IEEE | DOI: 10.1109/AICT67988.2025.11268754
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:02:03 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 2]]
+Fig. 1. Architecture of ACT + Debugger approach.
+product-oriented evaluation to debug and refine the generated
+solution. We hypothesize that this chained approach will
+outperform individual strategies by combining the collabo-
+rative code generation strengths of multi-agent systems with
+the error-correction capabilities of runtime debugging on the
+HumanEval benchmark. This sequentially combined approach
+mirrors a real-world software development workflow, where a
+process-oriented team collaborates to produce the code, which
+is then debugged using runtime execution information when
+errors are detected.
+This study introduces a framework (Figure 1) that employs
+two inference-time methods in sequence: initially, a multi-
+agent collaborative system functions as a process-focused
+pipeline for code generation, subsequently followed by run-
+time execution feedback serving as a product-focused mecha-
+nism for debugging and solution refinement. We hypothesize
+that this chained approach will outperform individual strategies
+by combining the collaborative code generation strengths of
+multi-agent systems with the error-correction capabilities of
+runtime debugging on the HumanEval benchmark. This se-
+quentially combined approach reflects authentic software engi-
+neering practices, where a process-oriented team collaborates
+to produce the code, which is then debugged using runtime
+execution information when errors are detected.
+To evaluate the effectiveness of this integrated approach,
+we perform extensive experimentation involving 19 LLMs
+from various research institutions, ensuring reliability across
+diverse model architectures, dataset compositions, and training
+paradigms. Our evaluation employs two benchmark datasets
+and five baseline approaches, examining performance across
+multiple metrics including functional correctness, code rigor-
+ousness, and generation latency.
+II. L ITERATURE REVIEW
+This section reviews literature on the two inference-time
+methods underlying our framework: multi-agent collaboration
+and runtime execution-based debugging for LLM code gener-
+ation.
+A. Multi-Agent Collaboration
+LLM-based multi-agent systems have garnered significant
+attention across academia and industry alike. These frame-
+works utilize sophisticated agent interactions to create a solid
+groundwork for generating code. AgentCoder [10], for in-
+stance, implements a multi-agent architecture where an LLM-
+driven test designer develops test cases, while a test executor
+runs the generated code and delivers feedback to the coder
+agent for iterative improvement. MapCoder [11] represents a
+multi-agent system that mirrors human programming work-
+flows through four LLM-powered agents: Retrieval, Planning,
+Coding, and Debugging. These components function sequen-
+tially, with successive stages building on prior results via
+dynamic communication and feedback loops, enhancing code
+generation through relevant example utilization, systematic
+planning, and validation mechanisms. The self-collaboration
+approach presented in [7] deploys three LLM agents within an
+organized pipeline: the Analyst Agent breaks down program-
+ming tasks and develops a high-level strategy, the Coder Agent
+executes the solution following this strategy, and the Tester
+Agent continuously assesses and directs the Coder Agent
+toward code refinement. Multi-agent interaction presents a
+compelling direction for advancing LLM-based code gener-
+ation, as it enables role-based cooperation and division of
+labor, which are essential characteristics of effective software
+development teams in real-world scenarios.
+B. Runtime Execution Information-Based Debugging
+Utilizing runtime execution data to improve code gener-
+ation represents a well-established strategy in this domain,
+with numerous frameworks adopting this technique receiving
+significant research interest. The Cycle framework [5], for
+example, enables pretrained LLMs to perform self-refinement
+through continued training on data samples derived from three
+information types: high-level problem descriptions, previously
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:02:03 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 3]]
+generated erroneous code, and executor feedback when code
+execution fails, resulting in enhanced code generation ca-
+pabilities. Another approach [9] proposes a print debugging
+strategy where the LLM embeds ’print statements’ or ’log
+messages’ within the code to extract information about ex-
+ecution flow and variable states, which inform refinements
+in subsequent iterations. The LDB framework [17] advances
+debugging practices by conducting static analysis to construct
+a control flow graph, then utilizing test cases and execution
+traces to track intermediate variable values within each basic
+block. It employs an LLM to evaluate block correctness
+and interpret the execution pathway, applying this analysis
+to iteratively refine the code. Through the strategic use of
+runtime execution data for debugging purposes, these studies
+convincingly illustrate its effectiveness in advancing LLM-
+based code generation.
+III. R ESEARCH METHODOLOGY
+Our research employs a sequentially integrated approach
+that combines structured multi-agent collaboration with run-
+time execution debugging for enhanced LLM-based code gen-
+eration. The complete implementation, including source code,
+experimental scripts, and agent prompts, is publicly available
+in our GitHub repository 1 to ensure full reproducibility.
+As illustrated in Figure 1, the framework functions through
+two sequential stages. In the initial stage, three specialized
+LLM agents (Analyst, Coder, and Tester)collaborate using an
+modified waterfall methodology within a multi-agent system.
+The subsequent stage involves runtime execution debugging,
+which is triggered when the initially generated code needs
+refinement. This sequence mirrors typical software engineering
+workflows: collaborative planning and coding, followed by
+systematic debugging.
+A. Multi-Agent Collaboration (ACT) Implementation
+The first stage of our hybrid methodology constitutes the
+process-driven component and employs a multi-agent col-
+laborative framework consisting of three specialized agents:
+an Analyst, a Coder, and a Tester. This design parallels the
+collaborative framework outlined in [7] and is illustrated in the
+ACT module shown in Figure 1. We chose this architecture
+due to its straightforward design and limited agent count,
+making it an appropriate example of conventional agent-based
+workflows in the field. Furthermore, this structure provides
+adaptability, allowing for easy modification of interaction
+complexity through the addition or removal of agents. Within
+this stage, the Analyst Agent decomposes programming tasks
+into smaller, manageable components and formulates a com-
+prehensive implementation strategy. Following this strategic
+outline, the Coder Agent generates the solution, progressively
+improving the code through an iterative process informed by
+the Tester Agent’s evaluation, which includes code inspection,
+syntactic verification, and requirements validation. To balance
+computational cost and effectiveness, this refinement cycle is
+limited to a maximum of three iterations (retriesCT=3).
+1https://github.com/nazmus-ashrafi/multiagent vs debugger
+B. Runtime Debugging (Debugger) Integration
+The product-oriented debugging phase adapts the Large
+Language Model Debugger (LDB) approach as proposed in
+[17]. When code produced by ACT does not pass the vis-
+ible test cases, we break down the problematic code into
+fundamental blocks through Control Flow Graph (CFG) de-
+composition, illustrated in the Debugger module of Figure
+1. Our implementation employs block-level decomposition,
+which yields the most accurate results among the available
+decomposition strategies. As the code executes with test cases
+that trigger failures, we track and record the values of inter-
+mediate variables contained within each block. A debugger
+agent receives this execution trace to analyze the errors and
+produce diagnostic explanations, which subsequently inform a
+coder agent that generates revised code. We limit this iterative
+debugging process to 4 cycles (retriesD = 4), a reduction from
+LDB’s standard 10 iterations, to balance effectiveness with
+computational efficiency.
+C. Experimental Setup
+We begin by segmenting the HumanEval and HumanEval+
+benchmark datasets into three components: task descriptions
+(function identifier and natural language requirement), visible
+test cases (for framework execution), and hidden test cases
+(for final evaluation). Our chained framework then processes
+problems sequentially: first through ACT collaboration until
+code passes visible tests or reaches maximum iterations, then
+through debugging phase if needed, until success or iteration
+limit.
+Large Language Models: We evaluate 19 LLMs spanning
+diverse architectures, training methodologies, and providers,
+including OpenAI (GPT-4o, GPT-4o-mini, GPT-3.5-Turbo),
+Anthropic (Claude 3.5 Sonnet/Haiku, Claude 3 Haiku), Meta
+(LLaMA variants), Google (Gemini 2.0 Flash, Gemini 1.0 Pro,
+Gemma 2), Microsoft (Phi-3.5), Alibaba (Qwen2.5), Mistral
+(Mixtral 8x7B, Mistral-Instruct), and others (A table summa-
+rized the LLMs utilized in our study along with API endpoint
+details can be found in our GitHub repository 1). Our selection
+ensures comprehensive coverage across: (1) parameter scales
+from 3.8B (edge deployment on devices like smartphones)
+to 671B parameters (cloud-based models pushing AI perfor-
+mance boundaries); (2) training specialization from general-
+purpose to instruction-tuned and code-specific models; and (3)
+accessibility paradigms spanning both open-source and closed-
+source architectures.
+All models were prompted with identical role-specific in-
+structions to ensure experimental consistency. For decoding,
+we set the temperature to 0, following common practice
+in code generation benchmarks, as this yields deterministic
+output and allows for fair comparison across models.
+Datasets: We conduct experiments on HumanEval [3] con-
+sisting of 164 handwritten programming problems in Python,
+and HumanEval+ [13] which enhances the original dataset
+with 80× more test cases.
+Evaluation Metrics: We use pass@1 as our primary metric,
+measuring functional correctness of single generated solutions.
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:02:03 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 4]]
+TABLE I
+PASS @1 ACCURACY SCORES FOR 19 MODELS ACROSS SIX APPROACHES ON HUMAN EVAL AND HUMAN EVAL+ BENCHMARKS . PERFORMANCE
+IMPROVEMENTS FOR COMBINED APPROACHES VS . INDIVIDUAL TECHNIQUES ARE SHOWN , WITH GREEN /RED HIGHLIGHTING INCREASES /DECREASES .
+Code rigorousness is assessed by comparing performance
+degradation between HumanEval and HumanEval+ where
+smaller declines indicate more robust generation. Generation
+latency measures total processing time from input of task
+description to output of the generated code, including API
+calls, agent interactions, the debugging process and visible test
+cases execution time. Statistical significance is evaluated using
+a one-tailed paired t-test.
+Baseline Approaches: To evaluate our ACT + Debugger
+combination, we compare against five approaches: (1) Basic:
+Direct LLM prompting without refinement, (2) AC: Analyst-
+Coder collaboration with single interaction, (3) ACT: Analyst-
+Coder-Tester three-agent collaboration with up to 3 iterations,
+(4) Debugger Only: Runtime debugging without prior ACT
+collaboration, and (5) AC + Debugger: Analyst-Coder two-
+agent collaboration followed by debugging.
+IV. R ESULTS
+A. Experimental V alidation of ACT-Debugger Integration
+We evaluated 19 LLMs across three experimental con-
+figurations to investigate if the integration of multi-agent
+collaboration (ACT) with run-time execution debugging (De-
+bugger) yields substantially better functional accuracy than
+either method independently. The configurations included: (1)
+combined ACT + Debug, (2) ACT only, and (3) Debug only.
+We used the HumanEval benchmark for this assessment, while
+HumanEval+ was reserved for evaluating code rigorousness.
+In HumanEval, the combined approach achieved 64.82% mean
+accuracy, compared to 57.16% for ACT alone and 63.86% for
+Debug alone (comprehensive results in Table I). We tested two
+hypotheses using one-tailed paired t-tests:
+1) H1,1: ACT + Debug outperforms ACT alone
+(µACT+Debug>µ ACT)
+2) H1,2: ACT + Debug outperforms Debug alone
+(µACT+Debug>µ Debug)
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:02:03 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 5]]
+The paired t-test design ensures consistency by evaluating
+each model under all three conditions.
+The analysis employed, degrees of freedom ( df =n − 1 =
+18) and significance level ( α = 0.15). The higher α enables
+detection of small performance gains valuable for LLM opti-
+mization, where marginal improvements can compound over
+time and benefit interactive development environments.
+Fig. 2. Probability density functions for ACT and ACT+Debug on Hu-
+manEval.1) Comparing the chained approach (ACT + Debugger)
+with ACT: The t-test revealed significant improvement ( H0,1
+rejected), providing strong evidence that the chained frame-
+work enhances functional accuracy over ACT alone (Figure 2).
+Nearly all LLMs in Table I show improved HumanEval
+accuracy with the debugger addition.
+2) Comparing the chained approach (ACT + Debugger)
+with Debugger: The 0.96% improvement was not statistically
+significant (H0,2 not rejected). This suggests Debug alone
+captures much of the combined approach’s benefits through
+focused debugging of code blocks and contextual feedback,
+limiting additional gains from ACT integration.
+However, our further analysis reveals a clear pattern across
+38 data points (2 datasets, 19 models) shown in Figure 3 and
+Figure 4. The scatter plots demonstrate an inverse correlation:
+when Debug significantly outperforms ACT/AC, combining
+them yields diminishing returns. Conversely, when ACT/AC
+performance approaches Debug performance, the chained ap-
+proach provides greater improvements.
+This pattern holds for both ACT+Debug (Figure 3) and
+AC+Debug (Figure 4), indicating that reducing agentic com-
+plexity doesn’t alter the fundamental relationship. The trend
+suggests that chained approaches are most beneficial when
+individual techniques perform comparably, emphasizing the
+importance of selecting models where ACT/AC and Debug
+show similar effectiveness for optimal performance gains.
+B. Code Rigorousness
+Code rigor was assessed by comparing performance on
+HumanEval versus HumanEval+ (which contains 80 times
+more test cases). Minimal performance degradation suggests
+more rigorous code generation.
+Fig. 3. Corelation between Debugger-ACT gap and ACT+Debug improve-
+ment in accuracy.
+Fig. 4. Corelation between Debugger-AC gap and AC+Debug improvement
+in accuracy.
+1) Approach Analysis: Figure 5 shows the relationship
+between mean accuracy and performance degradation under
+expanded test coverage. Basic approach exhibited highest rigor
+(smallest drop: 90.83) but lower overall accuracy. AC and
+ACT showed substantial robustness drops (129.27 and 118.51),
+showing that agentic interaction introduces fragility.
+The Debugger Only approach demonstrated compelling
+balance with high accuracy and robustness (drop: 107.84).
+AC + Debugger maintained this balance (110.41 drop) while
+achieving 0.68% higher accuracy. ACT + Debugger, despite
+highest accuracy, showed largest robustness drop (137.74),
+suggesting compounded complexity reduces code resilience.
+2) Model Analysis: Figure 6 reveals a trade-off: higher-
+performing models (Claude 3.5 Sonnet, GPT-4o, DeepSeek-
+V3) show larger accuracy drops under rigorous testing. Claude
+3.5 Haiku stands out with stable performance, offering optimal
+accuracy-reliability balance. Smaller models show minimal
+drops due to limited degradation room.
+C. Latency Comparison
+Execution times vary significantly across approaches when
+averaged over 19 LLMs, ranging from 7.68 to 68.42 minutes,
+as shown in Table II. The basic approach is the fastest
+(7.68 minutes) while delivering moderate accuracy (54.09%).
+When collaborative agents are employed, execution time in-
+creases progressively with the growing number of agents:
+AC approach triples execution time to 20.89 minutes without
+accuracy improvement (53.34%), while ACT requires 48.47
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:02:03 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 6]]
+TABLE II
+SUMMARY OF LATENCY, ACCURACY , AND TRADE -O FFS ACROSS APPROACHES ON HUMAN EVAL AND HUMAN EVAL+ BENCHMARKS
+Fig. 5. Mean Pass@1 accuracy vs. average accuracy drop under HumanEval+
+testing.minutes for similar accuracy (54.04%). The standalone debug-
+ger approach offers an efficient trade-off at 31.11 minutes with
+61.02% accuracy, a 6.93% improvement over the basic ap-
+proach. AC + Debugger achieves optimal balance with highest
+accuracy (61.7%) and reasonable execution time (38.42 min-
+utes). When implementing the complete ACT + Debug chain,
+the results demonstrate diminishing returns, as it demands the
+most extensive execution time (68.42 minutes) while achieving
+marginally reduced accuracy (61.195%). The findings indicate
+that the AC + Debugger combination represents the most
+effective approach, yielding significant accuracy gains while
+introducing only moderate increases in latency.
+V. I MPLICATIONS FOR AI-D RIVEN SOFTWARE
+ENGINEERING
+AI’s role in software engineering is undergoing a major
+shift. Previously, AI was primarily an analytical tool, used
+to predict system stability [2], detect design defects [14], and
+optimize software architecture [1, 4]. Now, with generative
+Large Language Models (LLMs), AI is evolving into a co-
+creator that directly writes and refines code. This shift impacts
+the core development and testing phases, aligning with recent
+findings that AI tools significantly improve practices in soft-
+ware construction![8]. Our framework reinforces this by using
+multi-agent collaboration and runtime debugging to enhance
+the functional accuracy of AI-generated code. Despite this
+progress, overcoming key challenges in complexity, efficiency,
+trustworthiness remains critical for successful integration
+VI. C ONCLUSION
+Our study investigated the integration of multi-agent col-
+laborative approaches with runtime debugging techniques in
+LLM-based code generation, testing across 19 language mod-
+els and 2 datasets. Key findings reveal that our combined ap-
+proach outperforms the basic approach and the individual ACT
+approach. We also find that the success of integrating both
+ACT and debugger strategies depends on their performance
+disparity. When debugging significantly outperforms agentic
+approaches, combining them introduces unnecessary complex-
+ity. However, a simple two-agent (Analyst-Coder) workflow
+with debugging yields a small but meaningful accuracy im-
+provement over debugging alone, across both HumanEval
+and HumanEval+, while preserving code rigor and latency,
+suggesting this as the optimal configuration.
+These insights have critical implications for production AI
+systems, where even modest accuracy improvements yield
+significant value at scale. Organizations should prioritize
+simple agentic systems with debugging over complex multi-
+agent architectures for cost-effective, reliable code generation.
+Future research should investigate broader programming do-
+mains, explore combining more code-specific inference-time
+strategies, incorporate comprehensive code quality metrics
+beyond functional accuracy, and develop adaptive combination
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:02:03 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 7]]
+Fig. 6. Model-specific accuracy vs. robustness trade-off under stringent testing.
+methods that respond dynamically to task complexity and
+programming language differences.
+REFERENCES
+[1] Sabrine Boukharata, Ali Ouni, Marouane Kessentini,
+Salah Bouktif, and Hanzhang Wang. Improving web
+service interfaces modularity using multi-objective op-
+timization. Automated Software Engineering , 26(2):275–
+312, 2019.
+[2] Salah Bouktif, Houari Sahraoui, and Faheem Ahmed.
+Predicting stability of open-source software systems us-
+ing combination of bayesian classifiers. ACM Trans-
+actions on Management Information Systems (TMIS) ,
+5(1):1–26, 2014.
+[3] M Chen et al. Evaluating large language models trained
+on code, 7 2021. arXiv:2107.03374.
+[4] Marwa Daagi, Ali Ouniy, Marouane Kessentini, Mo-
+hamed Mohsen Gammoudi, and Salah Bouktif. Web
+service interface decomposition using formal concept
+analysis. In 2017 IEEE International Conference on Web
+Services (ICWS) , pages 172–179. IEEE, 2017.
+[5] Y Ding, M J Min, G Kaiser, and B Ray. Cycle: Learning
+to self-refine the code generation. Proceedings of the
+ACM on Programming Languages , 8, 4 2024.
+[6] Xiangjue Dong, Maria Teleki, and James Caverlee. A
+survey on llm inference-time self-improvement. arXiv
+preprint, Dec 2024.
+[7] Y Dong, X Jiang, Z Jin, and G Li. Self-collaboration
+code generation via chatgpt, 4 2023. arXiv:2304.07590.
+[8] Usman Khan Durrani, Mustafa Akpinar, Hakan Bektas,
+and Mohammad Saleh. Impact of artificial intelligence
+on software engineering phases and activities (2013-
+2024): A quantitative analysis using zero-truncated pois-
+son model. IEEE Access , 2025.
+[9] X Hu, K Kuang, J Sun, H Yang, and F Wu. Leveraging
+print debugging to improve code generation in large
+language models, 1 2024. arXiv:2401.05319.
+[10] D Huang, J M Zhang, M Luck, Q Bu, Y Qing, and
+H Cui. Agentcoder: Multi-agent-based code genera-
+tion with iterative testing and optimisation, 12 2023.
+arXiv:2312.13010.
+[11] Md. A Islam, M E Ali, and M R Parvez. Mapcoder:
+Multi-agent code generation for competitive problem
+solving, 5 2024. arXiv:2405.11403.
+[12] H Jin, L Huang, H Cai, J Yan, B Li, and H Chen.
+From llms to llm-based agents for software engineering:
+A survey of current, challenges and future, 8 2024.
+arXiv:2408.02479.
+[13] J Liu, C Steven Xia, and Y Wang Lingming Zhang. Is
+your code generated by chatgpt really correct? rigorous
+evaluation of large language models for code generation.
+Online repository.
+[14] Ali Ouni, Marwa Daagi, Marouane Kessentini, Salah
+Bouktif, and Mohamed Mohsen Gammoudi. A machine
+learning-based approach to detect web service design
+defects. In 2017 IEEE International Conference on Web
+Services (ICWS) , pages 532–539. IEEE, 2017.
+[15] C Qian et al. Scaling large-language-model-based multi-
+agent collaboration, 6 2024. arXiv:2406.07155.
+[16] Z Zhang et al. Unifying the perspectives of nlp and
+software engineering: A survey on language models for
+code, 11 2023. arXiv:2311.07989.
+[17] L Zhong, Z Wang, and J Shang. Debug like a human:
+A large language model debugger via verifying runtime
+execution step-by-step, 2 2024. arXiv:2402.16906.
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:02:03 UTC from IEEE Xplore. Restrictions apply.

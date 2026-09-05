@@ -1,0 +1,1060 @@
+[[page 1]]
+PhishDebate: An LLM-Based Multi-Agent
+Framework for Phishing Website Detection
+WENHAO LI 1, SEL V AKUMAR MANICKAM1,∗ , YUNG-WEY CHONG 2, SHANKAR KARUPPAYAH1
+1 Cybersecurity Research Centre, Universiti Sains Malaysia, Pulau Pinang, Malaysia
+2 School of Computer Sciences, Universiti Sains Malaysia, Pulau Pinang, Malaysia
+wenhaoli@ieee.org,{selva, chong, kshankar}@usm.my
+Abstract—Phishing websites remain a major cyber-
+security threat, exploiting deceptive structures, brand
+impersonation, and social engineering to evade detec-
+tion. Recent advances in large language models (LLMs)
+have improved phishing detection through contextual
+understanding, yet most existing approaches rely on
+single-agent classification, which is prone to halluci-
+nation and often lacks interpretability and robustness.
+To address these limitations, we propose PhishDebate,
+a modular multi-agent LLM-based debate framework
+for phishing website detection. Four specialized agents
+independently analyze webpage aspects, including URL
+structure, HTML composition, semantic content, and
+brand impersonation, under the coordination of a Mod-
+erator and final Judge. Through structured debate
+and divergent reasoning, the framework achieves more
+accurate and interpretable decisions. By reducing un-
+certain predictions and providing transparent reason-
+ing, PhishDebate functions as an analyst-augmentation
+system that lowers cognitive load and supports early,
+left-of-exploit detection of phishing threats. Evalua-
+tions on commercial LLMs show that PhishDebate
+achieves 98.2% recall on a real-world phishing dataset
+and outperforms single-agent and Chain-of-Thought
+(CoT) baselines. Its modular design enables agent-level
+configurability, allowing adaptation to varying resource
+and application requirements, and offers scalability to
+high-velocity, large-scale security data environments.
+Index Terms—Analyst Augmentation System, Phish-
+ing Website Detection, Large Language Model, Multi-
+Agent System.
+I. Introduction
+Phishing attacks continue to pose a pervasive and evolv-
+ing threat across the digital landscape, targeting individ-
+uals, businesses, and institutions alike [1]. By mimicking
+legitimate websites and exploiting human trust, phishing
+websites deceive users into disclosing sensitive information
+such as login credentials, financial details, or personal data
+[2], [3]. The sophistication and scale of phishing operations
+have escalated in recent years, often leveraging automa-
+tion, obfuscation, and brand impersonation to evade de-
+tection systems [4]. Consequently, phishing remains one of
+the most pressing cybersecurity challenges, accounting for
+a significant proportion of online fraud and data breaches
+[5].
+SELVAKUMAR MANICKAM is the corresponding author.
+To combat this threat, a wide range of detection tech-
+niques have been proposed. Traditional approaches relied
+on heuristic rules and blacklists, which are lightweight but
+prone to obsolescence in the face of adaptive attackers
+[6], [7]. Machine learning models have since emerged,
+incorporating engineered features from Uniform Resource
+Locators (URLs), HyperText Markup Language (HTML)
+structures, and third-party metadata [8], [9]. More re-
+cently, deep learning and transformer-based architectures
+have demonstrated promising results by learning patterns
+from raw inputs such as URLs, webpage content, and
+screenshots [10]–[12]. With the rise of Large Language
+Models (LLMs), phishing detection has entered a new era,
+where contextual understanding and semantic reasoning
+allow for the identification of subtle social engineering
+tactics [13].
+However, most existing LLM-based methods for phish-
+ing website detection rely on single-agent classification
+[14], which not only lacks iterative reasoning and inter-
+pretability but also risks hallucinations [15] and narrow
+decision-making due to dependence on a single perspec-
+tive. This limitation reduces their robustness and relia-
+bility when confronting complex, ambiguous, or deceptive
+phishing tactics.
+To address these limitations, we propose PhishDebate,
+a modular multi-agent LLM-based debate framework for
+phishing website detection. PhishDebate comprises four
+specialized agents, each targeting a distinct dimension
+of phishing evidence, including URL structure, HTML
+composition, semantic content, and brand impersonation.
+A Moderator oversees the structured debate process, while
+a final Judge delivers the classification verdict based on all
+arguments. The framework follows a modular design that
+allows users to flexibly include or exclude agents based
+on resource constraints or task-specific requirements. This
+structure supports collaborative reasoning, improves de-
+tection accuracy, enhances interpretability, and reduces
+dependence on a single-agent perspective. Moreover, by
+reducing uncertain predictions and providing transparent
+reasoning, PhishDebate acts as an analyst-augmentation
+system that helps lower the cognitive burden of security
+analysts. Its ability to identify phishing attempts at an
+early, left-of-exploit stage underscores its relevance for
+proactive defense, while the modular design offers scalabil-
+arXiv:2506.15656v2 [cs.CR] 9 Mar 2026
+
+[[page 2]]
+ity to high-velocity, large-scale security data environments.
+The key contributions of this paper are as follows:
+•We introduce PhishDebate, one of the first debate-
+based multi-agent LLM frameworks specifically de-
+signed for phishing website detection, emphasizing
+modularity, explainability, and collaborative infer-
+ence.
+•We develop a set of specialized agent roles and de-
+bate coordination strategies that support multi-round
+argumentation and dynamic consensus evaluation,
+enabling the detection of complex phishing attempts.
+•We conduct comprehensive evaluations using two
+real-world phishing datasets and four state-of-the-
+art LLMs (e.g., GPT-4o, Gemini-2.0), compar-
+ing PhishDebate against baselines including direct
+prompting and Chain of Thought (CoT) reasoning.
+•We demonstrate through scenario analysis and case
+studies that PhishDebate not only improves classi-
+fication performance but also provides interpretable
+rationales, enhancing trust and transparency in phish-
+ing detection.
+The remainder of this paper is organized as follows:
+Section II reviews relevant literature in phishing detection
+and multi-agent LLM reasoning. Section III details the de-
+sign of the PhishDebate framework, including agent roles
+and debate logic. Section IV presents the evaluation setup,
+datasets, and performance metrics. Section V reports ex-
+perimental results, including comparative baselines and
+scenario analyses and a detailed case study. Finally, Sec-
+tion VI discusses the limitations and Section VII concludes
+the paper with future directions.
+II. Related Work
+A. Phishing Website Detection
+Phishing website detection has evolved significantly over
+the past few decades, beginning with heuristic-based ap-
+proaches [6], [7] that relied on rule-based inspection of
+URLs, domain features, and HTML signatures. These
+methods typically used predefined rules such as the pres-
+ence of IP-based URLs, suspicious JavaScript functions,
+or invisible elements to flag malicious content. While
+lightweight and interpretable, heuristic techniques suffered
+from low adaptability to novel phishing tactics [1].
+To improve generalization, researchers adopted machine
+learning-based classifiers [8], [9], which extract engineered
+features from URLs, HTML structure, and third-party
+metadata (e.g., WHOIS, Alexa rank) [16]. Algorithms
+like decision trees, support vector machines (SVM), and
+random forests were trained on labeled datasets to detect
+phishing behavior patterns. However, their reliance on
+manual feature extraction and third-party data posed
+scalability and robustness challenges.
+Deep learning methods, especially Convolutional Neu-
+ral Networks (CNNs) and Recurrent Neural Networks
+(RNNs), further advanced detection capabilities by auto-
+matically learning patterns from raw input such as URLs,
+text, and screenshots [10]–[12]. Vision-based models using
+webpage screenshots and hybrid models combining URL,
+Document Object Model (DOM), and content-level fea-
+tures have shown promise in detecting visually deceptive
+phishing websites [17], [18]. Recently, transformer-based
+architectures and pre-trained language models have been
+applied to capture semantic cues in webpage content and
+URLs [1], [19], improving the understanding of social
+engineering cues.
+With the rise of LLMs, phishing website detection has
+entered a new paradigm [1], [14]. LLMs provide context-
+aware understanding of webpage elements, brand imper-
+sonation, and social engineering tactics, which enhances
+detection performance even in the presence of various
+modern cloaking techniques [4], [20]. However, most ex-
+isting approaches rely on binary classification with single-
+shot LLM prompts [14], lacking collaborative reasoning or
+iterative verification. This gap highlights the opportunity
+for more interpretable, resilient, and robust LLM-based
+detection frameworks.
+B. Multi-Agent Debate and Collaborative Reasoning
+Multi-agent debate systems are inspired by human de-
+liberation, where multiple independent agents analyze and
+critique a shared problem before reaching a decision [21].
+These systems have been increasingly used to enhance
+the reasoning abilities of language models by encouraging
+diversity of perspectives and iterative refinement [22]–[24].
+Each agent typically specializes in a different domain or
+analytic skill and engages in structured argumentation
+rounds moderated by a central judge or aggregator.
+In the domain of phishing email detection, a debate-
+driven multi-agent LLM framework is proposed [25] where
+two agents argue for and against a phishing classification,
+and a third judge agent determines the final verdict. This
+setup enabled the system to uncover subtle social engineer-
+ing cues and improved detection accuracy without relying
+on handcrafted features or complex prompt engineering.
+Similarly, MultiPhishGuard [26] introduced a five-agent
+system combining text, URL, metadata, explanation, and
+adversarial agents, coordinated by reinforcement learn-
+ing to adapt to evolving adversarial threats. The model
+achieved good performance with enhanced robustness and
+interpretability through its explanation simplifier compo-
+nent.
+Beyond phishing, the multi-agent debate framework has
+been applied to spam detection. A recent study [27] em-
+ployed LLM agents with distinct roles to simulate complex
+evaluation processes similar to human decision-making.
+This collaborative design enhanced both accuracy and
+resilience against evolving spam tactics, outperforming
+traditional single-agent detectors in precision and adapt-
+ability.
+These works demonstrate the effectiveness of multi-
+agent debate systems in security-relevant classification
+tasks. However, their applications have been primarily
+
+[[page 3]]
+limited to phishing emails and spam detection, leaving
+phishing website detection as an unexplored frontier. This
+motivates our work to extend the debate paradigm to this
+domain.
+III. PhishDebate Framework
+In this section, we present PhishDebate, a novel multi-
+agent LLM framework for phishing website detection.
+Our approach leverages the collaborative intelligence of
+specialized agents through structured debate to achieve
+robust and interpretable phishing detection.
+A. Overall PhishDebate Framework
+PhishDebate employs a multi-agent debate system con-
+sisting of six distinct agents: four specialist agents (URL
+Analyst Agent, HTML Structure Agent, Content Semantic
+Agent, and Brand Impersonation Agent), one Moderator,
+and one Judge. The framework follows a structured debate
+process where specialist agents analyze different aspects
+of a website and engage in collaborative reasoning to
+reach a consensus. The Fig. 1 illustrates the workflow of
+PhishDebate.
+The framework operates through four main phases:
+1)Initial Analysis Phase (Round 1), where each
+active specialist agent independently analyzes the
+website from their domain expertise without seeing
+other agents’ responses.
+2)Consensus Evaluation Phase, where the Moder-
+ator evaluates if consensus exists after each round
+based on the discussion from specialist agents. If a
+consensus is reached, no further round will go then.
+3)Multi-round Debate Phase (Rounds 2+),
+where agents can see and respond to other agents’
+analyses, refining their assessments through struc-
+tured discussion. This phase continues until consen-
+sus is reached or maximum rounds are completed.
+4)Final Judgment Phase, where the Judge always
+makes the final determination based on all avail-
+able evidence from the debate process, regardless of
+whether consensus was reached.
+Note that ifR max=1, the system performs only the ini-
+tial independent analysis followed by consensus evaluation,
+then proceeds directly to the Judge for final decision-
+making.
+The key innovation of PhishDebate lies in its abil-
+ity to combine diverse analytical perspectives through
+structured argumentation, enabling the system to cap-
+ture subtle phishing indicators that might be missed by
+single-agent approaches. The debate mechanism ensures
+that each agent’s specialized analysis contributes to the
+final decision while maintaining transparency through de-
+tailed reasoning chains. Algorithm 1 presents the proposed
+PhishDebate framework.
+Algorithm 1:PhishDebate Framework
+Input:URLU, HTMLH, textT,R max,τ, agentsA
+Output:AssessmentF, confidence, rounds, early
+termination
+F unctionPhishDebate(U,H,T,R max,τ,A):
+responses←∅,round←1;
+// Phase 1: Independent Analysis (Round 1)
+foreacha i∈Ado
+prompti←GenPrompt(a i,U,H,T);
+responses[ai]←QueryAgent(a i,prompt i);
+end
+// Phase 2: Consensus Evaluation
+consensus←ModEval(responses,round);
+ifconsensus.reached∧consensus.conf≥τthen
+// Skip additional debate rounds if consensus
+reached
+gotoPhase 4;
+end
+// Phase 3: Multi-round Debate (Rounds 2+)
+forround= 2toR max do
+context←AggResp(responses);
+foreacha i∈Ado
+prompt←GenDebPrompt(a i,context);
+responses[ai]←QueryAgent(a i,prompt);
+end
+consensus←ModEval(responses,round);
+ifconsensus.reached∧consensus.conf≥τthen
+break;
+end
+end
+// Phase 4: Final Judgment (Judge always decides)
+judge prompt←GenJudgePrompt(responses,round);
+decision←QueryJudge(judge prompt);
+return
+(decision.assess,decision.conf,round,consensus.reached);
+B. Specialist Agents
+The PhishDebate framework employs four specialized
+agents, each designed to analyze specific aspects of phish-
+ing detection. Each agent operates with domain-specific
+prompts and contributes unique insights to the collabora-
+tive decision-making process.
+1) URL Analyst Agent:The URL Analyst Agent spe-
+cializes in examining URL structures and domain charac-
+teristics to identify phishing indicators. This agent focuses
+on detecting suspicious patterns in domain names, subdo-
+mains, URL paths, and overall URL construction that are
+commonly associated with phishing attacks. The Fig. 2
+details the prompt template used for URL Analyst Agent.
+With this, a structured assessment can be returned
+containing claim (PHISHING/LEGITIMATE), confidence
+score (0-1), and supporting evidence focusing on URL-
+based indicators such as domain spoofing, suspicious
+TLDs, URL shortening, and deceptive subdomain usage.
+2) HTML Structure Agent:The HTML Structure
+Agent analyzes the underlying HTML code structure to
+identify technical indicators of phishing websites. This
+agent examines form elements, JavaScript usage, iframe
+implementations, and other structural patterns that may
+indicate malicious intent. The Fig. 3 details the prompt
+template used for HTML Structure Agent.
+
+[[page 4]]
+Fig. 1. The Workflow of PhishDebate Framework.
+Prompt Template 1: URL Analyst Agent
+Input:Website URL (U)
+Prompt Template:
+You are a cybersecurity expert specializing in
+URL analysis for phishing detection. Examine the
+provided URL and identify suspicious patterns,
+domain characteristics, subdomain usage, URL
+structure, and any indicators that suggest
+phishing or legitimate intent.
+URL: [TARGET URL]
+Provide your response in the following format:
+- Claim: [Your phishing/non-phishing assessment
+of the URL]
+- Confidence: [A score between 0 and 1]
+- Evidence: [Key suspicious or benign patterns
+you found]
+Fig. 2. Prompt template for URL Analyst Agent.
+Prompt Template 2: HTML Structure Agent
+Input:HTML content (H)
+Prompt Template:
+You are an expert in web security. Review the
+HTML structure of a webpage and determine if
+it exhibits suspicious structural characteristics
+typical of phishing sites. Focus on elements such
+as hidden forms, suspicious input fields, iframe
+usage, obfuscated JavaScript, and deceptive
+redirection patterns.
+HTML: [TRUNCATED HTML CONTENT]
+Provide your response in the following format:
+- Claim: [Your assessment about the HTML structure
+indicating phishing or not]
+- Confidence: [A score between 0 and 1]
+- Evidence: [Relevant structural elements or tag
+patterns you found]
+Fig. 3. Prompt template for HTML Structure Agent.
+As a result, a technical assessment can be formed focus-
+ing on HTML structural anomalies, suspicious form ac-
+tions, hidden elements, JavaScript obfuscation, and other
+code-level indicators of phishing attempts.
+3) Content Semantic Agent:The Content Semantic
+Agent performs natural language analysis of the visible
+website content to detect linguistic patterns and semantic
+cues associated with phishing attacks. This agent special-
+izes in identifying manipulative language, urgency tactics,
+and social engineering techniques. The Fig. 4 illustrates
+the prompt template used for Content Semantic Agent.
+Prompt Template 3: Content Semantic Agent
+Input:Visible text content (T)
+Prompt Template:
+You are a cybersecurity-focused language expert.
+Read the visible text content extracted from
+a webpage and decide whether the language
+indicates phishing intent. Look for emotionally
+manipulative language, requests for sensitive
+information, login instructions, urgency, or
+impersonation of known organizations.
+Visible Text: [TRUNCATED VISIBLE TEXT]
+Provide your response in the following format:
+- Claim: [Whether the page language seems
+phishing-related]
+- Confidence: [A score between 0 and 1]
+- Evidence: [Specific words, phrases, or sentence
+patterns that support your claim]
+Fig. 4. Prompt template for Content Semantic Agent.
+Through this linguistic analysis, emotional manipula-
+tion, urgency indicators, credential harvesting language,
+and other semantic patterns characteristic of phishing
+content can be identified.
+4) Brand Impersonation Agent:The Brand Imperson-
+ation Agent specializes in detecting attempts to imperson-
+ate legitimate brands or organizations. This agent analyzes
+both URL and content elements to identify unauthorized
+use of brand names, logos, and corporate identity ele-
+ments. The Fig. 5 demonstrates the prompt template used
+for Brand Impersonation Agent.
+The brand impersonation assessment identifies the spe-
+cific brands being mimicked, authenticity indicators, and
+evidence of legitimate versus fraudulent brand usage.
+
+[[page 5]]
+Prompt Template 4: Brand Impersonation Agent
+Input:URL (U) and visible text content (T)
+Prompt Template:
+You are a brand impersonation detection expert.
+Based on the URL and the HTML-visible content,
+evaluate whether this page attempts to impersonate
+a known brand. Focus on brand names, company
+references, login language, and any indications
+of misused identity (such as pretending to be
+Google, Apple, PayPal, etc.).
+URL: [TARGET URL]
+Visible Text:
+[TRUNCATED VISIBLE TEXT]
+Provide response in following format:
+- Claim: [Does the content attempt to impersonate
+a known brand?]
+- Confidence: [A score between 0 and 1]
+- Evidence: [Name(s) of impersonated brands and
+supporting context]
+Fig. 5. Prompt template for Brand Impersonation Agent.
+C. Coordination Agents
+1) Moderator:The Moderator serves as the debate
+coordinator, evaluating specialist agent responses after
+each round to determine if consensus has been reached.
+The Moderator analyzes the collective insights from all
+active specialist agents and decides whether the evidence
+is sufficient for a confident determination. The prompt
+template used for Moderator can be found in Appendix A
+Fig. 7.
+A JSON-formatted consensus evaluation will be gen-
+erated containing: consensus status (Yes/No), supported
+assessment (PHISHING/LEGITIMATE/UNCERTAIN),
+detailed reasoning, confidence score, and continuation de-
+cision.
+2) Judge:The Judge makes the final determination
+when no consensus is reached after the maximum number
+of debate rounds. The Judge considers all evidence pre-
+sented by specialist agents throughout the entire debate
+process and renders a definitive verdict. The prompt tem-
+plate used for Judge can be found in Appendix A Fig. 8.
+The Judge Agent outputs the Final judgment in JSON
+format containing definitive assessment (PHISHING/LE-
+GITIMATE), confidence score, comprehensive reasoning,
+and key evidence summary.
+PhishDebate follows a modular design philosophy that
+enables flexible configuration based on specific use cases
+and requirements. The framework supports several cus-
+tomization options:
+Agent Exclusion:Users can selectively exclude spe-
+cific specialist agents from the debate process while main-
+taining system integrity. The framework enforces safety
+constraints ensuring that critical agents (Moderator and
+Judge) cannot be excluded and at least one specialist agent
+remains active. This feature enables comparative analysis
+and performance optimization for different scenarios.
+Configurable Debate Rounds:The number of de-
+bate rounds can be adjusted (1-10 rounds) to balance
+between thoroughness and computational efficiency. Early
+termination mechanisms allow the system to conclude
+debates when strong consensus is reached, optimizing
+resource utilization.
+In addition, to optimize token usage and prevent context
+limit violations, PhishDebate implements intelligent con-
+tent truncation for HTML and text inputs. HTML content
+is truncated based on model-specific token limits, with
+truncation performed at HTML tag boundaries to preserve
+structural integrity. A truncation notice is appended when
+content exceeds limits, ensuring agents are aware of incom-
+plete data while maintaining computational efficiency.
+IV. Evaluation
+A. Models Used
+To evaluate the performance of the proposedPhishDe-
+bateframework, we selected four commercial LLMs for
+comparison and further analysis: Qwen2.5-vl-72b-instruct
+[28], Gemini-2.0-Flash [29], GPT-4o [30], and GPT-4o
+Mini [30]. These models were chosen for their advanced
+reasoning capabilities, diverse architectures, and wide
+availability via Application Programming Interface (API),
+providing a representative benchmark across different
+commercial LLM ecosystems.
+B. Datasets & data Processing
+This study employs two datasets to evaluate and analyze
+the effectiveness of PhishDebate. The first is a Phishing
+Websites Dataset from Mendeley [31], consisting of both
+phishing and legitimate websites. This dataset originally
+includes URL, HTML source, and metadata, and was
+collected from various sources including Google Search,
+Ebbu2017 Phishing Dataset [32], PhishTank [33], Open-
+Phish [34], and PhishRepo [35]. For our experiments,
+we randomly sampled 500 phishing and 500 legitimate
+instances.
+The second dataset is the TR-OP Dataset [36], which
+contains manually labeled and balanced samples. Benign
+samples are drawn from the Tranco [37] top 50k domains,
+while phishing samples were crawled and validated within
+a six-month period from July to December 2023, span-
+ning 440 unique phishing targets from OpenPhish [34].
+Similarly, we randomly selected 500 phishing and 500
+legitimate samples from this dataset.
+We used the Mendeley dataset for performance bench-
+marking and comparison across models, while both
+Mendeley and TR-OP datasets were used in the scenario
+analysis to enhance result robustness.
+For data processing, we implemented a pipeline to
+extract structured features from each sample. The pro-
+cedure includes: (1) reading and verifying the URL and
+raw HTML; (2) using BeautifulSoup to parse and clean
+HTML by removing tags likestyle,noscript, and exter-
+nal stylesheets; (3) extracting visible text by removing all
+
+[[page 6]]
+scripttags. This produces three components per sample:
+URL, cleaned HTML, and visible text.
+The following Algorithm 2 summarizes our data prepro-
+cessing pipeline:
+Algorithm 2:Data Preprocessing Pipeline
+Input:Samples= (f U,f H) wheref U: URL file,f H: HTML
+file
+Output:Processed tuple (U,H,T): URL, cleaned HTML,
+and visible text
+U←Read(f U),R←Read(f H) ;// Extract URL and raw
+HTML
+ifU=∅orR=∅then
+returnNone;// Skip invalid sample
+end
+H ′←CleanHTML(R) ;// Remove style, noscript,
+link[rel=stylesheet]
+H←Remove(H ′,script) ;// Final cleaned HTML
+T←ExtractText(H) ;// Visible text from HTML
+return(U,H,T)
+C. Evaluation Metrics
+We evaluate model performance using standard binary
+classification metrics, computed from the confusion ma-
+trix:
+•True Positive Rate (TPR)/Recall: TPR =
+T P
+T P+F N Measures the proportion of phishing samples
+correctly identified.
+•True Negative Rate (TNR): TNR = T N
+T N+F P
+Measures the proportion of legitimate samples cor-
+rectly identified.
+•False Positive Rate (FPR): FPR = F P
+F P+T N Mea-
+sures how often legitimate websites are incorrectly
+classified as phishing.
+•False Negative Rate (FNR): FNR = F N
+F N+T P
+Measures how often phishing websites are missed.
+•Precision: Precision = T P
+T P+F P Measures the cor-
+rectness of phishing predictions.
+•Accuracy: Accuracy = T P+T N
+T P+T N+F P+F N Reflects the
+overall classification correctness.
+•F1 Score: F1 = 2· Precision·Recall
+Precision+Recall Harmonic mean of
+precision and recall; balances false positives and false
+negatives.
+V. Results
+A. Performance Evaluation
+Table I illustrates the results of performance evaluation
+across four commercial LLMs on the PhishDebate frame-
+work, including GPT-4o, GPT-4o-mini, Gemini-2.0, and
+Qwen2.5-vl-72b-instruct. The results demonstrate that
+GPT-4o consistently outperforms others in terms of overall
+classification effectiveness, achieving the highest accuracy
+(96.50%), precision (94.97%), and F1 score (96.56%),
+along with the best true negative rate (94.8%) and the
+lowest false positive rate (5.2%). Gemini-2.0, while ex-
+hibiting the fastest inference time (17.9 s), achieved the
+highest true positive rate (99.2%) and the lowest false
+negative rate (0.8%), indicating strong phishing detection
+capability. However, its performance was affected by 8 in-
+stances in which it failed to follow the binary classification
+instruction in the prompt, instead outputting an uncertain
+response. These cases, originating from legitimate web-
+sites, were treated as misclassifications, thereby increasing
+Gemini’s false positive rate to 14.4%, lowering its true
+negative rate to 85.57%, and reducing its overall accuracy
+and F1 score to 92.44% and 92.97%, respectively. GPT-
+4o-mini performs competitively but lags slightly behind
+GPT-4o, whereas Qwen showed the lowest accuracy and
+F1 score due to a significantly higher false negative rate
+(19.4%), despite maintaining a relatively low false positive
+rate (9.4%). These results highlight GPT-4o as the most
+balanced and reliable model for phishing detection in the
+context of the PhishDebate framework.
+B. Comparative Evaluation
+To evaluate the effectiveness of our proposed multi-
+agent debate system, we compare it against two widely
+adopted single-agent prompting strategies. First, we in-
+clude a Single-Agent with Direct Prompt baseline, where
+an LLM receives the raw input (URL and HTML-visible
+text) and directly predicts whether the page is phishing
+without any intermediate reasoning. This baseline reflects
+a straightforward application of LLMs for classification
+tasks and serves as a reference point for measuring im-
+provements attributable to structured reasoning. Second,
+we include a Single-Agent with CoT baseline [38], where
+the LLM is prompted to reason step-by-step through URL
+analysis, content interpretation, and brand impersonation
+detection before arriving at a decision. This variant cap-
+tures the benefits of explicit intermediate reasoning within
+a single model, enabling us to isolate and assess the added
+value of distributed agent roles and debate-based aggrega-
+tion in our system. We provide the prompt templates used
+for two baselines in Appendix A Fig. 9 and Fig. 10.
+Table II presents the results of comparative evaluation
+between the proposed PhishDebate framework and two
+baselines which are Single Agent and CoT prompting.
+The results demonstrate the effectiveness of our debate-
+driven approach in enhancing phishing detection on GPT-
+4o-mini. PhishDebate outperforms both baselines across
+all key evaluation metrics, achieving the highest precision
+(90.57%), accuracy (93.90%), recall (98.00%), and F1
+score (94.14%). Notably, while CoT prompting provides
+reasonably strong results (e.g., 90.94% F1 score), it suffers
+from lower recall and precision compared to PhishDebate,
+especially when factoring in the 50 cases it labeled as
+“uncertain” instead of providing definitive classifications.
+These include 16 phishing websites and 34 legitimate
+websites, which, according to our evaluation protocol, are
+considered misclassifications. This underscores a critical
+limitation of CoT in reliability and confidence. In contrast,
+the PhishDebate framework significantly improves the
+confidence and decisiveness of LLM-based predictions by
+leveraging multi-agent debate, thereby reducing indecisive
+
+[[page 7]]
+TABLE I
+Evaluation Metrics of PhishDebate on Commercial LLMs
+Model TPR TNR FPR FNR Recall Precision Accuracy F1 Score Time (s)
+GPT-4o0.9820.948 0.0520.018 0.9820.9497 0.9650 0.965622.20
+GPT-4o-mini 0.980 0.898 0.102 0.020 0.980 0.9057 0.9390 0.9414 37.50
+Gemini-2.0-Flash0.9920.8557 0.14430.008 0.9920.8748 0.9244 0.929717.90
+Qwen2.5-vl-72b-instruct 0.806 0.906 0.094 0.194 0.806 0.8956 0.8560 0.8484 56.36
+TABLE II
+Comparison of PhishDebate with Single Agent and CoT
+Method Prec. Acc. Rec. F1 Time
+Single Agent 0.6057 0.6700 0.9740 0.74694.7 s↓
+CoT 0.8861 0.9070 0.9340 0.9094 10.5 s
+PhishDebate 0.9057↑0.9390↑0.9800↑0.9414↑37.5 s
+Note.Prec. = Precision; Acc. = Accuracy; Rec. = Recall; F1 = F1
+Score; Time = Avg. Time (seconds).
+outputs and promoting consistent judgment across phish-
+ing and legitimate classes.
+In terms of efficiency, the three approaches exhibit clear
+differences in average inference time (Table II). The Single
+Agent baseline is the fastest, requiring only 4.7 s per
+sample. CoT increases the processing cost to 10.5 s. By
+contrast, PhishDebate achieves the strongest detection
+effectiveness but requires 37.5 s. Despite the higher latency
+and additional tokens consumed by multi-round debates,
+the overall cost of running PhishDebate remains modest:
+processing 1,000 samples incurred only about$3.357 in
+inference expenses.
+C. Scenario Analysis
+PhishDebate follows a modular design, allowing users to
+flexibly exclude specific specialized agents according to dif-
+ferent use case requirements, such as resource constraints
+or application priorities.
+Table III presents a scenario analysis evaluating the per-
+formance of the PhishDebate framework when individual
+specialized agents are excluded. The results are averaged
+across two datasets (Mendeley and TR-OP) to ensure
+robustness. The full configuration using all agents achieves
+strong overall performance, particularly demonstrating the
+highest recall (0.985) and lowest false negative rate (FN
+= 8), indicating its superior ability to identify phishing
+websites with minimal missed detections. This highlights
+the importance of the ensemble debate mechanism in
+capturing diverse phishing indicators across URL, HTML,
+semantic, and brand features.
+Notably, the exclusion of the HTML Structure Agent
+leads to the highest F1 score (0.9471), accuracy (0.9455),
+precision (0.9207), and the lowest false positive rate (FP
+= 42), suggesting that in specific deployment scenarios
+where legitimate website preservation is critical, a re-
+duced configuration excluding this agent may offer better
+precision-legitimacy trade-offs. However, this comes at a
+minor cost in recall (0.975), which is still lower than the
+full configuration.
+The variant without the Content Semantic Agent
+matches the full agent setup in recall and true positive rate
+(TP = 492), but suffers in terms of increased false positives
+(FP = 56), suggesting a reduced ability to discriminate
+legitimate content. This supports the value of semantic
+reasoning in reducing over-flagging. Similarly, excluding
+the URL Analyst Agent leads to a clear degradation in
+phishing detection capability, with a recall drop to 0.952
+and increased false negatives (FN = 24), reinforcing the
+foundational role of URL features in phishing identifica-
+tion. Finally, omitting the Brand Impersonation Agent
+results in slightly lower overall performance, underscor-
+ing its contribution to brand spoof detection. Overall,
+these findings emphasize the effectiveness of the modu-
+lar PhishDebate design, while demonstrating that task-
+specific configurations can still perform competitively un-
+der constrained scenarios.
+D. Case Study
+PhishDebate begins each investigation by distributing
+the same artefacts including the raw URL 1, rendered
+HTML, and visible text to its four specialised agents
+(URL Analyst, HTML Structure, Content Semantic, and
+Brand-Impersonation). Each agent reasons independently
+within its expertise, returns aclaim(phishing or legit-
+imate), a numericalconfidence, and traceableevidence.
+The moderator then inspects the four perspectives and
+decides whether a clear majority exists. If not, it compels
+another debate round, asking every agent to reconcile
+its view with the counter-evidence provided by its peers.
+Only when consensus is reached (or the maximum number
+of rounds elapses) does the moderator submit a verdict
+to the judge, who finalises the assessment and records a
+confidence score.
+Fig. 6 narrates a representative two-round session
+on a suspicious phishing webpage. In Round 1 the
+agents split 2–2: the URL Analyst and Brand-
+Impersonation agents flagged the directory string
+“/wp-includes/wells/wells/” as brand spoofing (Wells
+Fargo) and noted that legitimate sites never expose
+1The raw URL for this phishing website is: https://mail.mxcapit
+al.com.br/wp-includes/wells/wells/page/index.htm.
+
+[[page 8]]
+TABLE III
+Scenario Analysis of Agent Exclusion in PhishDebate Framework
+Setting Avg. TP Avg. FN Avg. FP Avg. TN Avg. Recall Avg. Precision Avg. Accuracy Avg. F1 Score
+All Agents492 850 4500.9850.9070 0.9420 0.9444
+W/O URL Agent 476 24 46 454 0.952 0.9110 0.9295 0.9311
+W/O HTML Agent 488 1242 4580.9750.9207 0.9455 0.9471
+W/O Content Agent492 856 4440.9850.8987 0.9370 0.9399
+W/O Brand Agent 489 11 56 444 0.978 0.8981 0.9335 0.9363
+Fig. 6. A detailed detection example with PhishDebate.
+/wp-includes/; by contrast, the HTML Structure and
+Content Semantic agents found no typical phishing
+artefactssuch as forms, iframes, or persuasive language,
+and therefore judged the page legitimate. Lacking
+consensus, the moderator declared the caseUNCERTAIN
+and requested a second round.
+During Round 2 each agent re-examined the shared
+evidence. Crucially, the HTML Structure and Content
+Semantic agents acknowledged that benign error pages are
+frequently used as decoys and that the highly irregular
+path outweighed the absence of active credential-stealing
+code. After switching their stance to “Likely Phishing,” all
+four agents converged. The moderator therefore recorded
+a consensus ofPHISHINGwith 0.88 confidence, and the
+judge confirmed the decision. This outcome underscores
+two salient strengths of PhishDebate: (i) its multi-view
+debate can uncoverdormantorcloakedphishing infras-
+tructure that content-only scanners miss, and (ii) the step-
+wise trace in Fig. 6 provides transparent justifications that
+facilitate analyst review or automated policy triggers.
+VI. Limitations
+Despite its effectiveness, several limitations remain.
+First, the performance of debate agents ultimately reflects
+the biases and knowledge gaps of the underlying LLMs,
+which are bounded by their pre-training data. Second,
+input length restrictions of commercial LLM APIs con-
+strain the amount of webpage content that can be fully
+processed, leading to truncation and potential information
+loss. Third, although our experiments employed commer-
+cial APIs, the core contribution of PhishDebate lies in
+demonstrating how debate-based reasoning mitigates hal-
+lucination and enhances interpretability. In practice, the
+same paradigm can be instantiated with locally deployed
+language models, enabling large-scale deployment under
+high-traffic conditions while simultaneously reducing cost
+and latency.
+VII. Conclusion and Future Directions
+This paper introduced PhishDebate, a modular multi-
+agent LLM-based debate framework for phishing website
+detection. By leveraging collaborative reasoning among
+specialized agents under the coordination of a Moderator
+and a final Judge, PhishDebate achieved strong detection
+performance and addressed key limitations of traditional
+and single-agent LLM approaches, including limited inter-
+pretability and vulnerability to hallucination.
+Future research will examine the resilience of PhishDe-
+bate against adversarial phishing tactics, such as obfus-
+cation, cloaking, and adversarially crafted webpages, to
+further validate its adaptability in dynamic and hostile
+threat environments. Ultimately, we envision PhishDebate
+as an analyst-augmentation system that not only strength-
+ens early, left-of-exploit detection but also scales to high-
+velocity, large-scale security data environments.
+References
+[1] W. Li, S. Manickam, Y.-W. Chong, W. Leng, and P. Nanda,
+“A state-of-the-art review on phishing website detection tech-
+niques,”IEEE Access, vol. 12, pp. 187 976–188 012, 2024.
+[2] R. Dhamija and J. D. Tygar, “The battle against phishing: Dy-
+namic security skins,” inProceedings of the 2005 Symposium on
+Usable Privacy and Security, ser. SOUPS ’05. New York, NY,
+USA: Association for Computing Machinery, 2005, p. 77–88.
+[3] K. Lim, J. Park, and D. Kim, “Phishing vs. legit: Comparative
+analysis of client-side resources of phishing and target brand
+websites,” inProceedings of the ACM Web Conference 2024, ser.
+WWW ’24. New York, NY, USA: Association for Computing
+Machinery, 2024, p. 1756–1767.
+[4] W. Li, S. Manickam, S. U. A. Laghari, and Y.-W. Chong,
+“Uncovering the cloak: A systematic review of techniques used
+to conceal phishing websites,”IEEE Access, vol. 11, pp. 71 925–
+71 939, 2023.
+
+[[page 9]]
+[5] N. Nejjari, K. Zkik, H. Hammouchi, M. Ghogho, and H. Ben-
+brahim, “Assessing data breach factors through modern crime
+theory: A structural equation modeling approach,”IEEE Ac-
+cess, vol. 12, pp. 92 198–92 214, 2024.
+[6] S. Gastellier-Prevost, G. G. Granadillo, and M. Laurent, “Deci-
+sive heuristics to differentiate legitimate from phishing sites,” in
+2011 Conference on Network and Information Systems Security,
+2011, pp. 1–9.
+[7] R. M. Mohammad, F. Thabtah, and L. McCluskey, “Intelligent
+rule-based phishing websites classification,”IET Information
+Security, vol. 8, no. 3, pp. 153–160, 2014.
+[8] O. K. Sahingoz, E. Buber, O. Demir, and B. Diri, “Machine
+learning based phishing detection from urls,”Expert Systems
+with Applications, vol. 117, pp. 345–357, 2019.
+[9] L. Tang and Q. H. Mahmoud, “A survey of machine learning-
+based solutions for phishing website detection,”Machine
+Learning and Knowledge Extraction, vol. 3, no. 3, pp. 672–694,
+2021. [Online]. Available: https://www.mdpi.com/2504-4990/3
+/3/34
+[10] D. Liu and J.-H. Lee, “Cnn based malicious website detection
+by invalidating multiple web spams,”IEEE Access, vol. 8, pp.
+97 258–97 266, 2020.
+[11] S. Abdelnabi, K. Krombholz, and M. Fritz, “Visualphishnet:
+Zero-day phishing website detection by visual similarity,” in
+Proceedings of the 2020 ACM SIGSAC Conference on Com-
+puter and Communications Security, ser. CCS ’20. New
+York, NY, USA: Association for Computing Machinery, 2020,
+p. 1681–1698.
+[12] E. Benavides-Astudillo, W. Fuertes, S. Sanchez-Gordon,
+G. Rodriguez-Galan, V. Mart´ ınez-Cepeda, and D. Nu˜ nez-
+Agurto, “Comparative study of deep learning algorithms in the
+detection of phishing attacks based on html and text obtained
+from web pages,” inApplied Technologies, M. Botto-Tobar,
+M. Zambrano Vizuete, S. Montes Le´ on, P. Torres-Carri´ on, and
+B. Durakovic, Eds. Cham: Springer Nature Switzerland, 2023,
+pp. 386–398.
+[13] S. Gallagher, B. Gelman, S. Taoufiq, T. V¨ or¨ os, Y. Lee,
+A. Kyadige, and S. Bergeron,Phishing and Social Engineering
+in the Age of LLMs. Cham: Springer Nature Switzerland, 2024,
+pp. 81–86.
+[14] T. Koide, H. Nakano, and D. Chiba, “Chatphishdetector: De-
+tecting phishing sites using large language models,”IEEE Ac-
+cess, vol. 12, pp. 154 381–154 400, 2024.
+[15] Z. Lin, Z. Niu, Z. Wang, and Y. Xu, “Interpreting and mitigat-
+ing hallucination in mllms through multi-agent debate,”arXiv
+preprint arXiv:2407.20505, 2024.
+[16] J. James, S. L., and C. Thomas, “Detection of phishing urls
+using machine learning techniques,” in2013 International Con-
+ference on Control Communication and Computing (ICCC),
+2013, pp. 304–309.
+[17] Y. Lin, R. Liu, D. M. Divakaran, J. Y. Ng, Q. Z. Chan,
+Y. Lu, Y. Si, F. Zhang, and J. S. Dong, “Phishpedia: A hybrid
+deep learning based approach to visually identify phishing
+webpages,” in30th USENIX Security Symposium (USENIX
+Security 21). USENIX Association, Aug. 2021, pp. 3793–3810.
+[Online]. Available: https://www.usenix.org/conference/usenix
+security21/presentation/lin
+[18] R. Liu, Y. Lin, X. Yang, S. H. Ng, D. M. Divakaran,
+and J. S. Dong, “Inferring phishing intention via webpage
+appearance and dynamics: A deep vision based approach,”
+in31st USENIX Security Symposium (USENIX Security 22).
+Boston, MA: USENIX Association, Aug. 2022, pp. 1633–1650.
+[Online]. Available: https://www.usenix.org/conference/usenix
+security22/presentation/liu-ruofan
+[19] P. Maneriker, J. W. Stokes, E. G. Lazo, D. Carutasu, F. Ta-
+jaddodianfar, and A. Gururajan, “Urltran: Improving phishing
+url detection using transformers,” inMILCOM 2021 - 2021
+IEEE Military Communications Conference (MILCOM), 2021,
+pp. 197–204.
+[20] W. Li, Y. He, Z. Wang, S. Alqahtani, and P. Nanda, “Uncovering
+flaws in anti-phishing blacklists for phishing websites using novel
+cloaking techniques,” inProceedings of the 20th International
+Conference on Security and Cryptography - Volume 1: SE-
+CRYPT, INSTICC. SciTePress, 2023, pp. 813–821.
+[21] T. Guo, X. Chen, Y. Wang, R. Chang, S. Pei, N. V. Chawla,
+O. Wiest, and X. Zhang, “Large language model based multi-
+agents: A survey of progress and challenges,”arXiv preprint
+arXiv:2402.01680, 2024.
+[22] G. Li, H. A. Al Kader Hammoud, H. Itani, D. Khizbullin,
+and B. Ghanem, “Camel: communicative agents for ”mind”
+exploration of large language model society,” inProceedings
+of the 37th International Conference on Neural Information
+Processing Systems, ser. NIPS ’23. Red Hook, NY, USA:
+Curran Associates Inc., 2023.
+[23] C.-M. Chan, W. Chen, Y. Su, J. Yu, W. Xue, S. Zhang, J. Fu,
+and Z. Liu, “Chateval: Towards better llm-based evaluators
+through multi-agent debate,”arXiv preprint arXiv:2308.07201,
+2023.
+[24] T. Liang, Z. He, W. Jiao, X. Wang, Y. Wang, R. Wang, Y. Yang,
+S. Shi, and Z. Tu, “Encouraging divergent thinking in large
+language models through multi-agent debate,” inProceedings of
+the 2024 Conference on Empirical Methods in Natural Language
+Processing. Miami, Florida, USA: Association for Computa-
+tional Linguistics, Nov. 2024, pp. 17 889–17 904.
+[25] N. T. Vy Nguyen, F. D. Childress, and Y. Yin, “Debate-driven
+multi-agent llms for phishing email detection,” in2025 13th
+International Symposium on Digital Forensics and Security
+(ISDFS), 2025, pp. 1–5.
+[26] Y. Xue, E. Spero, Y. S. Koh, and G. Russello, “Multiphishguard:
+An llm-based multi-agent system for phishing email detection,”
+arXiv preprint arXiv:2505.23803, 2025.
+[27] R. Huang, “Improving spam detection with a multi-agent debate
+framework,” in2024 IEEE 4th International Conference on
+Information Technology, Big Data and Artificial Intelligence
+(ICIBA), vol. 4, 2024, pp. 1345–1349.
+[28] C. Baiet al., “Qwen technical report,” 2023. [Online]. Available:
+https://arxiv.org/abs/2309.16609
+[29] G. DeepMind, “Gemini: Advanced general-purpose ai,” 2023.
+[Online]. Available: https://deepmind.google/gemini
+[30] OpenAI, “Gpt-4 technical report,” 2023. [Online]. Available:
+https://arxiv.org/abs/2303.08774
+[31] S. Ariyadasa, S. Fernando, and S. Fernando, “Phishing websites
+dataset,” Mendeley Data, V1, 2021, accessed: 2025-06-17.
+[Online]. Available: https://doi.org/10.17632/n96ncsr5g4.1
+[32] E. Basturk, “Ebbu2017 phishing dataset,” https://github.com
+/ebubekirbbr/pdd/tree/master/input, 2017, accessed: 2025-06-
+17.
+[33] PhishTank, “PhishTank — Join the fight against phishing,” ht
+tps://phishtank.org/, accessed: 2025-06-17.
+[34] OpenPhish, “Openphish: Phishing intelligence,” https://open
+phish.com/, accessed: 2025-06-17.
+[35] S. Ariyadasa, S. Fernando, and S. Fernando, “Phishrepo: A
+seamless collection of phishing data to fill a research gap in the
+phishing domain,”International Journal of Advanced Computer
+Science and Applications, vol. 13, no. 5, 2022.
+[36] Y. Li, C. Huang, S. Deng, M. L. Lock, T. Cao, N. Oo,
+H. W. Lim, and B. Hooi, “KnowPhish: Large language
+models meet multimodal knowledge graphs for enhancing
+Reference-Based phishing detection,” in33rd USENIX Security
+Symposium (USENIX Security 24). Philadelphia, PA:
+USENIX Association, Aug. 2024, pp. 793–810. [Online].
+Available: https://www.usenix.org/conference/usenixsecurity
+24/presentation/li-yuexin
+[37] V. L. Pochat, T. V. Goethem, S. Tajalizadehkhoob,
+M. Korczynski, and W. Joosen, “Tranco: A Research-
+Oriented Top Sites Ranking Hardened Against Manipulation,”
+inProceedings of the 2019 Network and Distributed
+System Security Symposium (NDSS). Internet Society,
+2019, accessed: 2025-06-17. [Online]. Available: https:
+//www.ndss-symposium.org/ndss-paper/tranco-a-research-or
+iented-top-sites-ranking-hardened-against-manipulation/
+[38] J. Wei, X. Wang, D. Schuurmans, M. Bosma, b. ichter, F. Xia,
+E. Chi, Q. V. Le, and D. Zhou, “Chain-of-thought prompting
+elicits reasoning in large language models,” inAdvances in Neu-
+ral Information Processing Systems, S. Koyejo, S. Mohamed,
+A. Agarwal, D. Belgrave, K. Cho, and A. Oh, Eds., vol. 35.
+Curran Associates, Inc., 2022, pp. 24 824–24 837.
+
+[[page 10]]
+Appendix A
+Prompt Templates Used in This Study
+Prompt Template 5: Moderator Evaluation
+Input:All specialist agent responses from current round
+Prompt Template:
+You are a moderator overseeing a phishing detection
+debate between specialist agents. After each round, you
+will evaluate all agents’ analyses and determine if there
+is a clear consensus for a phishing determination. If
+so, please summarize your reasons for supporting the
+consensus and give the final answer that you think is
+correct, and the debate will conclude. If not, the debate
+will continue to the next round.
+Fig. 7. Prompt template for Moderator Evaluation.
+Prompt Template 6: Judge Decision
+Input:Complete debate history from all specialist agents across all
+rounds
+Prompt Template:
+You are an expert cybersecurity judge evaluating phishing
+detection arguments. You will receive analyses from
+multiple specialized agents and need to make a final
+determination about whether the website is phishing or
+legitimate. Consider the evidence from all agents and
+their confidence levels. You must make a definitive
+decision between PHISHING or LEGITIMATE.
+Fig. 8. Prompt template for Final Judgment.
+Prompt Template 7: Single-Agent Baseline
+Prompt Template:
+You are an expert cybersecurity analyst specializing in
+phishing detection. Your task is to analyze websites and
+determine if they are phishing or legitimate.
+You will be provided with:
+1. URL of the website
+2. HTML content of the website
+3. Visible text content extracted from the website
+Your analysis should consider:
+•URL characteristics (suspicious domains,
+typosquatting, etc.)
+•HTML structure and content
+•Visual elements and branding
+•Text content and messaging
+•Technical indicators of phishing
+You must respond with exactly one of these
+classifications:
+•PHISHING:If the website is designed to deceive
+users or steal information
+•LEGITIMATE:If the website appears to be genuine
+and trustworthy
+Provide your classification followed by a brief
+explanation of your reasoning.
+Fig. 9. Prompt template for Single-Agent Baseline.
+Prompt Template 8: CoT Baseline
+Prompt Template:
+You are an expert cybersecurity analyst specializing in
+phishing detection. Your task is to analyze websites and
+determine if they are phishing or legitimate using a
+systematic Chain of Thought approach.
+You will be provided with:
+1. URL of the website
+2. HTML content of the website
+3. Visible text content extracted from the website
+Please analyze the website step-by-step using the following
+Chain of Thought process:
+STEP 1: URL ANALYSIS
+- Examine the domain name for suspicious patterns
+- Check for typosquatting (misspellings of legitimate brands)
+- Look for suspicious TLDs or subdomains
+- Identify any URL shortening or redirection indicators
+STEP 2: CONTENT ANALYSIS
+- Analyze the HTML structure and quality
+- Look for suspicious scripts or hidden elements
+- Check for legitimate branding vs. impersonation attempts
+- Examine form elements and data collection practices
+STEP 3: TEXT ANALYSIS
+- Review the visible text for urgency tactics
+- Check for grammar/spelling errors typical of phishing
+- Look for legitimate contact information
+- Analyze the overall messaging and tone
+STEP 4: TECHNICAL INDICATORS
+- Check for HTTPS usage and security indicators
+- Look for suspicious redirects or external links
+- Examine metadata and technical elements
+- Consider overall website quality and professionalism
+STEP 5: FINAL ASSESSMENT
+- Weigh all evidence from previous steps
+- Consider the overall risk profile
+- Make a final classification with confidence level
+Format your response as:
+STEP 1: [Your URL analysis]
+STEP 2: [Your content analysis]
+STEP 3: [Your text analysis]
+STEP 4: [Your technical analysis]
+STEP 5: [Your final assessment]
+CLASSIFICATION: [PHISHING or LEGITIMATE]
+CONFIDENCE: [High/Medium/Low]
+REASONING: [Brief summary of key factors that led to your
+decision]
+Fig. 10. Prompt template for CoT Baseline

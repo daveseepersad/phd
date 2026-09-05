@@ -1,0 +1,1105 @@
+[[page 1]]
+Received 8 June 2026, accepted 2 July 2026, date of publication 8 July 2026, date of current version 31 July 2026.
+Digital Object Identifier 10.1 109/ACCESS.2026.371 15 15
+Multi-Agent Software Development
+for Automotive Model-Based
+Graphical Programming
+ABDELRAHMAN ABDALLA
+ 1, VINCENT THIE
+ 1, JOSCHKA SCHAUB
+ 2, MARKUS EISENBARTH
+ 1,
+SUNG-YONG LEE1, AND JAKOB ANDERT
+ 1
+1Teaching and Research Area Mechatronics in Mobile Propulsion, RWTH Aachen University, 52074 Aachen, Germany
+2FEV Europe GmbH, 52078 Aachen, Germany
+Corresponding author: Jakob Andert (andert@mmp.rwth-aachen.de)
+This work was supported by the computing resources granted by RWTH Aachen University under Project rwth1475.
+ABSTRACT The automotive industry is experiencing an unprecedented growth in software complexity
+driven by electrification, autonomy, and connectivity. Model-Based Design (MBD) using graphical
+development tools such as Simulink from MathWorks has become standard in the industry, but the
+translation of natural language software requirements into compliant, tested control models remains a
+largely manual and time-consuming task. This paper presents a multi-agent large language model (LLM)
+framework tailored for automotive model-based software development. Our framework orchestrates a set
+of specialized AI agents to cover the implementation and model-level verification phases of the software
+development lifecycle, including Simulink model generation, test case creation, compliance checking, test
+case execution, and automated refinement. To rigorously assess our approach, we introduce the Automotive
+Software Engineering Benchmark (ASWE-Bench), a new benchmark suite with 38 automotive software
+requirements categorized into data transformations, combinational logic, stateful logic with timers, and
+closed-loop control. Our results demonstrate a substantial improvement in generative AI performance:
+the rulebook-equipped single-agent baseline achieve only a 47.4% model-level pass rate, while our full
+multi-agent framework attains 73.7% across generated models. This work advances generative AI from
+isolated prompting to automation in complex development environments and sets a foundation for scalable
+AI-driven software pipelines in model-based systems engineering. To support reproducibility and future
+benchmarking, the proposed ASWE-Bench, including requirements and unit tests, is publicly available at:
+https://git-ce.rwth-aachen.de/mmp-rwth-aachen/aswe-bench
+INDEX TERMS Large language models, generative AI, automotive software development, graphical
+programming, multi-agent systems.
+I. INTRODUCTION
+Modern vehicles are increasingly software-defined, with
+connectivity, autonomy, and electrification driving explosive
+software growth [1]. Today’s cars are reported to typically
+contain on the order of 100–150 electronic control units
+(ECUs) and around 100 million lines of code [2]. The trend is
+driven by safety features, advanced driver assistance systems
+The associate editor coordinating the review of this manuscript and
+approving it for publication was Xiaosong Hu
+ .
+(ADAS), and recent emission standards such as Euro 7, all of
+which increase the complexity of automotive software.
+Recent progress in vehicle intelligence and automation
+has accelerated the adoption of increasingly sophisticated
+control and decision-making strategies, which in turn raises
+the verification burden for safety- and performance-critical
+software [3], [4], [5]. This trend further motivates automated,
+requirements-driven model generation and testing workflows
+that can reduce manual effort while preserving determinism
+and traceability [6].
+115016
+
+ 2026 The Authors. This work is licensed under a Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 License.
+For more information, see https://creativecommons.org/licenses/by-nc-nd/4.0/
+VOLUME 14, 2026
+
+[[page 2]]
+A. Abdalla et al.: Multi-Agent Software Development for Automotive Model-Based Graphical Programming
+Recently, generative AI has made remarkable strides in
+many domains. State-of-the-art LLMs such as GPT-4 can
+achieve near-human performance on diverse professional
+and academic exams. For example, GPT-4 passed a sim-
+ulated bar exam within the top 10% of test takers [7].
+LLMs have demonstrated a substantial impact on software
+development by enabling the automation of tasks such as
+coding, debugging, documentation, and test creation. This
+capability contributes to a reduction in the time required for
+software development [8]. To support this claim, a study
+presented in [8] divided developers into two groups, each
+tasked with implementing an HTTP server in JavaScript. The
+experimental group, which had access to GitHub Copilot,
+an AI-assisted programming tool, completed the task 55.8%
+faster than the control group. This shows that generative
+AI could significantly accelerate the software development
+process.
+Despite this promise, automotive software development
+imposes unique challenges. V ehicle functions are both safety
+and performance critical and must integrate tightly with
+real-time hardware (multiple ECUs, sensors, communication
+buses) under strict standards (e.g. ISO 26262, AUTOSAR)
+[9]. To manage complexity, engineers rely on model-based
+systems engineering (MBSE), linking requirements to archi-
+tecture and finally to implementation [10]. In practice,
+many automotive functions are modeled graphically in
+environments like Simulink [11], where block diagrams
+represent control logic. However, LLMs are trained primarily
+on text and traditional code, not on specialized graphical
+representations [12], [13]. We use the term ‘‘modality
+gap’’ to denote the mismatch between text-native LLMs
+and Simulink’s graph-structured block-diagram semantics.
+Together with the need for rigorous testing and compliance
+checking, this makes automotive software more challenging
+than general programming tasks. In this work, the modality
+gap is addressed by using MA TLAB scripts as a text-based
+intermediate representation through which LLM agents can
+construct, configure, and revise graphical Simulink models
+programmatically.
+Existing generative-AI approaches for Simulink remain
+limited and do not yet provide an end-to-end, requirement-
+centric engineering workflow. Early work such as SLGPT
+focuses on directly generating Simulink artifacts from model
+corpora and is not driven by requirement reasoning [20].
+Sim-Instruct advances requirement-to-model generation via
+fine-tuning on synthetic Simulink data, but it does not
+incorporate a closed feedback loop based on systematic
+unit-test generation and execution [12]. SimuGen demon-
+strates an agentic workflow, but it relies on existing
+Simulink diagram images as input and primarily reconstructs
+diagrams rather than generating models directly from textual
+requirements [13]. In contrast, our approach starts solely from
+software requirements and treats functional correctness as the
+primary objective: it generates MA TLAB code to construct
+the Simulink model, automatically derives requirement-based
+unit tests, executes them, diagnoses failures, and applies
+targeted fixes in an iterative refinement loop. We further
+integrate an explicit compliance review agent to enforce
+modeling constraints and detect nonconformities, enabling
+a self-correcting pipeline tailored to graphical automotive
+control logic. This end-to-end, requirements-to-tested-model
+workflow can reduce manual engineering effort and iteration
+cycles, improve traceability from specification to verification
+evidence, and thereby accelerate time-to-market for safety-
+and performance-critical automotive functions.
+In this work, we introduce AutoMAS-SL, a multi-agent
+framework that automates selected phases of the V -Model
+for Simulink-based development from textual requirements.
+The framework decomposes the workflow into specialized
+agent roles and is inspired by multi-agent code generation
+architectures [14], [15].
+Our key contributions include:
+• Multi-agent framework for Simulink development: We
+propose a coordinated framework of specialized agents
+that automates the software lifecycle. The process
+consists of a Function Developer Agent, equipped
+with a comprehensive ‘‘rulebook’’ of domain-specific
+knowledge, that translates the software requirements
+into executable MA TLAB code to generate Simulink
+models. Crucially, the framework implements a fully
+automated, iterative refinement loop. A Testing Agent
+generates test cases directly from the requirements,
+which are executed by a MA TLAB Test Runner.
+Upon failure, a Diagnosis Agent employs a structured
+reasoning process to identify the root cause, and a fixer
+agent implements the necessary corrections, enabling
+the system to iterate until the model’s behavior aligns
+with the specifications.
+• Integrated compliance: To ensure the generated mod-
+els adhere to requirements, we incorporate dedicated
+agents for governance. A Compliance Agent serves as
+an automated peer reviewer, validating the generated
+model against the software requirements, flagging
+non-conformities in logic patterns.
+• ASWE-Bench: To rigorously evaluate LLM perfor-
+mance on graphical programming tasks, we developed
+ASWE-Bench, a new benchmark suite comprising
+38 diverse and realistic automotive software require-
+ments. To ensure their relevance to automotive practice,
+the requirements were developed with support from
+FEV domain experts and reflect representative control-
+logic tasks encountered in automotive model-based
+development. These requirements span four critical
+categories: data transformation, combinational logic,
+stateful logic with timers, and closed-loop control. Each
+entry includes a ground-truth set of unit tests to assess
+functional correctness, not just syntactical validity. This
+benchmark provides the first standardized means of
+measuring and comparing the ability of generative
+models to produce correct, working control models in
+Simulink, filling a significant gap in existing evaluation
+frameworks. Our results demonstrate that the proposed
+VOLUME 14, 2026 115017
+
+[[page 3]]
+A. Abdalla et al.: Multi-Agent Software Development for Automotive Model-Based Graphical Programming
+multi-agent framework increases the absolute pass rate
+of the GPT-4.1 LLM from 47.4% to 73.7%.
+The remainder of the paper is organized as follows.
+Section II reviews related work on AI-assisted software
+development in automotive and model-based engineering.
+Section III presents the proposed multi-agent framework,
+hereafter referred to as AutoMAS-SL (Automotive Multi-
+Agent System for Simulink), and describes the role of each
+agent. Section IV introduces the ASWE-Bench benchmark
+and reports evaluation results comparing state-of-the-art
+large language models within the AutoMAS-SL framework.
+Section V discusses the limitations of the current
+approach and outlines potential mitigation strategies. Finally,
+Section VI concludes the paper and highlights directions for
+future work.
+II. RELATED WORK
+A. GENERATIVE AI IN SOFTWARE ENGINEERING
+Large language models have dramatically impacted software
+engineering by automating coding tasks. For example, mod-
+els like Codex (GPT-based) [16] and CodeGen[17] which are
+trained on large-scale code corpora, have demonstrated sub-
+stantial improvements to generate textual code. Instruction-
+finetuned code models have also emerged: Salesforce’s
+WizardCoder uses an evolutionary ‘‘Evol-Instruct’’ method
+to fine-tune code LLMs using synthetic generated data,
+achieving state-of-the-art performance on standard coding
+benchmarks. This model ‘‘surpassed all other open-source
+Code LLMs at the time’’ [18] on one of the most
+popular code benchmarks HumanEval. While fine-tuned
+and pretrained code LLMs such as Codex, WizardCoder
+and Code-Llama [19] have shown strong capabilities in
+generating textual code, they often suffer from limitations
+such as hallucinations, lack of error correction, and difficulty
+handling complex multi-step development workflows. These
+shortcomings highlight the need for approaches that move
+beyond a single-model paradigm.
+Recent progress in code-oriented LLMs builds on a
+broader line of pretraining research that explicitly targets
+the interaction between natural language and programming
+languages. Encoder-only and encoder–decoder models such
+as CodeBERT and CodeT5 demonstrate how large-scale
+pretraining on Natural Language Programming Language
+(NL–PL) pairs and code corpora can yield transferable
+representations for code search, summarization, translation,
+and defect-related tasks, while highlighting the importance of
+identifier semantics and code-specific token types [22], [23].
+A complementary perspective is provided by PLBART,
+which uses sequence-to-sequence denoising pretraining for
+program understanding and generation across multiple tasks,
+reinforcing that downstream Software Engineering (SE)
+performance depends not only on model scale but also on
+pretraining objectives and task framing [24].
+In parallel, prior work has emphasized standardized
+evaluation beyond single-task benchmarks. CodeXGLUE
+provides a broad benchmark suite covering multiple code
+understanding and generation tasks, enabling more system-
+atic comparisons of models and prompting strategies across
+problem types and languages [25]. For end-to-end ‘‘real-
+world’’ maintenance tasks, Software Engineering Bench-
+mark (SWE-bench) operationalizes GitHub issue resolution
+as a benchmark requiring repository context, multi-file
+edits, and test-based validation, which aligns closely with
+agentic workflows that integrate generation with execution,
+debugging, and patch refinement [26]. Finally, systematic
+reviews of LLMs in software engineering and software
+testing consolidate evidence on strengths and failure modes
+(e.g., reliability and hallucinations) and recurring mitigation
+patterns, providing a literature anchor for workflow-centric
+contributions [27], [28].
+B. MUL TI-AGENT SYSTEMS IN SOFTWARE ENGINEERING
+Recent approaches compose multiple LLM-based agents
+in a collaborative pipeline to overcome the shortcomings
+of a single LLM, by distributing roles across specialized
+agents, enabling iterative feedback and more reliable
+software generation. For example, MetaGPT [15] is a
+meta-programming framework that incorporates human
+workflows into LLM-based multi-agent collaborations.
+MetaGPT assigns agents specialized roles (e.g. architect,
+product manager, engineer, . . . ) in an assembly-line fashion
+to decompose complex tasks and verify intermediate results.
+The authors report that MetaGPT generates more coherent
+solutions than previous chat-based multi-agent systems
+(MAS). Likewise, AgentCoder [14] proposes a three-agent
+pipeline for code generation: a programmer agent writes
+code, a test-designer agent creates test cases, and a test-
+executor agent runs these tests to provide feedback. This
+iterative loop enables automatic refinement. The authors
+show that AgentCoder achieves pass@1 accuracy (correct on
+the first attempt) of 96.3% with GPT-4 on HumanEval, versus
+85.8% for MetaGPT and 67.0% for standard GPT-4 [14].
+Although MAS have proven improved performance and
+ability on solving more complex tasks, their application has
+so far been largely focused on text-based tasks. Thus, while
+multi-agent systems have demonstrated clear benefits for
+textual software engineering, their transfer to automotive
+development remains non-trivial because the target artifacts
+are often graphical Simulink models rather than conventional
+source code, creating a gap that existing MAS frameworks do
+not explicitly address.
+C. MODEL-BASED TESTING AND V&V FOR SIMULINK
+Model-based development in cyber-physical and automotive
+contexts has long relied on systematic verification and
+testing of Simulink/Stateflow models, including automated
+test generation and coverage-driven exploration. A widely
+used conceptual basis is model-based testing (MBT), where
+tests are derived from behavioral or structural models
+and executed against the system under test; classic MBT
+taxonomies provide a vocabulary to compare approaches
+115018 VOLUME 14, 2026
+
+[[page 4]]
+A. Abdalla et al.: Multi-Agent Software Development for Automotive Model-Based Graphical Programming
+(e.g., model formalisms, selection criteria, abstraction, and
+oracle assumptions) [29]. In the context of Simulink/
+Stateflow models, prior work has investigated automated
+test generation and coverage-driven verification using both
+search-based and formal techniques. Oh et al. proposed
+a messy genetic algorithm for transition-coverage testing
+of Simulink/Stateflow models, showing improved coverage
+compared with random search and a commercial testing
+tool [30]. Complementarily, Mohalik et al. used model
+checking for automatic test-case generation from Simulink/
+Stateflow models, motivated by the need for higher coverage
+and stronger completeness guarantees in safety-critical
+applications [31]. Later work by Matinnejad et al. addressed
+practical challenges specific to cyber-physical Simulink mod-
+els, including time-continuous behavior, dynamic outputs,
+test-oracle limitations, output diversity, and prioritization
+of generated test suites [32], [33]. In addition to test
+generation, traceability has also been studied as a central
+concern in heterogeneous automotive model-based devel-
+opment; Dubois et al. proposed a traceability metamodel
+linking requirements, solution models, and verification
+and validation artifacts [34]. Together, these studies show
+that Simulink-based engineering requires not only model
+generation, but also systematic testing, coverage analysis, and
+traceability between requirements, models, and verification
+evidence.
+D. GENERATIVE AI IN AUTOMOTIVE SOFTWARE
+LLMs generally struggle with Simulink code generation
+because training data from block-diagram models are
+scarce [13]. Early attempts like SLGPT (a GPT-2 fine-
+tuned on just 400 simulink models) proposed a promising
+approach for the generation of simulink models but was
+limited in corpus size and model complexity [20]. More
+recent efforts [12] propose Sim-Instruct which fine-tunes
+open-source LLMs on synthetic generated Simulink models.
+Sim-Instruct used GPT-3.5 to generate thousands of synthetic
+Simulink models for training and applied a repair algorithm
+to improve their quality. The resulting 7B fine-tuned Mistral
+LLM have substantially outperformed GPT-3.5 and GPT-4
+by 53% and 20% respectively, but was also limited in model
+complexity. Another approach is SimuGen [13], a multi-
+modal multi-agent framework for Simulink. SimuGen feeds
+both the requirement text and the Simulink diagram images
+into specialized agents (investigator, code generator, unit
+test reviewer, an executer, a debug locator, and a report
+writer) along with a domain knowledge base. These agents
+coordinate to iteratively build and validate the block diagram
+model. Although this approach is promising, it still relies
+on the availability of Simulink diagram screenshots as
+input, essentially rebuilding an existing model rather than
+generating one directly from software requirements. In con-
+trast, AutoMAS-SL takes a requirement-centric perspective:
+starting solely from textual software requirements, it gen-
+erates, tests, refines Simulink models through tool-based
+access, without requiring pre-existing diagram artifacts.
+Accordingly, AutoMAS-SL differentiates itself from prior
+Simulink-oriented generative approaches by combining
+requirement-centric model generation, specialized agent
+collaboration, and execution-based refinement in a unified
+workflow, thereby moving closer to the needs of automotive
+V -model development than approaches focused only on
+generation, reconstruction, or fine-tuning.
+TABLE 1. Comparison of related work on LLM-based text and graphical
+code generation.
+III. METHODOLOGY
+AutoMAS-SL introduces a multi-agent system designed to
+automate selected steps of the V -Model for model-based
+design in Simulink. We focus on the function development
+and testing phases (highlighted as blue boxes in Figure 1).
+This decomposition turns the end-to-end task into manage-
+able sub-problems with an iterative, self-correcting refine-
+ment loop. Figure 1 sets the context from System/Software
+Requirements through Model/Software Implementation and
+Code Review to Model/Software/Component V erification
+and System V erification/V alidation.
+In this work, we automate only the blue steps of Figure 1.
+Figures 3 and 4 present the two coupled workflows:
+Function Development and V erification & V alidation (V&V).
+VOLUME 14, 2026 115019
+
+[[page 5]]
+A. Abdalla et al.: Multi-Agent Software Development for Automotive Model-Based Graphical Programming
+FIGURE 1. V-Model for automotive software development. The
+blue-shaded blocks indicate the processes investigated in this work,
+focusing on model-based software verification and validation activities.
+FIGURE 2. Coupling between the two workflows. AI-based Function
+Development produces the Simulink model; AI-based Function Testing
+executes test cases against the generated model. Failures feed back as
+targeted refinements; passes yield the final Simulink model.
+These workflows are connected by a failure-driven refine-
+ment loop. The coupling is summarized in Figure 2.
+A. AUTOMATED MODEL GENERATION AND REFINEMENT
+This workflow transforms a natural-language software
+requirement into an executable Simulink model (.slx).
+The goal is syntactic correctness and compliance with the
+requirement. The workflow is iterative and multi-agent.
+It performs code generation, review, and repair. This process
+is illustrated in Figure 3.
+1) FUNCTION DEVELOPER AGENT
+The process begins with the Function Developer Agent,
+whose persona is an expert Simulink developer. Its behavior
+is governed by a system prompt. The prompt acts as a
+‘‘rulebook’’. It enforces best practices and prevents common
+errors. The prompt is dynamically assembled.
+It includes:
+• Structured Requirement Data: The requirement’s ID,
+name, description, inputs, outputs, and parameters are
+formatted into a clean text block.
+• Mandatory Templates: A boilerplate template is
+injected to enforce a consistent script structure for model
+initialization and saving.
+• Domain-Specific Rules: The rulebook contains explicit
+instructions distilled from expert knowledge. For
+instance, to prevent a common class of runtime errors,
+it mandates a specific syntax for parameter assignment:
+CRITICAL RULE: Parameter Syntax
+Enforcement
+ALWAYS use: set_param(block, ‘Param’,
+num2str(var))
+NEVER use: set_param(block, ‘Param’,
+‘var’)
+The prompt also prescribes design patterns. For stateful
+logic, it requires a Set–Reset latch using a Memory
+block. This pattern avoids illegal algebraic loops.
+A representative excerpt of the Function Developer Agent
+prompt is provided in Appendix.
+2) THE AUTONOMOUS REFINEMENT LOOP: COMPLIANCE
+AND CORRECTION
+The generation workflow follows an autonomous ‘‘generate–
+check–refine’’ cycle. The Function Developer Agent first
+produces a candidate MA TLAB script. The script then enters
+a refinement loop. Two specialized agents orchestrate this
+loop:
+• Compliance Agent: This agent acts as an automated
+peer reviewer, performing static analysis of the gener-
+ated script. Its prompt is a technical checklist designed
+to verify structural integrity and adherence to the
+requirement’s logic and automotive modeling standards.
+• Fixer Agent: If the Compliance Agent flags a non-
+conformity, or if a subsequent execution attempt fails,
+the Fixer Agent is invoked. It receives a dossier with
+the original requirement, the faulty code, and the
+compliance report. It also receives any runtime error
+messages from the MA TLAB Engine. This context
+enables targeted repair instead of regeneration from
+scratch.
+The loop continues until the script passes static compliance
+checks. It must also execute successfully in the MA TLAB
+Engine. The output is a valid Simulink model (.slx).
+B. AUTOMATED VERIFICATION AND VALIDATION
+The right-hand branch of the V -Model covers verification
+and validation (V&V). Here, the generated model is tested
+against its requirements (Figure 4). The workflow follows an
+autonomous ‘‘test–debug–refine’’ cycle.
+1) AGENT ROLES IN THE V&V WORKFLOW
+• Testing Agent creates JSON test bundles (boundary +
+temporal coverage).
+• MATLAB Test Runner executes tests with clean state
+between runs and emits [PASS]/[FAIL] logs.
+• Diagnosis Agent classifies failures as MODEL_ERROR
+or TEST_CASE_ERROR and produces a minimal
+fix_proposal.
+115020 VOLUME 14, 2026
+
+[[page 6]]
+A. Abdalla et al.: Multi-Agent Software Development for Automotive Model-Based Graphical Programming
+FIGURE 3. AI-based Function Development (left side of the V-Model in Fig. 1). The Function Developer Agent generates MATLAB code and configuration
+scripts for the Simulink model. The Compliance Agent performs static and rule-based reviews to ensure structural correctness, while the Fixer Agent
+applies targeted patches in an iterative refinement loop until the model passes compliance checks and executes successfully.
+FIGURE 4. AI-based Function Testing (right side of the V-Model in Fig. 1). The Testing Agent automatically generates JSON-based unit test bundles from the
+requirements and executes them using a MATLAB Test Runner. If a test fails, the Diagnosis Agent analyzes the results and classifies the failure as either a
+model or test case error. The Fixer Agent then applies targeted corrections, enabling a fully autonomous test–debug–refine loop until all test cases pass.
+• Fixer Agent applies targeted patches (model or tests)
+and re-triggers the loop.
+2) TEST CASE GENERATION
+The Testing Agent is responsible for creating a compre-
+hensive suite of unit tests. Its prompt engineering is highly
+adaptive and prescriptive:
+• Logic-Adaptive Prompting: The framework analyzes
+the requirement for keywords related to time or state
+(e.g., ‘‘after,’’ ‘‘consecutive’’) and selects an appropriate
+template for either stateless or stateful logic.
+• Prescriptive Test Strategies: The prompts embed
+testing best practices. For any numerical threshold T,
+the agent is commanded to generate boundary tests at
+T− ϵ, T , and T+ ϵ. For stateful requirements, the
+VOLUME 14, 2026 115021
+
+[[page 7]]
+A. Abdalla et al.: Multi-Agent Software Development for Automotive Model-Based Graphical Programming
+prompt guides the LLM through a ‘‘mental simulation’’
+to produce correct time-series test vectors.
+• Grounding with Authoritative Data: To prevent
+hallucination of constants, the prompt is injected with
+the exact parameter values extracted from the model’s
+configuration script, which are designated as the ‘‘single
+source of truth.’’
+The agent output is validated with a Pydantic schema. This
+enforcement guarantees a structured JSON format that the
+test runner can parse. An example is shown below. The test
+bundle for REQ-VOLT_CONV covers edge-case boundary
+tests for a 0–5 V→0–100% mapping. It verifies mid-scale
+linearity and clipping at the limits. It uses a tolerance of 1.0.
+{
+‘‘bundles’’: [
+{
+‘‘req_id’’: ‘‘REQ-VOLT_CONV’’,
+‘‘type’’: ‘‘edge_case’’,
+‘‘tolerance’’: 1.0,
+‘‘test_cases’’: [
+{ ‘‘input’’: {‘‘voltage’’:
+-0.1}, ‘‘expected_output’’: [0.0] },
+{ ‘‘input’’: {‘‘voltage’’: 2.5},
+‘‘expected_output’’: [50.0] },
+{ ‘‘input’’: {‘‘voltage’’: 5.1},
+‘‘expected_output’’: [100.0] }
+]
+}
+]
+}
+A representative excerpt of the Testing Agent prompt is
+provided in Appendix.
+3) EXECUTION AND FAILURE DIAGNOSIS
+The MA TLAB Test Runner executes the generated JSON
+test cases. It uses the MA TLAB Engine API to simulate the
+model. It captures console output with standardized PASS
+and FAIL messages.
+If a test fails, the Diagnosis Agent is activated. Its persona
+is an expert V&V root-cause analyst. The Diagnosis Agent
+receives an evidence dossier. It includes the requirement,
+the model-generating code, the full test results, and the raw
+MA TLAB console log. The agent is prompted to follow
+a mandatory 4-step reasoning process. The agent produces
+a structured Evidence object. It contains a classification
+(MODEL_ERROR or TEST_CASE_ERROR) and a confidence
+score. It also includes a concise hypothesis and a concrete
+fix_proposal.
+4) ITERATIVE MODEL CORRECTION
+The structured output from the Diagnosis Agent enables the
+final step: closing the loop. The framework’s orchestrator
+dispatches the ‘Evidence’ object to the appropriate workflow
+for correction:
+• If classified as TEST_CASE_ERROR, the dossier is sent
+back to the Testing Agent to refine the test cases.
+• If classified as MODEL_ERROR, the dossier is routed
+back to the Automated Model Generation workflow. The
+fix_proposal is used to seed the Fixer Agent, which
+then patches the model-generating script.
+The V&V process iterates until all test cases pass. We also
+enforce a maximum of three refinement cycles. This limit
+prevents infinite loops. It also avoids cases where agents
+change tests only to force a pass. Within this bound, the final
+model remains compliant and functionally correct.
+IV. EVALUATION
+General LLM benchmarks like HumanEval evaluate text-
+based code synthesis but cannot assess the construction,
+simulation, or time-dependent behaviors of graphical models.
+They lack the domain constraints (e.g., block-diagram
+semantics, solver settings, timers) needed to determine if
+a generated Simulink model is executable and functionally
+correct.
+A. ASWE-BENCH
+This section details the structure of ASWE-Bench and
+the evaluation artifacts used to assess generated Simulink
+models. Each benchmark entry pairs a natural-language
+automotive requirement with a ground-truth test bundle that
+checks the functional correctness of the produced model.
+The benchmark is organized into four domains central to
+automotive control software (Table 2), covering patterns
+from simple numeric mappings to complex stateful logic and
+closed-loop control. Figure 5 illustrates one stateful-logic
+entry together with the final Simulink model generated and
+verified by AutoMAS-SL.
+FIGURE 5. Top: An example requirement (REQ-7) for stateful logic from
+the ASWE-Bench. Bottom: The final Simulink model generated and
+verified by the multi-agent framework to fulfill the requirement.
+B. GROUND TRUTH AND TEST HARNESS
+Each requirement is paired with a set of unit tests, totaling
+378 individual checks, which provide test-based evidence
+115022 VOLUME 14, 2026
+
+[[page 8]]
+A. Abdalla et al.: Multi-Agent Software Development for Automotive Model-Based Graphical Programming
+TABLE 2. ASWE-bench requirement categories.
+of functional correctness. These include both instantaneous
+I/O tests for edge cases and time-series tests for state-based
+behaviors. A check passes if the model’s output falls within
+the specified tolerance. We reinitialize Simulink between
+runs to avoid state carryover and collect execution and
+decision coverage on the final models.
+C. METRICS
+We report three key metrics:
+• Absolute Pass Rate (APR): The percentage of the
+38 requirements for which the generated model passes
+all associated unit checks.
+• Relative Pass Rate (RPR): The percentage of the
+378 total unit checks that passed across all requirements.
+• Models Missing: The number of requirements for which
+no executable model could be produced.
+D. MODEL CONFIGURATIONS
+We compare several configurations to progressively isolate
+the impact of our framework’s components:
+• GPT-4.1 (RA W Model): Tests the out-of-the-box
+capability of the LLM. This configuration uses a single
+API call with only the textual requirement and a
+minimal prompt, without the agentic framework or
+the domain-specific Simulink rulebook. The minimal
+prompt used for the RAW baseline is provided in
+Appendix.
+• GPT-4.1 (Baseline): Isolates the effect of domain
+knowledge. It builds on the RAW model by providing
+the LLM with our comprehensive Simulink rulebook
+but does not use the multi-agent refinement loop for
+compliance or error correction.
+• GPT-4.1 (Function Dev): Evaluates the automated
+build-and-refine process. This setup employs the Func-
+tion Developer workflow including the Function Devel-
+oper, Compliance, and Fixer agents to iteratively resolve
+build errors until a valid model is generated, but does not
+perform the final V&V testing.
+• GPT-4.1 (AutoMAS-SL): Represents the complete
+end-to-end system. It uses the Function Developer
+workflow to generate a model and then engages the
+entire V&V workflow for automated testing, failure
+diagnosis, and logical correction.
+• Cross-model Baselines (Function Dev): O3-mini and
+Claude 4 Sonnet were also evaluated to provide a limited
+cross-model comparison at the Function Dev stage.
+These baselines were not evaluated through the complete
+AutoMAS-SL pipeline, including the automated V&V
+testing and diagnosis loop. Because both cross-model
+baselines performed below GPT-4.1 in this intermediate
+setting, we did not extend them to the full AutoMAS-SL
+workflow. Therefore, the comparison should be inter-
+preted as an indication of model capability in the
+intermediate model-generation setting rather than as a
+full end-to-end comparison of complete AutoMAS-SL
+executions.
+E. RESUL TS
+Table 3 summarizes the performance on ASWE-Bench. The
+results clearly demonstrate the value of our layered, multi-
+agent approach. The RA W Model, without any domain-
+specific guidance, performed very poorly, failing to generate
+a runnable model for 73.7% of the requirements and
+achieving an APR of only 15.8%. This highlights the
+significant gap for out-of-the-box LLMs.
+Introducing the Simulink rulebook in the Baseline config-
+uration yielded a significant improvement, reducing missing
+models to 18.4% and tripling the APR to 47.4%. The
+Function Dev workflow, with its compliance and build-
+refinement loop, eliminated all build failures (0% missing
+models) and further improved the RPR to 84.4%, though the
+APR remained at 47.4%.
+The most significant leap came from the Full Framework.
+By adding the autonomous V&V loop, the framework was
+able to diagnose and fix logical errors, boosting the APR
+to 73.7% and the RPR to 92.3%. This confirms that a
+self-correcting, multi-agent system is crucial for achieving
+functional correctness.
+The other models struggled significantly. O3-mini and
+Claude 4 Sonnet failed to generate models in 28.9% and
+42.1% of cases, respectively.
+TABLE 3. Performance on ASWE-Bench (38 requirements, 378 unit tests).
+VOLUME 14, 2026 115023
+
+[[page 9]]
+A. Abdalla et al.: Multi-Agent Software Development for Automotive Model-Based Graphical Programming
+On the successfully passed models from the full frame-
+work, we achieved 100% execution coverage and 98.4%
+decision coverage. The small gap in decision coverage was
+traced to redundant safety clamps hallucinated by the LLM
+that were logically correct but structurally unreachable by
+the model’s core logic, confirming the thoroughness of our
+generated test suites.
+F. REPRODUCIBILITY
+All experiments were conducted by executing the Benchmark
+test cases against the Simulink models via the MA TLAB
+Engine API. In this work, we release ASWE-Bench (require-
+ments and unit tests) to facilitate standardized comparisons
+for generative AI in graphical programming for automo-
+tive software. The link for ASWE-Bench [21] is: https://
+git-ce.rwth-aachen.de/mmp-rwth-aachen/aswe-bench
+The quantitative results reported in Table 3 were obtained
+from a single end-to-end run per configuration over
+the 38 ASWE-Bench requirements. The prompts, rulebook,
+model configuration, and MA TLAB/Simulink test harness
+were kept fixed during this evaluation; however, repeated
+independent runs may yield small variations because LLM
+outputs can be stochastic.
+G. TOKEN CONSUMPTION ANAL YSIS
+To complement the effectiveness metrics reported in Table 3,
+we additionally analyzed the token consumption of the
+full multi-agent framework on a representative subset of
+five ASWE-Bench requirements (REQ-20 to REQ-24). The
+objective of this analysis is to quantify the computational
+overhead of the proposed AutoMAS-SL workflow in a
+model-agnostic way.
+Across the five evaluated requirements, the framework
+consumed on average 68,256 input tokens and 9,495 output
+tokens per requirement, corresponding to 77,751 total
+tokens per requirement. Among all agents, the Diagnosis
+Agent accounted for the largest share of the token usage,
+contributing approximately 58.8% of all input tokens and
+40.1% of all output tokens. This indicates that failure analysis
+and debugging are the most resource-intensive stages of the
+workflow, which is expected because this agent receives the
+richest context, including the requirement, generated code,
+test cases, execution results, and console logs.
+TABLE 4. Token consumption of the AutoMAS-SL using GPT-4.1 for five
+representative ASWE-Bench requirements.
+V. LIMITATIONS, MITIGATIONS, AND FUTURE
+EXTENSIONS
+A. KEY LIMITATIONS AND MITIGATIONS
+1) Ambiguous or Underspecified Requirements.
+A major source of errors arises from requirements that
+lack sufficient precision. Missing reset or initialization
+conditions, undefined threshold behavior, and vague
+timing semantics (e.g., unclear whether a condition
+must hold for a duration T or for N consecutive
+samples) frequently cause incorrect or unstable model
+behavior. In our experiments, such underspecification
+was one of the most common root causes of failure,
+as the LLM often has to infer intent, leading to
+inconsistent or unintended interpretations.
+Mitigations: To address this, requirement definitions
+should follow a structured and unambiguous template.
+This includes explicit power-on defaults, clear defini-
+tions of thresholds and hysteresis, and precise timing
+semantics (‘‘for N consecutive samples’’ vs. ‘‘after
+T seconds’’). Incorporating these elements improves
+determinism in both model generation and test-case
+creation.
+Future Framework Extension: As a future extension,
+we will integrate a human-in-the-loop clarification step
+that enables the framework to detect ambiguity and
+query the user before committing to an implementation.
+Concretely, the system will (i) automatically flag
+missing or unclear elements such as reset/initialization
+behavior, threshold inclusivity and hysteresis, and then
+(ii) generate targeted clarification questions or explicit
+candidate assumptions for user confirmation.
+2) Timing Nondeterminism and Misalignment.
+Another key limitation arises from timing nondeter-
+minism. V ariations in solver configurations, inherited
+sample times, and inconsistent unit conventions (e.g.,
+mixing seconds and milliseconds) can lead to run-to-
+run variance, misaligned signal updates, and off-by-one
+timing errors. These issues are particularly problematic
+for stateful or timer-based logic, where even subtle
+deviations in the execution schedule can cause
+incorrect behavior during testing or in closed-loop
+operation.
+Mitigations: To ensure deterministic execution,
+we enforce a discrete, fixed-step solver configuration
+and define a single global sample time Ts with con-
+sistent unit contracts across all interfaces. Additional
+protections include continuous-integration checks
+for inherited sample rates, explicit clock-domain
+adaptation when necessary, and the use of off-by-one
+guard conditions around timer logic. Together, these
+measures significantly reduce temporal ambiguity and
+improve the reproducibility of model behavior across
+refinement iterations.
+Future Framework Extension: Specifically, the system
+will generate explicit candidate assumptions about
+115024 VOLUME 14, 2026
+
+[[page 10]]
+A. Abdalla et al.: Multi-Agent Software Development for Automotive Model-Based Graphical Programming
+solver mode and sample-time discretization (e.g.,
+fixed-step discrete with Ts ∈ {1 ms,10 ms, 100 ms})
+and require user confirmation before execution.
+B. HALLUCINATION MITIGATION AND TRANSPARENCY
+In the context of this work, hallucination refers to
+requirement-inconsistent model content generated by the
+LLM, such as invented assumptions, incorrect thresholds
+or timing semantics, structurally plausible but behaviorally
+wrong Simulink logic, or erroneous test expectations.
+Our current framework mitigates this risk through several
+complementary mechanisms. First, the Function Developer
+Agent and Testing Agent are intentionally decoupled and
+both operate directly on the software requirement: the
+model is generated from the requirement, while the test
+cases are derived independently from the same requirement
+rather than from the generated model. This reduces
+confirmation bias and enables cross-checking between
+implementation and verification. Second, the Compliance
+Agent performs rule-based and requirement-oriented review
+before execution, which helps detect structurally or logically
+suspicious model content. Third, failed executions and
+failed test cases trigger the Diagnosis and Fixer agents,
+which use the requirement, generated code, compliance
+feedback, and MA TLAB execution logs as evidence for
+targeted corrections instead of unconstrained regeneration.
+Finally, human-in-the-loop review can be enabled at each
+iteration to inspect intermediate artifacts before accepting a
+refinement step. Nevertheless, hallucinations are not fully
+eliminated, especially for ambiguous or underspecified
+requirements, where the model may still infer unintended
+behavior. Future work will therefore focus on stronger
+grounding mechanisms, e.g., retrieval-augmented access to
+trusted Simulink/MathWorks documentation or rule checkers
+specialized for safety-critical logic.
+C. EXTENDABILITY BEYOND SIMULINK
+Another important consideration is whether the frame-
+work can be transferred beyond Simulink. The overall
+AutoMAS-SL workflow is not tied to a single modeling
+environment: requirement interpretation, test generation,
+diagnosis, and iterative refinement are conceptually reusable.
+What is specific to Simulink in the current implementation
+is the rulebook and the executable interface used to con-
+struct, run, and validate models through MA TLAB/Simulink.
+Extending the approach to another environment would
+therefore mainly require replacing this tool-specific layer,
+including its modeling rules, available component libraries,
+and execution hooks. The main engineering effort lies in
+adapting these environment-specific interfaces, while the
+overall multi-agent coordination logic can remain largely
+unchanged.
+VI. CONCLUSION
+This paper presented a novel multi-agent LLM frame-
+work that automates key phases of the automotive
+model-based software development lifecycle. By decom-
+posing the V -Model into specialized, collaborative agent
+tasks, our system moves beyond simple code generation
+to create a self-correcting pipeline capable of produc-
+ing functionally correct Simulink models from textual
+requirements. To validate our approach, we introduced
+ASWE-Bench, the first domain-specific benchmark for
+evaluating generative AI on graphical automotive control
+logic.
+Our results demonstrate a substantial improvement over
+baseline LLM. The raw minimal-prompt configuration
+achieved an absolute pass rate of 15.8%. Adding the
+domain-specific Simulink rulebook increased the pass
+rate to 47.4%, while the full AutoMAS-SL framework,
+including automated verification, diagnosis, and refinement,
+reached 73.7%. This underscores the necessity of iterative
+refinement and domain-specific knowledge, codified in our
+agent ‘‘rulebooks,’’ to bridge the modality gap between
+text-native LLMs and graphical programming environments.
+The framework automates the creation of models and test
+cases for data transformations, combinational logic, and
+most stateful timing logic, though complex closed-loop
+control remains a challenge, defining the current capability
+ceiling.
+At the same time, the reliance on a static rulebook consti-
+tutes a practical limitation. Automotive software standards,
+modeling guidelines, and toolchain conventions evolve, and
+static prompts can become stale or incomplete as new
+modeling patterns, block behaviors, or best practices emerge.
+This is particularly relevant for complex control logic,
+where correct implementation often depends on subtle,
+context-dependent constraints that are difficult to capture
+exhaustively in a fixed prompt. Dynamic knowledge retrieval
+can address this gap by enabling the framework to fetch up-
+to-date, task-specific guidance at runtime and to ground agent
+decisions in authoritative sources.
+Future work will therefore explore hybrid extensions that
+address the current performance ceiling while improving
+adaptability. Specialized, fine-tuned models could act as
+‘‘expert’’ agents for complex domains such as control
+theory. In addition, replacing the static rulebook with a
+Retrieval-Augmented Generation (RAG) component indexed
+on authoritative sources (e.g., official MathWorks documen-
+tation, internal modeling guidelines, and coding standards)
+could improve scalability, reduce prompt staleness, and
+support traceable, citation-backed reasoning for difficult
+modeling decisions. Ultimately, this work provides a
+foundation for building more capable and autonomous
+AI-driven software engineering pipelines in safety-critical,
+model-based domains.
+APPENDIX
+A. RAW MODEL MINIMAL PROMPT (BASELINE)
+Listing 1 provides the minimal prompt used for the RAW
+baseline configuration in Section IV -D.
+VOLUME 14, 2026 115025
+
+[[page 11]]
+A. Abdalla et al.: Multi-Agent Software Development for Automotive Model-Based Graphical Programming
+LISTING 1. RAW baseline minimal prompt used for MATLAB/Simulink
+code generation.
+B. FUNCTION DEVELOPER AGENT PROMPT
+(REPRESENTATIVE EXCERPT)
+Listing 2 provides a representative excerpt of the Func-
+tion Developer Agent prompt used in AutoMAS-SL. The
+full prompt is substantially longer and includes addi-
+tional block-specific templates and error-recovery rules;
+however, this excerpt captures the core response schema,
+required code separation, and key logic-pattern constraints
+used to improve determinism and reduce invalid Simulink
+constructions.
+LISTING 2. Representative excerpt of the function developer agent
+prompt (AutoMAS-SL).
+C. TESTING AGENT PROMPT (REPRESENTATIVE EXCERPT)
+Listing 3 shows a representative excerpt of the Testing Agent
+prompt. The full prompt additionally contains extended
+examples and requirement-type-specific guidance; however,
+this excerpt captures the essential output format and the
+key verification rules used to generate deterministic and
+reproducible test cases.
+115026 VOLUME 14, 2026
+
+[[page 12]]
+A. Abdalla et al.: Multi-Agent Software Development for Automotive Model-Based Graphical Programming
+LISTING 3. Representative excerpt of the testing agent prompt
+(AutoMAS-SL).
+REFERENCES
+[1] S. Kirchner and A. C. Knoll, ‘‘Generating automotive code: Large
+language models for software development and verification in safety-
+critical systems,’’ in Proc. IEEE Intell. V ehicles Symp. (IV), Jun. 2025,
+pp. 813–820, doi: 10.1109/iv64158.2025.11097503.
+[2] R. N. Charette, ‘‘How software is eating the car,’’ IEEE Spectrum,
+New Y ork, NY , USA, Tech. Rep., Jun. 7, 2021. [Online]. Available:
+https://spectrum.ieee.org/software-eating-car
+[3] L. Wang, S. Y ang, K. Y uan, Y . Huang, and H. Chen, ‘‘A combined
+reinforcement learning and model predictive control for car-following
+maneuver of autonomous vehicles,’’ Chin. J. Mech. Eng., vol. 36, no. 1,
+Jul. 2023, Art. no. 80, doi: 10.1186/s10033-023-00904-7.
+[4] H. Tong, L. Chu, Z. Chen, Y . Liu, Y . Zhang, and J. Hu, ‘‘Multi-objective
+autonomous eco-driving strategy: A pathway to future green mobility,’’
+Green Energy Intell. Transp., vol. 4, no. 4, Aug. 2025, Art. no. 100279,
+doi: 10.1016/j.geits.2025.100279.
+[5] A. Irshayyid, J. Chen, and G. Xiong, ‘‘A review on reinforce-
+ment learning-based highway autonomous vehicle control,’’ Green
+Energy Intell. Transp., vol. 3, no. 4, Aug. 2024, Art. no. 100156, doi:
+10.1016/j.geits.2024.100156.
+[6] M. Gyllenhammar, G. R. de Campos, and M. Törngren, ‘‘The road to
+safe automated driving systems: A review of methods providing safety
+evidence,’’IEEE Trans. Intell. Transp. Syst., vol. 26, no. 4, pp. 4315–4345,
+Apr. 2025, doi: 10.1109/TITS.2025.3532684.
+[7] J. Achiam et al., ‘‘GPT-4 technical report,’’ 2023, arXiv:2303.08774.
+[8] S. Peng, E. Kalliamvakou, P . Cihon, and M. Demirer, ‘‘The impact of
+AI on developer productivity: Evidence from GitHub copilot,’’ 2023,
+arXiv:2302.06590.
+[9] N. Petrovic, V . Zolfaghari, A. Schamschurko, S. Kirchner, F. Pan, C. Wu,
+N. Purschke, A. V elsh, K. Lebioda, Y . Song, Y . Zhang, L. Mazur, and
+A. Knoll, ‘‘Survey of GenAI for automotive software development: From
+requirements to executable code,’’ inProc. 2nd Int. Generative AI Comput.
+Lang. Model. Conf. (GACLM), V alencia, Spain, Aug. 2025, pp. 184–197,
+doi: 10.1109/gaclm67198.2025.11232000.
+[10] M. Broy, S. Kirstan, H. Krcmar, and B. Schatz, ‘‘What is the benefit
+of a model-based design of embedded software systems in the car
+industry?’’ in Emerging Technologies for the Evolution and Maintenance
+of Software Models. Hershey, PA, USA: IGI Global, 2012, pp. 343–369,
+doi: 10.4018/978-1-61350-438-3.ch013.
+[11] T. Gerlitz, ‘‘Incremental integration and static analysis of model-based
+automotive software artifacts,’’ Ph.D. dissertation, Dept. Comput. Sci.,
+RWTH Aachen Univ., Aachen, Germany, 2017, doi: 10.18154/RWTH-
+2017-08881.
+[12] A. Abdalla, H. Pandey, B. Shomali, J. Schaub, A. Müller, M. Eisenbarth,
+and J. Andert, ‘‘Generative artificial intelligence for model-based graphical
+programming in automotive function development,’’ SSRN, Rochester,
+NY , USA, Tech. Rep., Nov. 2024, doi: 10.2139/ssrn.5153452. [Online].
+Available: https://ssrn.com/abstract=5153452
+[13] X. Ren, Q. Zang, and Z. Guo, ‘‘SimuGen: Multi-modal agentic frame-
+work for constructing block diagram-based simulation models,’’ 2025,
+arXiv:2506.15695.
+[14] D. Huang, J. M. Zhang, M. Luck, Q. Bu, Y . Qing, and H. Cui,
+‘‘AgentCoder: Multi-agent-based code generation with iterative testing and
+optimisation,’’ 2023, arXiv:2312.13010.
+[15] S. Hong, M. Zhuge, J. Chen, X. Zheng, Y . Cheng, J. Wang,
+C. Zhang, Z. Wang, S. Y au, Z. Lin, L. Zhou, C. Ran, L. Xiao,
+C. Wu, and J. Schmidhuber, ‘‘MetaGPT: Meta programming
+for a multi-agent collaborative framework,’’ in Proc. Int.
+Conf. Learn. Represent., 2024, pp. 23247–23275. [Online].
+Available: https://proceedings.iclr.cc/paper_files/paper/2024/file/
+6507b115562bb0a305f1958ccc87355a-Paper-Conference.pdf
+[16] M. Chen et al., ‘‘Evaluating large language models trained on code,’’ 2021,
+arXiv:2107.03374.
+[17] E. Nijkamp, B. Pang, H. Hayashi, L. Tu, H. Wang, Y . Zhou, S. Savarese,
+and C. Xiong, ‘‘CodeGen: An open large language model for code with
+multi-turn program synthesis,’’ 2022, arXiv:2203.13474.
+[18] Z. Luo, C. Xu, P . Zhao, Q. Sun, X. Geng, W. Hu, C. Tao, J. Ma, Q. Lin,
+and D. Jiang, ‘‘WizardCoder: Empowering code large language models
+with evol-instruct,’’ 2023, arXiv:2306.08568.
+[19] B. Rozière et al., ‘‘Code llama: Open foundation models for code,’’ 2023,
+arXiv:2308.12950.
+[20] S. L. Shrestha and C. Csallner, ‘‘SLGPT: Using transfer learning to directly
+generate simulink model files and find bugs in the simulink toolchain,’’
+in Proc. Eval. Assessment Softw. Eng., Jun. 2021, pp. 260–265, doi:
+10.1145/3463274.3463806.
+[21] A. Abdalla, V . Thie, J. Schaub, M. Eisenbarth, S.-Y . Lee, and J. Andert,
+‘‘Automotive software engineering benchmark (ASWE-Bench),’’ Zenodo,
+CERN, Geneva, Switzerland, 2026, doi: 10.5281/zenodo.18096363.
+[22] Z. Feng, D. Guo, D. Tang, N. Duan, X. Feng, M. Gong, L. Shou, B. Qin,
+T. Liu, D. Jiang, and M. Zhou, ‘‘CodeBERT: A pre-trained model for
+programming and natural languages,’’ in Proc. Findings Assoc. Comput.
+Linguistics, EMNLP, 2020, pp. 1536–1547. [Online]. Available: https://
+aclanthology.org/2020.findings-emnlp.139/.
+VOLUME 14, 2026 115027
+
+[[page 13]]
+A. Abdalla et al.: Multi-Agent Software Development for Automotive Model-Based Graphical Programming
+[23] Y . Wang, W. Wang, S. Joty, and S. C. H. Hoi, ‘‘CodeT5: Identifier-
+aware unified pre-trained encoder–decoder models for code understanding
+and generation,’’ in Proc. Conf. Empirical Methods Natural Lang.
+Process., 2021, pp. 8696–8708. [Online]. Available: https://aclanthology.
+org/2021.emnlp-main.685/.
+[24] W. Ahmad, S. Chakraborty, B. Ray, and K.-W. Chang, ‘‘Unified pre-
+training for program understanding and generation,’’ in Proc. Conf.
+North Amer . Chapter Assoc. Comput. Linguistics, Human Lang. Tech-
+nol., 2021, pp. 2655–2668. [Online]. Available: https://aclanthology.org/
+2021.naacl-main.211/.
+[25] S. Lu et al., ‘‘CodeXGLUE: A machine learning benchmark dataset
+for code understanding and generation,’’ in Proc. Conf. Neural
+Inf. Process. Syst. NeurIPS, 2021, pp. 1–16. [Online]. Available:
+https://datasets-benchmarks-proceedings.neurips.cc/paper/2021/file/
+c16a5320fa475530d9583c34fd356ef5-Paper-round1.pdf.
+[26] C. E. Jimenez, J. Y ang, A. Wettig, S. Y ao, K. Pei, O. Press, and
+K. Narasimhan, ‘‘SWE-bench: Can language models resolve real-world
+GitHub issues?’’ in Proc. Int. Conf. Learn. Represent. (ICLR), 2024, pp. 1–
+51. [Online]. Available: https://openreview.net/forum?id=VTF8yNQM66
+[27] X. Hou, Y . Zhao, Y . Liu, Z. Y ang, K. Wang, L. Li, X. Luo, D. Lo, J. Grundy,
+and H. Wang, ‘‘Large language models for software engineering: A
+systematic literature review,’’ ACM Trans. Softw. Eng. Methodol., vol. 33,
+no. 8, Dec. 2024, Art. no. 220, doi: 10.1145/3695988.
+[28] J. Wang, Y . Huang, C. Chen, Z. Liu, S. Wang, and Q. Wang, ‘‘Software
+testing with large language models: Survey, landscape, and vision,’’
+IEEE Trans. Softw. Eng., vol. 50, no. 4, pp. 911–936, Apr. 2024, doi:
+10.1109/TSE.2024.3368208.
+[29] M. Utting, A. Pretschner, and B. Legeard, ‘‘A taxonomy of model-
+based testing approaches,’’ Softw. Test., V erification Rel., vol. 22, no. 5,
+pp. 297–312, Aug. 2012, doi: 10.1002/stvr.456.
+[30] J. Oh, M. Harman, and S. Y oo, ‘‘Transition coverage testing for
+simulink/stateflow models using messy genetic algorithms,’’ in Proc.
+13th Annu. Conf. Genetic Evol. Comput., Jul. 2011, pp. 1851–1858, doi:
+10.1145/2001576.2001825.
+[31] S. Mohalik, A. A. Gadkari, A. Y eolekar, K. C. Shashidhar, and
+S. Ramesh, ‘‘Automatic test case generation from simulink/stateflow
+models using model checking,’’ Softw. Test., V erification Rel., vol. 24,
+no. 2, pp. 155–180, Mar. 2014, doi: 10.1002/stvr.1489.
+[32] R. Matinnejad, S. Nejati, L. C. Briand, and T. Bruckmann, ‘‘Automated
+test suite generation for time-continuous simulink models,’’ in Proc.
+IEEE/ACM 38th Int. Conf. Softw. Eng. (ICSE), May 2016, pp. 595–606,
+doi: 10.1145/2884781.2884797.
+[33] R. Matinnejad, S. Nejati, L. C. Briand, and T. Bruckmann, ‘‘Test generation
+and test prioritization for simulink models with dynamic behavior,’’
+IEEE Trans. Softw. Eng., vol. 45, no. 9, pp. 919–944, Sep. 2019, doi:
+10.1109/TSE.2018.2811489.
+[34] H. Dubois, M.-A. Peraldi-Frati, and F. Lakhal, ‘‘A model for require-
+ments traceability in a heterogeneous model-based design process:
+Application to automotive embedded systems,’’ in Proc. 15th IEEE
+Int. Conf. Eng. Complex Comput. Syst., Mar. 2010, pp. 233–242, doi:
+10.1109/ICECCS.2010.2.
+ABDELRAHMAN ABDALLA received the B.Sc.
+degree in mechanical engineering from the Uni-
+versity of Alexandria, Egypt, in 2018, and the
+M.Sc. degree in management and engineering
+in computer-aided mechanical engineering from
+RWTH Aachen University, Aachen, Germany,
+in 2023, where he is currently pursuing the Ph.D.
+degree with the Teaching and Research Area
+Mechatronics in Mobile Propulsion. His research
+interests include the acceleration of automotive
+software development V -Model with generative AI.
+VINCENT THIE received the bachelor’s degree in
+energy technologies from RWTH Aachen Univer-
+sity, where he is currently pursuing the master’s
+degree. His master’s thesis was on multi-agent
+LLM frameworks for automotive software
+engineering. His research interests include
+applied artificial intelligence, multi-agent automa-
+tion, simulation technology, and data-driven
+engineering.
+JOSCHKA SCHAUB received the Diploma and
+Ph.D. degrees in mechanical engineering from
+RWTH Aachen University, Aachen, Germany, in
+2010 and 2015, respectively. He is currently the
+Department Manager with FEV Europe GmbH,
+Aachen, working on control system design for
+motor and hybrid powertrain applications. His
+research interests include advanced control system
+development for energy-efficient and clean power-
+trains for on-road and off-road applications.
+MARKUS EISENBARTH received the degree
+in business administration and engineering and
+mechanical engineering, specializing in energy
+technology and the Ph.D. degree in automated
+and connected vehicles from RWTH Aachen
+University. Since November 2022, he has been a
+Chief Engineer with the Teaching and Research
+Area Mechatronics in Mobile Propulsion.
+SUNG-YONG LEE received the M.Sc. and Ph.D.
+degrees in mechanical engineering from RWTH
+Aachen University, Aachen, Germany. He is cur-
+rently a Chief Engineer with the Mechatronics in
+Mobile Propulsion (MMP), RWTH Aachen Uni-
+versity. His research focuses on hardware-in-the-
+loop systems, model-based software development,
+and AI-driven validation for intelligent powertrain
+and autonomous systems. He has led multiple
+industrial and governmental research and develop-
+ment projects in the fields of digital twins, control systems, and software
+engineering technologies for automotive and maritime applications. His
+current interests include multi-agent frameworks for generative AI, testing
+methods for safety-critical embedded systems, and real-time simulation.
+JAKOB ANDERT received the Dipl.-Ing. and
+Dr.-Ing. degrees from RWTH Aachen University,
+Germany, in 2007 and 2012, respectively. His
+dissertation focused on control of homogeneous
+charge compression ignition engines. From 2011
+to 2014, he was with FEV Europe GmbH, as the
+Project Manager for automotive software for elec-
+trified vehicles. Since 2014, he has been a Junior
+Professor of mechatronic systems for combustion
+engines with RWTH Aachen University. In 2021,
+he was appointed as a Full Professor of Mechatronics in Mobile Propulsion.
+His research interests include electric powertrain components and strategies,
+with a particular focus on the application of AI and optimization methods for
+complex real-world control tasks.
+115028 VOLUME 14, 2026

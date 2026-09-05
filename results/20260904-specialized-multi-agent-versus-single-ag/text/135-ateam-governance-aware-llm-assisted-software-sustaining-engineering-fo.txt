@@ -1,0 +1,712 @@
+[[page 1]]
+VI. International Conference on Electrical, Computer and Energy Technologies (ICECET 2026)
+6-9 July 2026, Rome-Italy
+ATeam: Governance-Aware LLM-Assisted Software
+Sustaining Engineering for Enterprise Systems
+ Salvatore Vella
+ Computer Science
+Toronto Metropolitan University 
+Toronto, Canada
+sal.vella@torontomu.ca
+ Alex Ferworn
+Computer Science
+Toronto Metropolitan University 
+Toronto, Canada
+aferworn@torontomu.ca
+ Malek Sharieh 
+Computer Science Holy 
+Trinity School Richmond 
+Hill, Canada
+malek.sharieh@hts.on.ca
+Abstract—AI-assisted software development approaches, such
+as vibe coding, enable rapid code generation but lack the
+governance and reliability required for sustaining engineering
+in enterprise software. In these environments, traceability, se-
+curity, technical debt management, and architectural integrity
+are critical for any software modification. This paper presents
+ATeam, a framework that facilitates AI-assisted software de-
+velopment through a structured and auditable maintenance
+process incorporating human oversight. The framework employs
+a multi-phase pipeline that enforces impact analysis and explicit
+approval gates. ATeam is evaluated on 24 sustaining engineering
+tasks spanning four IEEE maintenance categories, utilizing three
+distinct large language models (LLMs). A set of interdependent
+microservices is developed to assess the system. ATeam achieves
+an 82.5 end-to-end score. The results demonstrate that structured
+decomposition and governance reduce dependence on model
+scale, with smaller models remaining competitive with larger
+ones. This finding enables regulated industries to leverage AI-
+assisted development using on-premises models. Comparative
+evaluation against AutoGPT-style and unconstrained baselines
+reveals that ATeam achieves statistically significant improvements
+(Welch’s p < 10−6) with large effect sizes. The evidence suggests
+that governance, rather than agentic execution alone, is the
+primary determinant of reliable enterprise software sustaining
+engineering.
+Keywords—artificial intelligence, large language models, 
+software engineering, vibe coding
+I. I NTRODUCTION
+Large language models (LLMs) are rapidly becoming inte-
+gral to modern software development. Developers increasingly
+employ prompt-based methods to generate code and imple-
+ment new features. This interactive development style, known
+as vibe coding, prioritizes speed and functional code for non-
+error paths, enabling rapid prototyping and experimentation.
+However, vibe coding is less effective in enterprise software
+development, as it can introduce vulnerabilities, accumulate
+technical debt, and cause architectural drift. Enterprise sys-
+tems demand auditability, traceability, and predictable, reliable
+software evolution. This misalignment constitutes a significant
+barrier to the adoption of LLMs in production environments.
+Software sustaining engineering constitutes the primary
+activity in enterprise software development, accounting for
+approximately 60–90% of the total lifecycle cost. We use the
+term sustaining engineering throughout this paper to refer to
+the activity defined as software maintenance in IEEE 14764
+[1], reflecting the ongoing investment-protection and evolution
+nature of these activities in enterprise contexts. In regulated
+industries such as finance, this proportion can be even higher.
+In these contexts, systems persist and evolve over decades,
+often representing investments of many millions of dollars.
+All changes must be reviewed, approved, and traceable, as the
+software asset is of significant value to the enterprise. Failures
+may result in regulatory, security, and financial consequences.
+The objective is to realize the benefits of AI-assisted develop-
+ment while safeguarding the software asset.
+Enterprise software sustaining practices are commonly
+structured using standardized taxonomies. We use the IEEE
+14764 standard [1], which defines four categories:
+• Corrective: Defect fixes.
+• Adaptive: Changes needed to adapt to dependency
+changes.
+• Perfective: Changes for improving quality or maintain-
+ability.
+• Preventive: Changes for reducing future risk.
+LLMs exhibit strong capabilities in generating syntactically
+correct and functionally plausible code. However, empirical
+studies indicate that AI-generated code can introduce security
+vulnerabilities and contribute to architectural drift, where
+design and architecture evolve without developer awareness.
+Uncontrolled use of AI-assisted code development can accel-
+erate the accumulation of technical debt. Many enterprises,
+particularly in regulated sectors such as finance, impose strict
+requirements for auditability and traceability that current AI-
+assisted methods do not satisfy. Furthermore, the substantial
+investment in each software component may be jeopardized by
+the introduction of security and other vulnerabilities through
+AI-assisted development.
+In production environments, correctness extends beyond the
+successful completion of test cases. Test coverage may be
+incomplete, and a significant portion of code is dedicated
+to error recovery. Enterprise software evolution necessitates
+979-8-3195-0598-9/26/$31.00 ©2026 IEEE
+2026 6th International Conference on Electrical, Computer and Energy Technologies (ICECET) | 979-8-3195-0598-9/26/$31.00 ©2026 IEEE | DOI: 10.1109/ICECET65726.2026.11633274
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:20:00 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 2]]
+explicit identification of components to be modified and
+their dependencies. Approval gates involving human oversight,
+based on risk assessment, are required to ensure the preserva-
+tion of architectures and designs. The evolution process must
+also generate traceable artifacts for subsequent analysis. Ex-
+isting AI-assisted methods lack frameworks for decomposing
+changes into auditable units, constraining model behavior to
+bounded scopes, and integrating governance without compro-
+mising automation.
+To address this gap, ATeam is introduced as a frame-
+work for AI-assisted software development that incorporates
+governance. ATeam conceptualizes software evolution as a
+structured and analyzable process, rather than a series of ad
+hoc prompts. The framework is based on a formal model
+of software systems and changes, defining components, inter-
+faces, dependencies, and change operations. Explicit properties
+of safety, completeness, and traceability are specified and
+operationalized through a multi-phase execution workflow.
+This workflow constrains the manner in which LLMs generate
+and apply changes while maintaining automation.
+Recent agentic frameworks attempt to address these chal-
+lenges through autonomous planning and execution. Empirical
+evidence demonstrates that agentic execution, in the absence of
+explicit decomposition, dependency analysis, and governance,
+does not yield improved outcomes. These findings motivate a
+transition from agent-centric autonomy to governance-aware
+software evolution.
+This paper investigates the following research questions:
+1)RQ1:Can enterprise software sustaining problems be
+described as executable templates?
+2)RQ2:Can LLMs follow these structured software sus-
+taining workflows?
+3)RQ3:Do different LLMs have performance differences
+under these governance constraints?
+4)RQ4:Are specific IEEE maintenance categories more
+challenging than others?
+The contributions of this paper are as follows:
+1) A governance-aware formal framework for LLM-driven
+software sustaining engineering.
+2) A library of 24 IEEE 14764-aligned maintenance tem-
+plates, released as open source.
+3) A microservice-based enterprise-style system for con-
+trolled experimentation, released as open source.
+4) An LLM-based judge validation approach which com-
+bines deterministic rule-based checks and LLM-based
+rubric evaluation.
+5) An evaluation across three LLMs.
+6) Comparative results of the ATeam framework with
+prompt-based approaches of using unconstrained inputs
+and an AutoGPT-like approach, asking the model to
+reason through the problem.
+II. LITERATUREREVIEW
+The integration of Artificial Intelligence (AI) into soft-
+ware engineering represents a fundamental technological shift
+that has permanently altered classical development practices
+[2]. The field is moving beyond rule-based systems towards
+augmenting humans and working collaboratively [3]. This
+evolution is moving toward vibe coding, in which developers
+interact with an AI assistant via intents and progressively
+develop working software [4] [5]. Recent analyses of startup
+cohorts indicate that up to 25% of new companies use AI-
+generated codebases, signaling a rapid departure from tradi-
+tional coding practices [6].
+The most visible impact of AI appears in automated code
+generation. Tools such as GitHub Copilot and large-scale
+industrial systems enable near one-click execution of routine
+tasks [2] [7]. Beyond generation, AI agents increasingly sup-
+port automated refactoring and self-healing behavior, in which
+systems detect and patch their own faults [8]. Empirical stud-
+ies, however, show that while AI performs well in greenfield
+development, it struggles in brownfield software sustaining,
+often requiring substantial human intervention [9].
+Software sustaining engineering is a dominant phase of the
+software lifecycle, often accounting for 50%-90% of total cost
+of ownership [9]. The IEEE/ISO/IEC 14764 standard defines
+software sustaining as the modification of a software product
+after delivery to correct faults, improve performance or other
+attributes, or adapt the product to a modified environment [10].
+This standard provides a consistent terminology and process
+framework to manage the complexity of evolving systems.
+Manual software sustaining engineering challenges remain
+a significant bottleneck. The process is labour-intensive and
+error-prone, with debugging alone accounting for up to 50%
+of development costs [11]. In brownfield environments (legacy
+systems), developers face the Brownfield Paradox, where the
+lack of architectural visibility and outdated documentation
+makes software sustaining engineering increasingly difficult
+[9]. Furthermore, as systems evolve, they accumulate structural
+entropy, leading to uncoordinated changes, technical debt, and
+reduced comprehensibility [12].
+Analysis of repositories indicates that AI-generated code
+often contains security vulnerabilities, with some reports of
+issues in nearly half of the code [12]. The fact that AI-
+assisted code is a black box makes this worse, as there is
+no explainability and debuggability [2].
+Integration into complex environments is also an issue,
+ensuring privacy and security [13].
+There is now an evolution toward agentic software engineer-
+ing, in which AI agents, acting autonomously, plan and execute
+complex tasks [14] [15]. Frameworks such as Agentway have
+emerged to get structured collaboration between agents [16].
+Successful deployment requires human-in-the-loop methods
+with mandatory human gates to catch hallucinations and
+security risks [17]. The developer’s role changes from a creator
+of code to a creator of code and reviewer of artifacts [18] [2].
+There is also work in automating pieces of the software
+maintenance process. AutoCodeRover [19] creates an abstract
+syntax tree to help navigate existing code. SWE-agent [19]
+uses LLM tools to help localize code faults. Multi-agent
+systems such as CodeR [20] use multiple agent personas to
+execute workflows. None of these approaches provides a for-
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:20:00 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 3]]
+mal, template-driven, governance-aware pipeline specifically
+designed for sustaining engineering workflows.
+There needs to be an adaptation of AI-assisted software
+development for enterprises. There is no systematic, template-
+driven framework for software sustaining engineering tasks
+that integrates formal validation. This is needed to provide the
+audit and oversight required for enterprise software. Today’s
+prompt patterns are often ad hoc and focus on new code
+generation rather than sustaining tasks [21]. Current vibe
+coding methods focus on new code or prototypes and can
+lead to long-term technical debt [9]. This gap motivates the
+need for an AI-assisted software development framework that
+combines structured software sustaining engineering templates
+with rigorous validation gates to ensure reliability in brown-
+field sustaining engineering [17].
+III. FORMALIZATIONOVERVIEW
+We model a software system state as a tuple:
+Σ =⟨S,D,G,Π,Θ⟩
+whereSis a set of services,Dis a dependency relation over
+service interfaces,Gmaps services to versions,Πcaptures
+service invariants, andΘis a repository of execution plans
+and governance artifacts.
+A change request is modelled as:
+γ=⟨type,component,∆,breaking⟩
+where∆denotes an interface or schema transformation and
+breaking∈ {true,false}. Given a changeγ, the software
+evolution problem is to compute a minimal affected setA⊆S
+and a transformation sequenceTsuch that all invariants hold
+in the resulting state.
+We define the following properties over the formal model:
+•Safety: Breaking changes require approval from all af-
+fected consumers.
+•Completeness: All consumers of modified interfaces are
+included in the affected set.
+•Traceability: Every execution step produces persistent
+evidence artifacts.
+IV. ATEAM AS ASOFTWARESUSTAININGENGINEERING
+FRAMEWORK
+ATeam treats software sustaining engineering as a struc-
+tured, auditable workflow. Changes are specified using
+ChangeType Y AML, a minimal description of the change that
+is compiled into a domain-specific language (called AXL,
+the ATeam eXecution Language), executed by a multi-agent
+system, and evaluated using deterministic checks, rubric-based
+scoring, and optional large language model (LLM) judgment.
+ATeam employs named agents in templates and execution
+steps to separate concerns and enforce modular responsibili-
+ties:
+•Analyzer: Performs impact analysis, dependency graph
+construction, and affected file discovery.
+•Planner: Generates execution plans and rollback check-
+points.
+•Coder: Produces patches (typically full file replacements)
+via an LLM.
+•Executor: Runs tools such as file discovery, list merging,
+tests, and linting.
+•Governor: Enforces human-in-the-loop approval gates
+and policy checks.
+•Judge (post-run): Evaluates and ranks results across
+multiple runs.
+A ChangeType Y AML specification defines the intent of a
+sustaining engineering task and includes:
+•Inputs: Required parameters and defaults (e.g., file paths,
+endpoints).
+•Execution steps: High-level steps that are compiled into
+AXL verbs.
+•Governance: Approval gates and policy enforcement
+rules.
+•Validation: Acceptance criteria, regex rules, and required
+checks.
+•Evidence: Artifacts to archive for traceability.
+The framework supports minimal Y AML specifications:
+authors declare intent, and the system automatically compiles
+this into executable AXL steps. Enriched Y AML (including
+dependency context and thechange_set) is generated dy-
+namically during execution.
+Dependency awareness in ATeam is derived from multiple
+sources:
+•dependencies.db: A graph representing service-to-
+service endpoint relationships.
+•ChangeType enrichment: Automatically generated
+change_setmetadata capturing components, inter-
+faces, and impacted services.
+•Analysis steps: AXL verbs such as
+BUILD_DEP_GRAPHandFIND_AFFECTEDcompute
+impacted files and dependency context.
+This approach enables cross-service changes to identify
+downstream consumers and prevents templates from silently
+under-reaching or over-reaching in scope.
+The ATeam engine executes changes through a phased
+workflow:
+•Preconditions:φ 0 Optional sanity checks.
+•Analysis:φ 1 Dependency graph construction and af-
+fected file discovery.
+•Governance:φ 2 Human approval gates, when required.
+•Planning:φ 3 Optional execution plans and rollback
+checkpoints.
+•Execution:φ 4 LLM-based patch generation, file discov-
+ery loops, and merges.
+•Validation:φ 5 Tests, linting, and type checks (when
+configured).
+•Finalization:φ 6 Artifact archiving, execution logs, and
+output summaries.
+Each execution run is evaluated using multiple mechanisms:
+•Acceptance criteria: Human-readable success condi-
+tions.
+•Rules: Regex or substring checks validating expected
+code patterns.
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:20:00 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 4]]
+ϕ0
+Preconditions
+V
+erify inputs
+ϕ1
+Analysis
+Build
+dependency graph
+ϕ2
+Go
+vernance
+Human approval
+ϕ3
+Planning
+Create
+repair plan
+ϕ4
+Ex
+ecution
+Apply patches
+ϕ5
+V
+alidation
+Run checks
+ϕ6
+Finalization
+Release
+/ record
+Human optional
+Executor Analyzer Go
+vernor + Human Planner Coder
++ Executor Executor Go
+vernor
+normalized
+inputs
+dependenc
+y graph
+affected set A appro
+ved
+decision
+execution
+plan
+patches
++
+logs
+v
+alidation
+evidence
+Phases
+Agents
+Fig. 1. ATeam multi-phase execution workflow with agent roles and governance gate.
+•
+Scenario checks: Template-specific heuristics.
+• An LLM-based judging can assess semantic correctness.
+Human oversight is encoded directly in templates
+using governance.gates, which are compiled into
+REQUIRE_APPROVAL steps. When present, execution pauses
+until an explicit human decision is provided. This mechanism
+is intended for high-risk changes or cross-service migrations.
+Each ATeam run is fully logged, including:
+• Raw Ateam eXecution Language execution logs and
+prompts.
+• Generated file replacements and diffs.
+• Enriched Y AML and dependency artifacts.
+• Evaluation results and judge reports.
+These artifacts make executions reproducible, debuggable,
+and suitable for formal review.
+Unlike agentic baselines, the ATeam framework enforces
+decomposition, dependency completeness, and traceability as
+first-class execution constraints rather than having the LLM
+reason and determine these.
+V. M ETHODOLOGY
+A. Experimental System
+All experiments are conducted on a controlled microservice-
+based system designed to reflect enterprise-style brownfield
+software. The system consists of seven interdependent ser-
+vices, including authentication, inventory, sales, payment,
+shipping, notification, and analytics services. Each service
+exposes explicit interfaces and dependencies, enabling system-
+atic impact analysis and dependency tracking during sustaining
+engineering execution.
+A dependency graph capturing service-to-service interface
+relationships is provided to the ATeam framework via a
+structured dependency database. This graph is used during
+analysis phases to compute affected components and down-
+stream consumers for each sustaining engineering task.
+B. Maintenance Task Design
+We evaluate ATeam using a library of 24 sustaining engi-
+neering tasks, each encoded as a ChangeType Y AML template.
+Tasks are evenly distributed across the four IEEE 14764
+maintenance categories: corrective, adaptive, perfective, and
+preventive. Each template specifies:
+• The sustaining engineering intent and category.
+• Required inputs and parameters.
+• Expected artifacts and affected components.
+• Governance rules and approval gates.
+• Validation and acceptance criteria.
+Templates are intentionally designed to vary in structural
+complexity. Some tasks involve localized changes to a single
+service, while others require coordinated updates across mul-
+tiple services and interfaces.
+C. Execution Workflow
+Each sustaining engineering task is performed using the
+ATeam multi-phase workflow, which consists of analysis,
+planning, execution, validation, and finalization phases as
+defined by the ATeam execution model. During the analysis
+phase, the framework constructs a dependency graph and
+identifies the affected services and files. In the execution
+phase, a large language model (LLM) generates code patches,
+typically as full-file replacements, constrained by the template
+specification and the execution context.
+In this study, governance approval gates are configured in
+auto-approval mode to isolate model and framework behavior
+from human intervention. All executions are comprehensively
+logged, including prompts, generated artifacts, dependency
+metadata, and validation outputs, to enable post hoc inspection
+and ensure reproducibility.
+In addition to the governed ATeam execution, two baselines
+are evaluated: (i) an AutoGPT-style agent baseline in which the
+LLM reasons through the workflow, and (ii) an unconstrained
+baseline in which the LLM receives the request and provides
+the output. Both baselines execute identical sustaining engi-
+neering intents but omit ChangeType decomposition, depen-
+dency analysis, and governance gates. This design isolates the
+effect of governance from agentic orchestration.
+D. Models and Runs
+We evaluate three LLM configurations spanning three ap-
+proximate parameter scales: 2B (granite-3.3-2b-instruct [22]),
+8B (ibm/granite-3.1-8b [23]), and 20B (openai/gpt-oss-20b
+[24]). For each model size, three independent runs are exe-
+cuted, resulting in a total of nine runs. Each run executes all
+24 sustaining engineering templates in sequence, yielding 216
+total task executions (3 models x 3 runs x 24 tasks).
+Multiple runs per model size are used to capture stochastic
+variability in LLM outputs and to support statistical analysis
+of performance stability. No prompt tuning or task-specific
+adaptation is performed between runs.
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:20:00 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 5]]
+E. Evaluation Metrics
+Each task execution is evaluated using two complementary
+metrics:
+1) Rubric-only score: A normalized score derived from
+template-specific rubric criteria assessing local correct-
+ness and compliance. GPT-5-Codex [25] is used as the
+LLM judge.
+2) Weighted score: A composite score combining rubric
+performance with regex and dependency-related checks.
+Rubric evaluation is performed using an LLM oracle (GPT-
+5-Codex), which provides a consistent but non-authoritative
+approximation of human judgment. Its role is limited to artifact
+assessment and does not include decision-making or workflow
+control. While an LLM-based evaluation provides consistency,
+we acknowledge potential systematic biases and validated
+oracle judgments against expert review (95% agreement, n=20
+- 5 per IEEE category).
+F . Analysis Approach
+Results are analyzed at multiple levels of aggregation: per-
+run, per-model-size, and per-IEEE-maintenance-category. This
+enables assessment of (i) run-to-run variability, (ii) the effect
+of model scale under governance constraints, and (iii) relative
+difficulty across maintenance categories.
+To assess statistical significance between execution regimes,
+we perform Welch’s t-tests on run-level mean weighted scores.
+Effect sizes are reported using Cohen’s d to quantify practical
+significance independent of sample size.
+VI. R ESULTS
+TABLE I.
+COMPARISON OF GOVERNED ATEAM EXECUTION VS. STRUCTURED 
+REASONING AND UNCONSTRAINED BASELINES BY MODEL SIZE (MEAN ± 
+SD).
+Size Regime Weighted score Rubric-only score
+2B ATeam (governed) 69.10 ± 0.89 66.28 ± 2.05
+2B Structured Reasoning 23.06 ± 1.87 18.40 ± 2.17
+2B Unconstrained 21.24 ± 0.36 2.78 ± 0.00
+8B ATeam (governed) 66.45 ± 1.30 59.89 ± 3.65
+8B Structured Reasoning 41.14 ± 1.59 38.43 ± 2.37
+8B Unconstrained 35.71 ± 2.70 31.25 ± 2.50
+20B ATeam (governed) 82.58±1.27 81.17±1.54
+20B Structured Reasoning 63.19± 5.24 58.57 ± 6.73
+20B Unconstrained 60.39 ± 7.02 57.99 ± 7.12
+A. Interpretation and Implications
+Nine independent runs (three per large language model)
+were conducted across 24 software sustaining engineering
+templates for each baseline and ATeam governance condition.
+The results include (i) a weighted score combining regex
+search and rubric evaluation, and (ii) a rubric-only score. Table
+I presents aggregate model performance, and Table II details
+performance by IEEE maintenance category.
+Tables I and II provide a comparison of ATeam’s governed
+execution with AutoGPT and unconstrained baselines across
+different model sizes and IEEE maintenance categories.
+TABLE II.
+MEAN SCORES BY IEEE SOFTWARE SUSTAINING ENGINEERING 
+CATEGORY : ATEAM GOVERNED VS. BASELINES (COMPUTED FROM ALL 
+BASELINE RUNS ). VALUES ARE MEAN ± SD.
+Category Regime Weighted score Rubric-only score
+Adaptive ATeam (governed) 70.12 ± 7.57 69.01 ± 7.68
+Adaptive Structured Reasoning 45.06 ± 17.78 41.67 ± 18.51
+Adaptive Unconstrained 45.06 ± 21.92 37.66 ± 28.45
+Corrective ATeam (governed) 68.12 ± 12.85 62.70 ± 15.29
+Corrective Structured Reasoning 51.20 ± 18.32 48.30 ± 15.86
+Corrective Unconstrained 41.24 ± 18.76 32.25 ± 26.38
+Perfective ATeam (governed) 75.16±7.57 69.41± 10.86
+Perfective Structured Reasoning 37.50 ± 19.68 32.71 ± 21.47
+Perfective Unconstrained 38.19 ± 21.40 29.32 ± 26.53
+Preventive ATeam (governed) 77.44 ± 11.32 75.32 ± 15.57
+Preventive Structured Reasoning 36.11 ± 18.48 31.17 ± 20.18
+Preventive Unconstrained 31.94 ± 15.01 23.45 ± 22.41
+TABLE III.
+STATISTICAL COMPARISON OF EXECUTION REGIMES USING RUN-LEVEL 
+MEAN WEIGHTED SCORES . WELCH ’S t-TEST IS USED ; EFFECT SIZES ARE 
+REPORTED AS COHEN ’S d.
+Comparisont p-value Cohen’sdEffect size
+ATeam vs Struc Reasoning 4.73 6.5e-4 2.23 Huge
+ATeam vs Unconst 5.27 2.7e-4 2.49 Huge
+Struc Reasoning vs Unconst 0.40 0.69 0.19 Negligible
+Table III presents statistical comparisons across execution
+regimes. ATeam demonstrates significantly superior perfor-
+mance compared to both AutoGPT-style and unconstrained
+baselines, with large effect sizes (Cohen’s d> 2). In contrast,
+the difference between AutoGPT and unconstrained execution
+is not statistically significant. These findings suggest that
+agentic orchestration alone does not substantially improve
+sustaining engineering outcomes; rather, governance-aware
+decomposition and enforcement are the primary determinants
+of performance.
+Across governance runs, models generally achieve high
+rubric scores; however, overall pass rates exhibit substantial
+variation between replications, even when model size remains
+constant. The variance in scores is greater for the overall pass
+rate than for either the rubric or the weighted score.
+No monotonic relationship is observed between parameter
+count and either pass rate or aggregate score. Although larger
+models such as OSS 20B are competitive in mean perfor-
+mance, smaller models like Granite 2B achieve comparable
+averages and, in some cases, higher pass rates with lower
+variability. These findings demonstrate the viability of small
+models for producing strong results. Additionally, small mod-
+els are suitable for on-premise deployment, which is often
+required in regulated industries.
+Although performance differences exist across IEEE main-
+tenance categories, governance remains the dominant determi-
+nant of performance across all categories, rather than model
+scale or agentic execution. Adaptive and corrective tasks
+achieve slightly higher mean scores. In contrast, perfective
+and preventive tasks are less likely to succeed, as they require
+greater abstraction and forward-looking reasoning, which are
+often necessary for refactoring and risk-mitigation changes.
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:20:00 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 6]]
+In summary, the results indicate that policy-compliant soft-
+ware sustaining engineering is achievable across various model
+sizes; however, reliability depends on robustness to constraint
+interactions. Reporting mean±SD highlights that variability,
+particularly in pass rate, is as important as average perfor-
+mance. This finding reinforces the necessity for governance-
+aware evaluation beyond rubric compliance.
+VII. DISCUSSION
+The results suggest that smaller LLMs can be used effec-
+tively for enterprise software development through the use of
+templates that constrain the LLM, dependency analysis, and
+validating gates with humans in the loop. LLMs go from being
+adhoc code generators to controlled and reliable generators.
+The magnitude of the observed effect sizes indicates a
+qualitative shift in execution behavior rather than incremental
+improvement. This fact distinguishes governance-aware exe-
+cution from both unconstrained and agentic baselines.
+The runs that were executed were done with auto-approval
+for these measurements. We speculate that adding a human-
+in-the-loop would have resulted in higher success rates. This
+framework is best viewed as one that enables governed auto-
+mated versus one that provides full autonomy.
+The explanations provided with the failures via the LLM
+judge allow for iterative improvement of the templates. These
+are not inherent issues with the LLMs used.
+VIII. CONCLUSION
+This paper argues that the primary barrier to enterprise
+adoption of AI-assisted software development is the absence
+of governance, auditability, and structured control over change.
+Brownfield environments are much different from prototypes.
+We introduced ATeam, which is a governance-aware frame-
+work that formalized software maintenance as a structured
+and sustainable process grounded in design and architecture
+documents. We provide a formal description of the framework.
+The ATeam framework operationalizes this model through
+templates that are converted into executable code, depen-
+dency analysis, validation gates, and artifacts that are human-
+reviewable. This allows even small, on-premise LLMs to work
+in enterprise environments.
+We provide an empirical evaluation across multiple LLMs
+and IEEE maintenance categories, showing that structured
+decomposition and governance provide a structured method of
+change execution with human oversight and audit of artifacts.
+The results support the thesis that sustainable enterprise use
+of LLMs requires shifting from vibe coding toward governed
+software evolution.
+Statistical analysis confirms that ATeam’s improvements are
+not marginal. Governance yields 1.3 to 3.3 times better reli-
+ability over self-reasoning (AutoGPT-like) and unconstrained
+prompt execution.
+REFERENCES
+[1]Software Engineering — Software Life Cycle Processes — Maintenance,
+ISO/IEC/IEEE Std. 14 764, 2022.
+[2] T. Abbas, S. A. Rathore, A. Turki, S. Khan, O. Alghushairy, and
+A. Daud, “Enhancing software engineering with ai: Innovations, chal-
+lenges, and future directions,”IET software, vol. 2025, no. 1, 2025.
+[3] S. Akhtar and S. Aftab, “Towards ai-augmented software engineering: A
+theoretical framework,”ICCK Journal of Software Engineering, vol. 1,
+no. 2, pp. 124–138, 2025.
+[4] N. Beaulieu, S. Dascalu, and E. Hand, “Vibe Coding: A Multivocal
+Systematic Mapping Study,” in2025 IEEE/ACIS 29th International
+Conference on Software Engineering, Artificial Intelligence, Networking
+and Parallel/Distributed Computing (SNPD). Busan, Korea, Republic
+of: IEEE, Jun. 2025, pp. 266–273.
+[5] K. Krings, N. S. Bohn, and T. Ludwig, “(R)evolution of Programming:
+Vibe Coding as a Post-Coding Paradigm,” 2025, version Number: 2.
+[6] S. Ba ˘grıyanık and E. Ersoy, “Measuring AI Impact on Software Engi-
+neering Productivity and Quality,” in2025 10th International Conference
+on Computer Science and Engineering (UBMK). Istanbul, Turkiye:
+IEEE, Sep. 2025, pp. 1187–1192.
+[7] K. Maoet al., “WhatsCode: Large-Scale GenAI Deployment for Devel-
+oper Efficiency at WhatsApp,” Dec. 2025, arXiv:2512.05314 [cs].
+[8] R. Jiao, Y . Zhang, J. Li, and B. Ma, “SCCA: A Multi-Agent Code
+Security Analysis Framework for AI-Assisted Code Generation,” in
+2025 IEEE 22nd International Conference on Mobile Ad-Hoc and Smart
+Systems (MASS). Chicago, IL, USA: IEEE, Oct. 2025, pp. 549–554.
+[9] E. G. Anderson, G. G. Parker, and B. Tan, “Beyond productivity:
+Evaluating the hidden costs of generative ai in software development,”
+SSRN Electronic Journal, Dec. 2025, available at SSRN.
+[10] A. Al-Hawari, H. Najadat, and R. Shatnawi, “Classification of ap-
+plication reviews into software maintenance tasks using data mining
+techniques,”Software Quality Journal, vol. 29, no. 3, pp. 667–703, Sep.
+2021.
+[11] L. Gazzola, D. Micucci, and L. Mariani, “Automatic Software Repair:
+A Survey,”IEEE Transactions on Software Engineering, vol. 45, no. 1,
+pp. 34–67, Jan. 2019.
+[12] M. Waseemet al., “Vibe Coding in Practice: Flow, Technical Debt, and
+Guidelines for Sustainable Use,” Dec. 2025, arXiv:2512.11922 [cs].
+[13] A. Saidane and S. Al-Sharieh, “A compliance-driven framework for
+privacy and security in highly regulated socio-technical environments:
+An e-government case study,” inResearch Anthology on Privatizing and
+Securing Data. IGI Global, 2021, pp. 933–962.
+[14] A. E. Hassan, H. Li, D. Lin, B. Adams, T.-H. Chen, Y . Kashiwa,
+and D. Qiu, “Agentic Software Engineering: Foundational Pillars and
+a Research Roadmap,” Sep. 2025, arXiv:2509.06216 [cs].
+[15] J. Liu, C. S. Xia, Y . Wang, and L. Zhang, “Is your code gener-
+ated by chatgpt really correct? rigorous evaluation of large language
+models for code generation,”arXiv preprint, vol. 2305.01210, 2023,
+arXiv:2305.01210 [cs.SE].
+[16] E. Bandaraet al., “Agentsway – Software Development Methodology
+for AI Agents-based Teams,” Oct. 2025, arXiv:2510.23664 [cs].
+[17] K. K. Sharma, “Beyond greenfield: The d3 framework for ai-driven
+productivity in brownfield engineering,”arXiv preprint, vol. 2512.01155,
+2025, arXiv:2512.01155 [cs.SE].
+[18] E. D. L. Cruzet al., “Redefining the Programmer: Human-AI Collabora-
+tion, LLMs, and Security in Modern Software Engineering,”Computers,
+Materials & Continua, vol. 85, no. 2, pp. 3569–3582, 2025.
+[19] Y . Zhang, H. Ruan, Z. Fan, and A. Roychoudhury, “AutoCodeRover:
+Autonomous Program Improvement,” inProceedings of the 33rd ACM
+SIGSOFT International Symposium on Software Testing and Analysis.
+Vienna Austria: ACM, Sep. 2024, pp. 1592–1604.
+[20] D. Chenet al., “CodeR: Issue resolving with multi-agent and task
+graphs,” 2024. [Online]. Available: https://arxiv.org/abs/2406.01304
+[21] Y . Sasakiet al., “Landscape and taxonomy of prompt engineering
+patterns in software engineering,”IT Professional, vol. 27, no. 1, pp.
+41–49, 2025, published January/February 2025.
+[22] IBM, “granite-3.3-2b-instruct,” IBM AI Model Catalog, IBM,
+2025. [Online]. Available: https://www.ibm.com/ai/models/granite-3.3-
+2b-instruct
+[23] ——, “granite-3.1-8b-instruct,” IBM AI Model Catalog, IBM,
+2025. [Online]. Available: https://www.ibm.com/ai/models/granite-3.1-
+8b-instruct
+[24] OpenAI, “gpt-oss-20b,” OpenAI API Documentation, OpenAI, 2025.
+[Online]. Available: https://platform.openai.com/docs/models/gpt-oss-
+20b
+[25] ——, “GPT-5-Codex [large language model],”
+https://openai.com/index/introducing-gpt-5/, 2025.
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:20:00 UTC from IEEE Xplore. Restrictions apply.

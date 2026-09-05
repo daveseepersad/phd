@@ -1,0 +1,1154 @@
+[[page 1]]
+Engineering LLM Powered Multi-Agent Framework
+for Autonomous CloudOps
+Kannan Parthasarathy∗, Karthik Vaidhyanathan†, Rudra Dhar†, Venkat Krishnamachari∗, Adyansh Kakran†,
+Sreemaee Akshathala†, Shrikara Arun†, Amey Karan†, Basil Muhammed∗, Sumant Dubey∗, Mohan Veerubhotla∗
+∗MontyCloud Inc
+†Software Engineering Research Center, IIIT Hyderabad, India
+Email: karthik.vaidhyanathan@iiit.ac.in, {kannan, venkat, basil, sumant, mohan }@montycloud.com,
+{rudra.dhar, adyansh.kakran, sreemaee.akshathala, amey.karan }@research.iiit.ac.in,
+shrikara.a@students.iiit.ac.in
+Abstract—Cloud Operations (CloudOps) is a rapidly growing
+field focused on the automated management and optimization
+of cloud infrastructure which is essential for organizations nav-
+igating increasingly complex cloud environments. MontyCloud
+Inc. is one of the major companies in the CloudOps domain that
+leverages autonomous bots to manage cloud compliance, security,
+and continuous operations. To make the platform more accessible
+and effective to the customers, we leveraged the use of GenAI.
+Developing a GenAI-based solution for autonomous CloudOps
+for the existing MontyCloud system presented us with various
+challenges such as i) diverse data sources; ii) orchestration
+of multiple processes and iii) handling complex workflows to
+automate routine tasks. To this end, we developed MOYA,
+a multi-agent framework that leverages GenAI and balances
+autonomy with the necessary human control. This framework
+integrates various internal and external systems and is optimized
+for factors like task orchestration, security, and error mitigation
+while producing accurate, reliable, and relevant insights by
+utilizing Retrieval Augmented Generation (RAG). Evaluations
+of our multi-agent system with the help of practitioners as
+well as using automated checks demonstrate enhanced accuracy,
+responsiveness, and effectiveness over non-agentic approaches
+across complex workflows.
+Index Terms—Autonomous CloudOps, LLM, AI Engineering,
+Multi-Agent Framework, Generative AI, Software Architecture
+I. I NTRODUCTION
+Cloud computing has fundamentally transformed the IT
+landscape, providing organisations of all sizes with instant
+access to scalable, flexible, and cost-effective digital infrastruc-
+ture. Businesses increasingly use cloud platforms for storage,
+application hosting, analytics, and AI. Today, many organi-
+sations are adopting cloud solutions. According to a survey,
+over 94% of organisations operate cloud-based workloads,
+that is applications, processes, or tasks running on cloud in-
+frastructure and utilising resources like compute, storage, and
+network 12. However, this widespread adoption introduces the
+shared responsibility model 3 , where both cloud providers and
+customers have roles in managing the cloud environment. It
+places operational responsibilities on organisations, requiring
+1https://resources.flexera.com/web/media/documents/
+rightscale-2019-state-of-the-cloud-report-from-flexera.pdf
+2https://www.fortinet.com/content/dam/fortinet/assets/analyst-reports/
+report-2022-cloud-security.pdf
+3https://aws.amazon.com/compliance/shared-responsibility-model/
+a well-defined CloudOps practice to effectively manage their
+share of duties.
+CloudOps, or Cloud Operations, refers to the practices,
+tools, and processes to manage, optimise, and secure ap-
+plications and infrastructure in the cloud. Alonso et al. [1]
+defines it as a framework that extends DevOps practices
+to cloud management by adding components like resource
+discovery, self-healing, and real-time monitoring. By focusing
+on automation, monitoring, cost management, and compliance,
+CloudOps enables organisations to maintain efficient, resilient,
+and scalable cloud environments. However, the complex and
+dynamic nature of cloud services makes manual management
+time-intensive, challenging, and prone to errors.
+MontyCloud’s Autonomous CloudOps platform addresses
+these challenges by automating workflows to streamline oper-
+ations and provide real-time visibility into inventory, security,
+and costs 4. The platform tackles challenges such as navigating
+the complexity of hundreds of services, establishing secure
+and cost-effective cloud governance, ensuring a strong security
+posture, and adhering to evolving compliance standards.
+The rise of AI, particularly Generative AI (GenAI) and
+Large Language Models (LLMs), is transforming businesses
+and streamlining operations. Hou et al. [2] outline the suc-
+cessful applications of LLMs in various software engineer-
+ing tasks. CloudOps can also benefit from this emerging
+technology. To improve platform accessibility and streamline
+Autonomous CloudOps, MontyCloud collaborated with IIIT-H
+to develop an Autonomous CloudOps solution using GenAI.
+However, engineering GenAI systems for CloudOps is
+challenging due to the need for real-time data processing
+and ensuring reliability. Generative models often lack context,
+leading to inaccuracies in complex domains like CloudOps.
+Retrieval-Augmented Generation (RAG) [3] addresses this
+by integrating information retrieval, improving relevance and
+accuracy. Initially, we built a monolithic RAG system to
+enhance our platform’s accessibility, but it struggled with
+large data volumes and diverse APIs, revealing its limita-
+tions. Multiple LLM calls risk context overload and reduced
+accuracy as they lack domain-specific focus in processing
+4https://montycloud.com
+201
+2025 IEEE/ACM 4th International Conference on AI Engineering – Software Engineering for AI (CAIN)
+979-8-3315-0219-5/25/$31.00 ©2025 IEEE
+DOI 10.1109/CAIN66642.2025.00031
+2025 IEEE/ACM 4th International Conference on AI Engineering – Software Engineering for AI (CAIN) | 979-8-3315-0219-5/25/$31.00 ©2025 IEEE | DOI: 10.1109/CAIN66642.2025.00031
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:10:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 2]]
+Improve Security Score for
+Production Application
+Aggregates Data
+Generates Report
+Updates Security Score
+Report Agent
+CloudOps Advisor
+(Moya Agent Orchestrator)
+Security 
+Scaning Agent
+Scan Request
+Scan Results
+Specialised
+Cloud Tools
+Amazon AWS Q
+Microsoft Azure
+Copilot
+Ticket Management
+Agent
+Create/Update Tickets
+Ticket Status
+Cloud Operations
+Agent
+Remediation Task
+Completion Updates
+Fig. 1. Figure depicting how a user query is processed in the MOY A
+Framework: A system of agents driving security enhancements through
+automated workflows and cloud tools.
+[4]. Emerging multi-agent frameworks had the potential to
+address these challenges, though they were not suitable for
+CloudOps due to insufficient customisation capabilities, in-
+ability to handle varied APIs or heterogeneous data sources,
+and limited support for domain-specific agent interactions.
+To this end, we developed a novel GenAI based Multi-
+agent framework, MOY A (Meta Orchestrator Of Your Agents),
+that balances automation with human supervision, ensuring
+efficiency, extensibility, and security in CloudOps operations.
+This paper details the framework, explaining the differ-
+ent components and their interactions. We demonstrate that
+MOY A framework outperforms the traditional RAG-based
+approach with a single LLM by empirically assessing their
+performance. Figure 1 shows an example scenario where
+multiple agents collaborate to resolve user queries. MOY A ad-
+dresses key end-user needs like cloud engineers, by improving
+accessibility across complex cloud environment and enabling
+faster and more accurate problem resolution.
+The rest of the paper is structured as follows: Section II
+provides a background on CloudOps and Multi-Agent frame-
+works. Section III outlines the key challenges in CloudOps
+and limitations of our initial monolithic approach. Section IV
+details the architecture of MOY A whereas Section V describes
+some key agents. Section VI presents the experimental setup
+and evaluation methodologies, whereas Section VII interprets
+the findings of our study and its relevance to the community.
+Section VIII discusses the potential threats to validity of the
+work. Section IX gives an overview of the relevant literature
+and current works and Section X provides conclusions and
+insights into future works. The framework implementation and
+the example agents are available on Github 5.
+II. B ACKGROUND
+A. Autonomous CloudOps of MontyCloud
+Efficient CloudOps management is essential for organisa-
+tions to fully capitalize on the agility, scalability, and potential
+of the cloud. These operations are provided to organisations
+5https://github.com/montycloud/moya
+MontyCloud Inc Automated
+Analytics
+Operational
+Efficiency
+24/7 Monitoring
+Insights & 
+ Recommendations
+MSP
+Autonomous 
+CloudOps
+Cloud Service Provider
+UserUser
+UserUser
+Organisation
+UserUser User
+Organisation
+Fig. 2. Autonomous CloudOps Ecosystem: MontyCloud’s platform enabling
+MSPs to deliver automated cloud management to organizational users, show-
+ing the hierarchical relationship between service providers, cloud platforms,
+and end users
+by Managed Service Providers (MSPs). MSPs bring extensive
+expertise in CloudOps and maintain strong partnerships with
+cloud providers. They assist organisations at every stage of
+their CloudOps lifecycle, including planning, migration, oper-
+ations, and optimisation.
+However, managing CloudOps at scale presents unique
+challenges for MSPs who often oversee operations for nu-
+merous organisations, each with unique needs and intricate
+infrastructures. This volume demands constant monitoring,
+analysis, and optimisation, which can become unsustainable
+when relying on manual management. Such inefficiencies
+restrict the ability to deliver timely insights and implement
+optimisations effectively.
+To address these challenges, MontyCloud developed a sys-
+tem that can support Autonomous CloudOps, as shown in
+Figure 2. This system provides services such as real-time
+visibility, continuous monitoring, and data-driven automation
+to the MSPs for automating the management of CloudOps for
+various users and organisations. In doing so, MontyCloud en-
+ables MSPs to deliver reliable and optimised cloud services
+across different verticals like security, governance, compliance,
+and cost management at scale.
+B. Multi-Agent Systems
+A Multi-Agent System (MAS) [5] is a framework that uses
+multiple intelligent agents to autonomously solve complex
+problems that may be difficult for a single agent or centralised
+system. Rooted in game theory, MAS leverages intelligent
+entities customised for specific tasks to improve scalability and
+adaptability in various applications. In software engineering,
+MAS frameworks enable decentralised decision-making and
+efficient collaboration among agents [6]. Integrating large
+language models (LLMs) into these frameworks has expanded
+their capabilities, with systems like AutoGen [7], CrewAI 6 ,
+6https://www.crewai.com/
+202
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:10:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 3]]
+LangGraph 7 , and AutoGPT 8 offering diverse approaches and
+benefits. For instance, LangGraph uses a design-time graph
+structure, which demands individual customisations for dif-
+ferent customers, restricting run-time flexibility. While frame-
+works like Autogen, AutoGPT, and CrewAI allow for runtime
+decision-making, the level of abstraction limited our ability
+to customise interactions and integrate with MontyCloud’s
+unique data sources and APIs. While custom tools could be
+built within these existing frameworks, creating a tailored
+multi-agent framework provided us with greater flexibility and
+control to meet our CloudOps needs and scalability goals. It
+also enabled seamless integration with MontyCloud’s data and
+APIs, while allowing external developers to define and deploy
+their own agents.
+III. C HALLENGES
+The application of AI in cloud operations is still relatively
+new and underdeveloped. Comprehensive studies by Mar-
+tinez et al. [8] and Bosch et al. [9] identify key challenges
+in engineering AI-based systems. These challenges include
+data-related issues, difficulties in understanding qualitative
+attributes, the applicability of software engineering practices,
+and maintenance problems associated with building AI sys-
+tems. The introduction of GenAI in CloudOps makes it more
+challenging to establish a system that incorporates Software
+Engineering best practices, especially for real-time decision-
+making, consistency, and adaptability.
+Our initial design relied on RAG as the backbone to address
+some of these foundational challenges. Although a RAG-based
+monolithic system significantly reduced the need for manual
+analysis by facilitating real-time data access, issue identifica-
+tion, anomaly detection, automated chat-based responses, and
+accurate insights, it also brought its own set of challenges as
+the system evolved. The core challenges we recognised with
+our initial system are:
+A. CH1: Managing Distributed Data
+Cloud environments generate large amounts of heteroge-
+neous data across multiple platforms, complicating manage-
+ment. Diverse data formats and distributed sources created
+significant challenges in aggregation, analysis, and retrieval.
+MontyCloud had multiple APIs which supported various cloud
+operations and functionalities. The integrated APIs had vary-
+ing data formats and sources, requiring extensive standardisa-
+tion efforts for analysis. As features expanded, data volume
+from these APIs grew rapidly, requiring a system capable
+of real-time processing of diverse datasets to ensure data
+completeness and relevance. We faced challenges such as
+incomplete context retention, data processing inaccuracies, and
+hallucinations, resulting in irrelevant or incomplete responses.
+These issues significantly impact complex cloud operations,
+which depend on precise qualitative insights.
+7https://langchain-ai.github.io/langgraph
+8https://github.com/Significant-Gravitas/AutoGPT
+B. CH2: Maintainability
+As the system expanded, maintaining its functionality be-
+came increasingly difficult. The addition of new components
+and categories made task management and classification chal-
+lenging, as the delineation of responsibilities among tasks was
+often unclear. Mapping intent of the query to the functionality
+became complex as the number of required classification
+samples grew substantially.
+Additionally, as the system evolved, implementing changes
+or updates became challenging and time-consuming due to the
+lack of modularity. Integration with external tools required
+extensive testing to avoid conflicts, thereby slowing down
+updates and maintenance. Furthermore, debugging and tracing
+operational issues became difficult, reducing overall efficiency.
+C. CH3: Extensibility and Modularity
+The monolithic system’s dependence on a single vendor’s
+tools and models restricted its flexibility, making it difficult
+to select the optimal solutions for specific tasks, resulting in
+a vendor lock-in. The limitation prevented the integration of
+specialised models tailored to unique tasks and domains, a core
+principle of Domain-Driven Design (DDD) [10]. This forced
+developers into a one-size-fits-all approach, constraining the
+available solutions for diverse CloudOps scenarios.
+Moreover, the system’s design limited contributions from
+external developers, as domain experts are not directly in-
+volved in the primary workflows. Expanding the system to
+accommodate other cloud platforms such as Azure or GCP,
+introduced additional challenges due to the lack of standard-
+ised APIs and inconsistent data formats. This vendor-specific
+monolithic approach complicated API integration and made
+it difficult to adapt to evolving data structures, hindering the
+system’s maintainability and extensibility.
+To address these limitations, we developed an architec-
+ture for a multi-agent framework to support the autonomous
+CloudOps better. Adopting a modular, multi-agent architecture
+becomes a more effective approach. However, multi-agent
+systems also presented their own set of engineering challenges
+such as agent coordination, orchestration, data consistency,
+context sharing, and importantly, balancing autonomy and
+control. The following section details how we developed this
+framework and how it addresses the challenges outlined above.
+IV. MOYA M ULTIAGENT FRAMEWORK
+MOY A Framework is engineered to mitigate the challenges
+presented in Section III by creating a collection of modular,
+interoperable agents that work collaboratively to ensure quality
+and scalability. Each agent is an autonomous component de-
+signed to handle specific tasks in CloudOps, enabling seamless
+integration with diverse APIs, dynamic data sources, and user-
+defined workflows, while maintaining runtime flexibility and
+support for external customisations. Agents can be deployed
+to monitor operational activities, generate status summaries,
+and perform various specialised functions within the system.
+203
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:10:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 4]]
+Agent Marketplace
+Core Engine
+Developer
+Agent Portal and
+Development Toolkit
+Query
+User
+Browse, edit, 
+test, create
+Import 
+Agents
+Deploy customised 
+agents
+choose agents from marketplace to add to environment
+Response
+Fig. 3. High-Level Overview of MOYA Framework: Architectural diagram
+showing the Developer Portal for agent creation, the Agent Marketplace for
+browsing existing agents, and Core Engine handling query routing and agent
+orchestration
+As illustrated in Figure 3, the MOY A Framework supports
+the dynamic creation, customisation, deployment, and utilisa-
+tion of agents, providing a customised approach to CloudOps.
+It also offers integration with the following set of subsystems:
+Development Toolkit: Provides developers with tools and
+resources for building, testing, and integrating agents, ensuring
+maintainability and extensibility by facilitating efficient agent
+development and seamless integration.
+Agent Portal: A web-based interface for developers and
+customers to browse, create, edit, test, and debug agents in a
+sandbox environment. It simulates the core system’s workflows
+and monitoring invocation probabilities, logs, and metrics,
+enhancing usability, reliability, and flexibility by allowing
+thorough testing and debugging before deployment.
+Agent Marketplace: An agent store where developers and
+users can add or swap in new agents to support specific
+needs within their cloud environment. Agents can be added
+by selecting from existing configurations, or, for highly cus-
+tomised needs, by defining additional fields of the agents like
+Agent URL, description of the agents, functionality, and the
+permissions the agent would have. This promotes scalability,
+security, and customization, enabling users to dynamically
+expand and tailor their CloudOps environment.
+This simplifies the integration of specialised internal or
+third-party agents , enabling users to expand their system’s
+capabilities as their needs evolve. The implication of this is
+that agents are not innately part of the framework, rather the
+framework is designed to be able to house arbitrary agents.
+As described in Figure 3, developers can create, test, and
+deploy agents to the Agent Marketplace , simplifying the
+development process by allowing them to focus solely on func-
+tionality. The framework handles underlying complexities like
+LLM repositories and data streaming, ensuring adaptability.
+This enables businesses to integrate agents seamlessly into
+their operations with minimal system changes.
+In order to manage the MOY A Framework and address the
+challenges outlined in Section III, we built the Core Engine
+of MOY A as illustrated in Figure 4. As shown in Figure
+3, the Core Engine is the central component of the MOY A
+Framework, responsible for driving operations and managing
+the workflows triggered by user queries or requests. The next
+subsection provides a detailed view of its architecture.
+A. Core Engine
+The Core Engine serves as the central component of the
+MOY A Framework, handling the query processing, agent
+coordination, and response generation, as depicted in Figure
+3. Figure 4 illustrates its key components and interactions.
+Additionally, the end-to-end flow of user queries through the
+Core Engine is visualised in Figure 5.
+The engine is triggered by requests or user queries, initiating
+a coordinated workflow among its key components which are
+detailed below:
+Request Handler: The workflow initiates at the Request
+Handler, which processes the query by capturing, validating,
+and parsing incoming user queries. The validated query is then
+forwarded to the Orchestrator for downstream processing.
+LLM Processor: The LLM Processor interprets user queries
+and refines responses. As depicted in Figure 5, the LLM
+Processor is utilised twice in a typical workflow: first, to
+preprocess the initial query, and later, after the Orchestrator
+collects responses from agents, to refine and format the final
+output as per any specified requirements from the user query.
+Orchestrator: Handles the internal flow of information within
+the engine’s components and between agents, ensuring data
+is efficiently and accurately routed. It directs parsed queries
+received from the Request Handler to the relevant components
+and agents, and also supports predefined workflows to stream-
+line common processing patterns.
+Context Memory: Stores frequently used responses for quick
+retrieval, and maintains the contextual information about
+agents such as current agent statuses. It facilitates efficient
+information sharing and coordination among agents by tem-
+porarily holding retrieved data, responses, and intermediate
+results. It optimises retrieval by enabling the core engine to
+respond to requests more efficiently.
+Agent Selector: The Orchestrator directs the user query to
+the Agent Selector to select the right agent for the task.
+Using Machine learning (ML) techniques, the Agent Selector
+classifies and categorises user queries based on predefined
+task boundaries, then selects the most relevant agent based
+on its capabilities and the specific requirements of the query.
+By clearly delineating each agent’s responsibilities within
+the multi-agent framework, the performance of the classifier
+has been significantly improved, resulting in more accurate
+decision-making, addressing the challenge discussed in III-B.
+Agent Registry: Stores crucial agent metadata, including
+invocation protocols, authentication tokens, access endpoints,
+functionality details, permissions, and parameters. It ensures
+agents are properly registered, updated, or removed as needed.
+When the developer creates an agent, the registry is updated
+with the agent’s endpoint, system prompts, and relevant param-
+eters, facilitating future accessibility. The Orchestrator relies
+on the Agent Registry to fetch the most recent version of
+an agent’s information. Given the dynamic nature of agent
+204
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:10:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 5]]
+Request 
+Handler
+Context
+Memory Orchestrator LLM/Non-LLM
+Processor GuardrailsMonitoring
+Lifecycle
+Manager
+Agent Registry
+Summary 
+Agent
+Static
+Agent
+X API
+Agent
+Y API
+Agent
+Agent Invocation
+Core Engine
+Agent
+Selector
+Import agents
+Input
+Response
+Chatbot UI
+Agent Marketplace
+User
+Report
+Agent
+Fig. 4. Detailed View of the Core Engine, depicting the internal components and their interactions within the MOY A Framework, the Agents, and the User
+Request Handler Orchestrator
+Query
+Agent Registry Lifecycle ManagerAgent Selector
+Query
+Selected Agent
+Selected Agent
+Selected Agent Information
+Selected Agent Information
+Agent Response
+Agents
+Agent Invocation
+Agent Response
+Pre-processing
+LLM Processor
+LLM processed response
+LLM processed response
+Guardrails
+Query response
+Final Response
+Query
+Core Engine
+Fig. 5. Interaction flow between Core Engine Components and Agents, showing the sequential processing of queries from initial request through agent
+selection, invocation, and response generation
+metadata, the registry regularly updates and manages con-
+figurations to reflect any changes. This ability to adapt to
+runtime updates enhances the extensibility and modularity of
+the MOY A Framework thereby overcoming III-C.
+Lifecycle Manager: The fetched Agent Information is pro-
+vided as a key to the Lifecycle Manager to invoke the respec-
+tive agent, fetch the response, terminate the agent instance,
+and forward the response to the Orchestrator. It oversees
+the lifecycle of agents, including invocation, monitoring, and
+termination. It can also import new agents from the Agent
+Marketplace.
+Guardrails and Monitoring: To mitigate any harmful lan-
+guage or irrelevant information, we employ the concept of AI
+guardrails [11]. These guardrails are implemented through ML
+models, as well as deterministic checks that screen responses
+for potential risks to validity and appropriateness. When a
+response is flagged by the guardrails system as invalid or
+potentially harmful, a default response is provided in its place.
+To ensure performance, reliability, and operational effi-
+ciency we perform offline and runtime monitoring. Offline
+monitoring incorporates using automated metrics like BLEU
+and BERTScore as explained in Section VI-B. This ensures the
+205
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:10:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 6]]
+reliability of the system during model or data updates, retrain-
+ing and new agent integration. Runtime monitoring tracks real-
+time performance by measuring token usage, response times,
+and agent invocation patterns and warns users in case of an
+anomaly. This ensures that MOY A Framework maintains high
+standards of reliability and safety in its interactions.
+V. A GENTS IN MOYA FRAMEWORK
+An agent, as mentioned in Section IV, is dedicated to handle
+specific tasks in CloudOps. MOY A Framework incorporates
+both LLM-based and non-LLM-based agents, each tailored
+to their specific functions. An LLM-based agent tasked with
+fetching workload summaries provides targeted insights by
+interpreting logs and alerting for anomalies, while a non-LLM
+agent, such as a Utility Agent , can generate visualisations or
+graphs using Python libraries to support reporting tasks.
+The modular design of the agents allows for independent
+development and deployment, minimising disruptions to the
+overall system and enabling agent reuse across tasks and
+domains. Inspired by Domain Driven Design principles [10],
+we first identified identified key Domains and grouped them
+into categories like APIs, reports, etc.. These categories formed
+the basis for identifying different agents, and established clear
+boundaries around each agent’s responsibilities. We defined
+a number of agents, each accessing only its own data and
+concerns, leading to stronger cohesion and reduced coupling.
+Prompt Organiser
+ LLM Processor
+Request Handler
+Template with
+prompts
+Aggregated
+agent
+responses
+Static
+Agent
+X API
+Agent
+Summary 
+Agent
+Y API
+Agent
+Report Agent
+Report Generator
+Query Reports
+Template
++
+LLM Response
+Sends corresponding prompts and fetches responses
+Fig. 6. Report Agent
+A. Report Agent
+The Report Agent manages the end-to-end process of gener-
+ating detailed reports based on user queries. Users can trigger
+report generation through the UI by selecting from available
+templates or providing a custom template with prompts. For
+example, a user can request an ”Overview of cloud resources
+concerning security”, and the agent generates a comprehensive
+report with real-time insights from the Cloud system.
+When a report is requested, the Report Agent activates
+the workflow through the Request Handler , as illustrated in
+Figure 6, which captures the query and forwards the template
+with prompts to the Prompt Organiser. The Prompt Organiser
+categorises the prompts and sends them to the relevant agents
+to retrieve the necessary data. Once the data is fetched, it is
+passed to the LLM Processor, which refines the response to
+ensure coherence and readability. Finally, the Report Genera-
+tor takes the refined data, integrates it into the initial template,
+and generates the final report.
+Generated reports undergo evaluations through the Core
+Engine’s guardrails to verify correctness and adherence to
+defined limits. Additionally, the Report Generator can create
+relevant graphs and visualisations, enhancing the readability
+and utility of the final report. The Report Agent communicates
+and delegates tasks to other agents, showcasing MOY A’s
+capacity for inter-agent communication and collaboration.
+B. Static Agent
+The static agent in our system handles queries that require
+referencing static content which includes all of MontyCloud’s
+documentation and operational guidelines. As depicted in
+Figure 7 utilizing a RAG approach, this agent processes
+documents by chunking them, generating embeddings with
+an embedding model, and storing these embeddings in a
+vector database. When a query is received, the agent retrieves
+the most relevant documents with the retrieval engine, and
+generates contextually appropriate responses. For example, if
+a user queries about ’Operational Excellence’ in AWS’s Well-
+Architected framework, the Agent would retrieve the relevant
+AWS documentation and generate a response.
+Retrieval Engine
+ LLM Processor
+Request Handler
+Embedding Model
+Embedding Model
+Extracting and 
+Chunking
+Processed
+Query
+Relevant
+Embeddings
+Retrieved
+context
+Static Agent
+Query Response
+Query
+Embedding
+Query
+Documents
+Store
+Similarity 
+Search
+Fig. 7. Static Agent
+C. API Agent: Notification Agent
+API agents in MOY A Framework facilitate interaction with
+both internal and external APIs to retrieve and process relevant
+information. The generic design of API agents is depicted in
+206
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:10:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 7]]
+Figure 8. The scenario in Figure 1 demonstrates the integration
+of external APIs, such as Ticket Management tools.
+The Notification Agent exemplifies an internal API agent
+in MOY A Framework. It leverages MontyCloud’s APIs to
+obtain a user’s list of unread notifications. It processes and
+summarises these notifications into a clear and comprehensible
+format, ensuring users remain efficiently informed about the
+latest updates and information.
+For example, if a user queries about the latest happenings
+in their account, the Notification Agent would access Monty-
+Cloud’s internal notification-related APIs to retrieve the user’s
+unread notifications. It would then process these notifications
+into a concise and easily understandable format and give the
+response back to the user.
+API Orchestrator
+ Data Aggregator
+API Calls
+LLM Processor
+Internal/External APIs
+Query
+Raw API
+response
+API Agent
+Response
+Aggregated
+Data
+API
+Response
+Fig. 8. A general API Agent
+D. Summary Agent
+The Summary Agent addresses the requirement for effec-
+tively summarising large, distributed cloud workloads (III-A).
+These workloads consist of data from multiple cloud services
+and applications, often in varying formats. The data contains
+critical insights, which are essential for real-time decision-
+making and efficient cloud management. However, these ex-
+tensive datasets cannot be processed in a single LLM call due
+to context length limitations of LLMs, restricting the creation
+of comprehensive summaries.
+Hence, a novel hierarchical summarisation strategy was
+developed to divide cloud workloads into manageable chunks,
+each fitting within the LLM’s context limits. Each chunk is
+summarised independently, then compiled together and sum-
+marised again into a high-level ”summary of summaries”. A
+workload summary like this is generated, stored, and regularly
+updated for each workload.
+For instance, when a user requests ” A summary of the
+changes in my workload over the past month ,” the Summary
+Agent generates individual summaries for aspects like cost,
+security, and performance, which are then summarised again
+to provide a comprehensive overview.
+As depicted in Figure 9, when a query about a workload
+is received, the Workload Identifier identifies the workload
+and sends it to the Retrieval Engine , which fetches the
+relevant summary from the Summary Store. The Pre-processor
+combines the summary with the query, and forwards it to the
+LLM Processor, which provides a comprehensive response.
+Furthermore, the hierarchical summarisation process was
+optimised by parallelising the process using multi-threading,
+enabling concurrent LLM calls. This enhancement allows for a
+higher frequency of updating the workload summaries, provid-
+ing the Summary Agent with timely and accurate summaries
+of large-scale cloud data.
+Retrieval Engine
+Corresponding
+workload’s
+summary
+Query 
++ 
+summary
+Query Response
+Workload Identifier
+Summary store
+Query
++
+Workload Info
+Summary Agent
+LLM Processor
+Pre-processor
+Workload
+Summarizer
+Query
++
+Processed Context
+Fig. 9. Summary Agent
+VI. E VALUATION FRAMEWORK
+The primary aim of this evaluation is to rigorously assess
+the performance of our system that leverages the MOY A
+Framework in real-world scenarios and compare it against our
+initial RAG-based monolithic implementation. Specifically,
+this study evaluates the accuracy, relevance, and presentation
+of responses generated by MOY A Framework, alongside the
+efficiency in terms of response time and cost.
+A. Experimental Setup
+To conduct a comprehensive evaluation, we deployed
+MOY A Framework in a dedicated development environment to
+simulate real-world conditions accurately. The system consists
+of the Core Engine that coordinates the overall framework,
+and six distinct agents: the Static Agent, Summary Agent,
+Report Agent, and three API agents—Notification, Cost, and
+Dashboard. Each agent was implemented as a serverless
+function, enabling efficient scaling, resource optimisation, and
+streamlined communication between agents.
+For this evaluation, a dataset of 26 prompts was carefully
+curated to represent a comprehensive range of scenarios rel-
+evant to CloudOps. This curation was done by MontyCloud-
+Subject Matter Experts (SMEs), who directly interact with the
+customers and have extensive knowledge on the needs of their
+customers. To further assess the system’s generalisability and
+prevent overfitting to specific prompts, 10 variations were gen-
+erated for each prompt using LLMs, resulting in a total of 260
+207
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:10:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 8]]
+prompts. The variations were generated by prompting the LLM
+to rephrase the query but keep the meaning and keywords the
+same. The prompts encompassed multiple domains, including
+cost analysis, dashboard evaluation, notification management,
+and general CloudOps queries, thus providing a well-rounded
+basis for assessment.
+In addition, the same expert team curated a high-quality
+gold standard response for each prompt in the dataset. These
+expert-verified responses served as the optimal output that
+the framework should ideally achieve, providing a benchmark
+for evaluating the framework’s performance. By comparing
+MOY A Framework’s outputs against these gold standard re-
+sponses, we were able to assess its accuracy, relevance, and
+alignment with CloudOps requirements.
+B. Evaluation Metrics
+To thoroughly evaluate the quality of responses produced
+by MOY A Framework, we employ a combination of widely
+recognised Natural Language Processing (NLP) metrics and
+human evaluation, providing a well-rounded assessment of
+overall performance. For efficiency analysis, we focus on
+measuring response latency and the cost associated with each
+interaction by measuring tokens.
+1) Automated Evaluation: Evaluation of text generation
+often relies on a combination of metrics rather than a single
+standard measure. All of these metrics compare how close the
+generated text is to the golden standard responses. In this line,
+we use four popular NLP metrics. ROUGE (Recall-Oriented
+Understudy for Gisting Evaluation) [12] is a set of metrics
+used to evaluate the quality of machine-generated summaries.
+Here we use rouge-1 which measures the overlap of unigrams
+between the reference and prediction. The BLEU (Bilingual
+Evaluation Understudy) [13] score is a metric used to evaluate
+the quality of machine-translated text. METEOR (Metric for
+Evaluation of Translation with Explicit Ordering) [14] is a
+metric used for evaluating machine-generated text, particularly
+in the context of machine translation. BERTScore [15] is an
+automatic evaluation metric used to assess the quality of text
+generation. It uses pre-trained contextual embeddings from
+BERT (Bidirectional Encoder Representations from Trans-
+formers) [16] and measures the similarity between words in
+candidate and reference sentences using cosine similarity.
+2) Human Evaluation: To assess the generalisability of
+MOY A Framework, a user-centred bug identification session
+was conducted within the dedicated development environment.
+This session involved eight team members from MontyCloud,
+comprising four Product Managers and four Platform En-
+gineers. Each participant used prompts at their discretion,
+allowing for a diverse evaluation without introducing bias
+from predefined datasets. Any issues identified during this
+session were documented as Jira tickets, detailing the system’s
+response, the expected output, and any additional observations.
+To provide a quantitative view of MOY A’s performance, we
+grouped the flagged issues into three main categories:
+• Misclassification: Cases where the monolithic system
+incorrectly matched prompts to the wrong data source
+or where MOY A Framework directed the prompt to an
+incorrect agent.
+• Hallucination: Instances in which the system generated
+erroneous information or failed to interpret the prompt
+accurately.
+• Formatting Issues: Issues related to incorrect formatting,
+including errors in tables, bullet points, or other presen-
+tation elements.
+The distribution of issues within each category provides
+insight into the framework’s performance on a broader scale,
+highlighting areas of strength and potential improvement in
+handling diverse user-generated prompts.
+3) Efficiency Analysis: To assess the efficiency of MOY A
+Framework, we focus on two primary dimensions:
+Total Response Time: We measure the total response time for
+both monolithic and multi-agent implementations to compare
+their performance in delivering timely responses, aiming for
+minimal response time.
+Token Count: As token processing incurs costs, we track
+both input and output tokens to estimate operational costs and
+evaluate the cost efficiency of each framework configuration.
+C. Results
+1) Automated Evaluation: The results of the automated
+evaluation provide insights into the quantitative performance
+of MOY A Framework against the baseline monolithic system.
+Table I summarises the performance across the four selected
+metrics measured on the dataset of 260 prompts. These metrics
+offer a multifaceted view of the framework’s effectiveness in
+producing responses closely aligned with the gold standard.
+TABLE I
+RESULTS
+Approach rouge-1 bleu Meteor BERTScore
+precision recall f1
+Monolith 0.321 0.102 0.265 0.854 0.834 0.843
+MOYA Framework 0.448 0.221 0.423 0.867 0.869 0.868
+MOY A Framework outperformed the monolithic baseline
+in key areas, especially in metrics focused on semantic align-
+ment (e.g., METEOR and BERTScore), indicating enhanced
+interpretative capabilities. A modest improvement in BLEU
+and ROUGE scores also suggests greater lexical alignment
+with gold-standard responses. These results suggest that the
+distributed agent approach supports more accurate responses,
+achieving closer adherence to target responses.
+2) Human Evaluation: The bug identification session led us
+to the identification of a total of 22 issues were identified in the
+monolithic system, compared to 15 issues in MOY A Frame-
+work, indicating an overall improvement in performance with
+the multi-agent framework. For a more granular assessment,
+each issue was analysed according to its assigned category.
+Figure 10 visualises the distribution of issues reported by
+team members during the bug identification session. The issues
+identified in human testing underscore key areas for improve-
+ment, such as response relevance and data inaccuracies.
+208
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:10:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 9]]
+Issues Reported in Monolithic
+Issues Reported in Multi Agent
+Formatting Issues Misclassiﬁcation Hallucination
+0
+2
+4
+6
+8
+10Number of Issues
+Fig. 10. Issues Reported in Human Evaluation comparing the number of
+issues between Monolithic and Multi-Agent implementations across three
+categories: Formatting Issues, Misclassification, and Hallucination
+The transition from a monolithic to a multi-agent framework
+resulted in a marked reduction in misclassification errors, pri-
+marily due to the targeted routing capabilities within individual
+agents, which improved the system’s robustness in handling
+diverse prompts. However, formatting issues remained the
+predominant category for MOY A Framework. This challenge
+was subsequently mitigated by refining system prompts within
+each agent, resulting in improved response formatting. These
+findings are instrumental for targeted agent-level enhance-
+ments to better support end-user needs and further streamline
+the framework’s output.
+3) Efficiency Analysis: The multi-agent system, initially
+expected to be less efficient than the monolithic baseline due
+to additional LLM calls and API communication overhead,
+showed surprising results. Despite higher input and output
+token consumption, the multiagent framework achieved faster
+response times, indicating that its decentralised system design
+may facilitate better code, improving overall performance.
+The increased token usage is a trade-off inherent in the
+system’s design, as multiple agents handle different aspects of
+the prompt. However, this trade-off is considered acceptable
+given the improved response time and processing efficiency.
+Future work could focus on optimising token usage without
+compromising latency.
+This evaluation highlights the strengths of MOY A Frame-
+work in generating accurate and relevant responses fast, while
+also identifying actionable areas for ongoing enhancement.
+VII. D ISCUSSION
+Table II provides a concise view of how the different
+challenges were addressed by our XYZ framework. It fur-
+ther highlights the potential of multi-agent GenAI systems
+in automating CloudOps, demonstrating how a multi-agent
+framework can address the complexity and specialised needs
+that simpler function-calling alone cannot effectively handle.
+The agentic design enables agents to manage distinct, domain-
+driven tasks across cloud ecosystems, delivering significant
+Fig. 11. Efficiency Analysis Results comparing response times and token
+usage between monolithic and multi-agent implementations
+benefits in accuracy, and flexibility. This agent-based approach
+outperforms monolithic models by isolating tasks into spe-
+cialised agents, streamlining complex CloudOps processes,
+and enabling adaptability across platforms. These findings
+align with OpenAI’s Level 3 AI paradigm 9, emphasising the
+value of multi-agent systems in managing and automating
+complex workflows.
+Using distinct agents instead of iterative LLM calls provides
+targeted domain management that would be difficult to achieve
+with a single LLM instance. Each agent is dedicated to a
+discrete domain, ensuring focused processing and avoiding
+the risks of context overload that iterative LLM calls might
+incur. This domain specialisation is essential for high-accuracy
+responses in CloudOps, where different bounded contexts
+require unique, domain-specific insights.
+The framework is built with modularity and cloud-agnostic
+design to avoid vendor lock-in. While some agents may be
+specific to certain cloud providers, the overall architecture
+remains vendor-neutral, ensuring interoperability with AWS,
+Azure, and GCP, and enabling flexible system evolution with-
+out dependency on a single provider.
+However, developing and deploying ML-enabled systems in
+particular multi-agent systems bring unique architecting and
+engineering challenges on top of the existing challenges high-
+lighted by Lewis et al. [17]. Key obstacles include managing
+non-determinism, understanding evolving dependencies, and
+integrating GenAI pipelines, necessitating comprehensive test-
+ing frameworks and refined best practices. Traditional software
+engineering practices, including version control, continuous
+integration, deployment and testing must adapt to address both
+the specialised and domain-sensitive requirements of GenAI-
+powered and agent-specific frameworks.
+Observations from our evaluation reinforce the value of
+incorporating human oversight in GenAI systems, as suggested
+by the Copenhagen Manifesto [18] on human-centred AI. De-
+spite the advancements in GenAI and automation, maintaining
+a human-in-the-loop remains critical, particularly for quality
+assurance and the nuanced understanding required in complex
+or sensitive CloudOps tasks. Human insights can effectively
+9https://www.youtube.com/watch?v=A6EQp8PL iE
+209
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:10:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 10]]
+Challenge Primary Cause Impact Solution Resulting Benefit
+Managing Distributed Data Continuous generation of
+extensive, distributed data
+Difficulty in real-time
+analysis and insight retrieval
+Separation of data sources
+and data formats for each agent;
+Specialisation in a single task
+Streamlined real-time data
+processing, enhanced insights,
+and faster decision-making
+Maintainability Monolithic architecture
+with tight coupling
+High technical debt and
+maintenance challenges
+Multi-agent approach for
+task separation
+Independent updates and
+reduced maintenance time
+Extensibility and Modularity Limited flexibility in
+adding new features
+Hindered innovation and
+integration of new tech
+Dynamic Agent Registry for
+seamless addition of new agents
+Faster feature updates and
+increased adaptability
+TABLE II
+CHALLENGES ADDRESSED BY THE MULTI-AGENT FRAMEWORK
+supplement automated processes, ensuring relevance, accu-
+racy, and alignment with evolving operational goals.
+VIII. T HREATS TO VALIDITY
+A potential threat to internal validity arises from the accu-
+racy of agent invocation. Misclassification or improper task
+delegation could lead to incorrect task execution, thereby
+impacting the overall performance of the system. While we
+have implemented a classification mechanism to improve agent
+invocation accuracy, the increasing number of agents may
+introduce additional complexity, reducing the precision of task
+assignment as the system scales.
+In terms of external validity, the MOY A Framework has
+primarily been tested within AWS-based cloud environments.
+Its generalisability to other platforms, such as Microsoft
+Azure and user environments, remains uncertain. Variations in
+cloud service APIs, workflows, and operational contexts could
+present challenges when adapting the system to different or
+hybrid environments, limiting its broader applicability.
+A threat to construct validity comes from the rapid evolution
+of LLMs. Frequent updates can cause inconsistencies, as newer
+models may handle tasks differently. This variability under-
+mines the MOY A Framework’s consistency and predictability,
+making it harder to ensure reliable responses across versions.
+Improved engineering practices can help to mitigate this issue.
+Another threat to construct validity is due to the potential of
+LLMs hallucinating while generating counts or numbers, such
+as cloud instance counts or configurations. Although we have
+implemented validation mechanisms to cross-check critical
+data points, these measures may not capture all discrepancies.
+IX. R ELATED WORK
+Alonso et al. [1] present a comprehensive and systematic
+approach to operationalising cloud environments, addressing
+notable gaps identified in existing literature. They define essen-
+tial concepts and challenges associated with cloud operations,
+proposing a reference framework for CloudOps.
+Generative AI, LLMs, and RAG systems are gaining trac-
+tion in software engineering. Josu et al. [19] explores using
+LLMs to automate patching in Infrastructure as Code (IaC)
+projects, incorporating a RAG system to enhance correctness.
+Eskandani et al. [20] propose using GenAI tools in Functions
+as a Service (FaaS) for improved monitoring and debugging.
+Hou et al. [2] discuss the successful use of LLMs in a range
+of software engineering tasks, emphasising their increasing
+importance in the field.
+Recently, major cloud providers like AWS and Microsoft
+Azure are developing AI assistants, such as Amazon Q 10 and
+Microsoft Copilot 11 , to support cloud operations, including
+code generation, task planning, and troubleshooting. However,
+these solutions are platform-specific, whereas our framework
+is designed to work platform agnostic, highlighting a key
+difference in architecture.
+As described in Section II, many Multi-Agent frameworks
+have emerged, like AutoGen [7], CrewAI, LangGraph, and Au-
+toGPT. However, these frameworks lack flexibility and don’t
+match our requirements of a versatile CloudOps framework.
+X. C ONCLUSION AND FUTURE WORK
+In conclusion, the MOY A Framework offers a practical
+approach to CloudOps by integrating multi-agent systems and
+LLM-powered automation to manage complex cloud opera-
+tions. Designed to handle diverse tasks, the framework enables
+real-time insights, improved maintainability, and enhanced
+flexibility across cloud environments. RAG which combines
+LLMs with information retrieval techniques, is a key feature
+of the system that enhances the framework’s ability to provide
+precise insights based on real-time, heterogeneous data. Eval-
+uation results show that the MOY A Framework outperforms
+traditional monolithic RAG approaches in effectiveness, and
+task delegation, reducing misclassification and hallucination.
+Future work will focus on extending the capabilities of the
+system’s agent interactions to include more sophisticated inter-
+agent communication and collaborative task handling. We will
+focus on enhancing inter-agent collaboration, specifically by
+developing mechanisms for simultaneous response aggrega-
+tion from multiple agents. This will allow the framework
+to handle complex queries that require input from different
+agents, increasing its capacity for comprehensive, real-time in-
+sights. Another area for development involves broadening the
+framework’s applicability beyond AWS-specific environments
+to support hybrid and multi-cloud ecosystems, enhancing its
+interoperability with Azure, GCP, and other cloud platforms.
+ACKNOWLEDGMENT
+The authors would like to thank Vignesh Iyer, Lead software
+engineer-FrontEnd (MontyCloud Inc) for building a play-
+ground interface for the framework.
+10https://aws.amazon.com/q/
+11https://azure.microsoft.com/en-us/products/copilot
+210
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:10:01 UTC from IEEE Xplore. Restrictions apply.
+
+[[page 11]]
+REFERENCES
+[1] J. Alonso, L. Orue-Echevarria, and M. Huarte, “Cloudops: Towards the
+operationalization of the cloud continuum: Concepts, challenges and a
+reference framework,” Applied Sciences, vol. 12, no. 9, p. 4347, 2022.
+[2] X. Hou, Y . Zhao, Y . Liu, Z. Yang, K. Wang, L. Li, X. Luo, D. Lo,
+J. Grundy, and H. Wang, “Large language models for software engi-
+neering: A systematic literature review,” 2024.
+[3] P. Lewis, E. Perez, A. Piktus, F. Petroni, V . Karpukhin, N. Goyal,
+H. K ¨uttler, M. Lewis, W. tau Yih, T. Rockt ¨aschel, S. Riedel, and
+D. Kiela, “Retrieval-augmented generation for knowledge-intensive nlp
+tasks,” 2021.
+[4] S. Han, Q. Zhang, Y . Yao, W. Jin, Z. Xu, and C. He, “Llm
+multi-agent systems: Challenges and open problems,” arXiv preprint
+arXiv:2402.03578, 2024.
+[5] Y . Shoham and K. Leyton-Brown, Multiagent Systems: Algorithmic,
+Game-Theoretic, and Logical Foundations. USA: Cambridge University
+Press, 2008.
+[6] Y . Shoham and K. Leyton-Brown, Multiagent systems: Algorithmic,
+game-theoretic, and logical foundations . Cambridge University Press,
+2008.
+[7] Q. Wu, G. Bansal, J. Zhang, Y . Wu, B. Li, E. E. Zhu, L. Jiang,
+X. Zhang, S. Zhang, A. Awadallah, R. W. White, D. Burger, and
+C. Wang, “Autogen: Enabling next-gen llm applications via multi-agent
+conversation,” in COLM 2024, August 2024.
+[8] S. Mart ´ınez-Fern´andez, J. Bogner, X. Franch, M. Oriol, J. Siebert,
+A. Trendowicz, A. M. V ollmer, and S. Wagner, “Software engineering
+for ai-based systems: a survey,” ACM Transactions on Software Engi-
+neering and Methodology (TOSEM) , vol. 31, no. 2, pp. 1–59, 2022.
+[9] J. Bosch, I. Crnkovic, and H. H. Olsson, “Engineering ai systems: A
+research agenda,” 2020.
+[10] Evans, Domain-Driven Design: Tacking Complexity In the Heart of
+Software. USA: Addison-Wesley Longman Publishing Co., Inc., 2003.
+[11] Y . Dong, R. Mu, G. Jin, Y . Qi, J. Hu, X. Zhao, J. Meng, W. Ruan, and
+X. Huang, “Building guardrails for large language models,” 2024.
+[12] C.-Y . Lin, “ROUGE: A package for automatic evaluation of summaries,”
+in Text Summarization Branches Out , (Barcelona, Spain), pp. 74–81,
+Association for Computational Linguistics, July 2004.
+[13] K. Papineni, S. Roukos, T. Ward, and W.-J. Zhu, “Bleu: a method for
+automatic evaluation of machine translation,” in Proceedings of the 40th
+Annual Meeting on Association for Computational Linguistics, ACL ’02,
+(USA), p. 311–318, Association for Computational Linguistics, 2002.
+[14] A. Lavie and A. Agarwal, “Meteor: an automatic metric for mt evalua-
+tion with high levels of correlation with human judgments,” in Proceed-
+ings of the Second Workshop on Statistical Machine Translation, StatMT
+’07, (USA), p. 228–231, Association for Computational Linguistics,
+2007.
+[15] T. Zhang, V . Kishore, F. Wu, K. Q. Weinberger, and Y . Artzi, “Bertscore:
+Evaluating text generation with bert,” 2020.
+[16] J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, “Bert: Pre-training
+of deep bidirectional transformers for language understanding,” 2019.
+[17] G. A. Lewis, H. Muccini, I. Ozkaya, K. Vaidhyanathan, R. Weiss,
+and L. Zhu, “Software Architecture and Machine Learning (Dagstuhl
+Seminar 23302),” Dagstuhl Reports, vol. 13, no. 7, pp. 166–188, 2024.
+[18] D. Russo, S. Baltes, N. van Berkel, P. Avgeriou, F. Calefato, B. Cabrero-
+Daniel, G. Catolino, J. Cito, N. Ernst, T. Fritz, H. Hata, R. Holmes,
+M. Izadi, F. Khomh, M. Kjærgaard, G. Liebel, A. Lluch-Lafuente,
+S. Lambiase, W. Maalej, and B. Vasilescu, “Generative ai in software en-
+gineering must be human-centered: The copenhagen manifesto,” Journal
+of Systems and Software , vol. 216, p. 112115, 05 2024.
+[19] J. Diaz-de Arcaya, J. L ´opez-de Armentia, G. Z ´arate, and A. I. Torre-
+Bastida, “Towards the self-healing of infrastructure as code projects us-
+ing constrained llm technologies,” in Proceedings of the 5th ACM/IEEE
+International Workshop on Automated Program Repair, pp. 22–25, 2024.
+[20] N. Eskandani and G. Salvaneschi, “Towards ai for software systems,”
+in Proceedings of the 1st ACM International Conference on AI-Powered
+Software, pp. 79–84, 2024.
+211
+Authorized licensed use limited to: Nova Southeastern University. Downloaded on September 04,2026 at 20:10:01 UTC from IEEE Xplore. Restrictions apply.

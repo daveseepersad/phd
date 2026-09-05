@@ -1,0 +1,1138 @@
+[[page 1]]
+1
+ARM: Autonomous Remediation & Management with LLM Agents
+for Intent-Driven Control
+Vasilis Avgerinos , Kostas Ramantas , Luis Alonso , Christos Verikoukis
+Abstract—The growing complexity of cloud-native, edge, and
+IoT infrastructures has made manual configuration, fault re-
+mediation, and lifecycle management increasingly unsustainable.
+Traditional automation techniques—such as rule-based logic or
+bespoke machine learning pipelines—struggle with adaptability
+and explainability in dynamic environments. Recent advances
+in Large Language Models (LLMs), however, have introduced
+new opportunities for autonomous, intent-driven infrastructure
+control. In this work, we present a closed-loop framework that
+integrates LLM agents for automated Root Cause Analysis (RCA)
+and mitigation of faults within cloud-edge and IoT systems. When
+SLA violations are detected, the agent identifies likely root causes
+and selects corrective actions—such as pod rescheduling, scaling,
+or configuration updates—executed via a Model Context Protocol
+(MCP) server exposing management tool functionalities through
+an API. This RCA-plus-mitigation loop enables fault handling
+that is both explainable and adaptive. We evaluate our system
+on a cluster running synthetic IoT workloads under emulated
+stressors using a reproducible benchmarking setup. Results show
+that the agent identifies SLA violations with 52.9% accuracy
+and mitigates 70.7% of them successfully. Notably, the agent
+incorporates validation steps to ensure system stability after
+interventions. These findings highlight the feasibility of LLMs
+for real-time infrastructure healing and their potential role in
+future AIOps workflows.
+Index Terms—Autonomous Infrastructure Management,
+Intent-Based Networking, Large Language Models (LLMs),
+AIOps, Kubernetes, Edge Computing, IoT Orchestration,
+Closed-Loop Control, SLA Monitoring, Agentic Systems
+I. INTRODUCTION
+The growing complexity of deployed infrastruc-
+tures—spanning telecom, cloud-edge, and IoT domains—has
+rendered manual configuration, fault mitigation, and lifecycle
+management increasingly unsustainable. Intent-Based
+Networking (IBN) emerged as a promising paradigm to
+address these issues by enabling high-level, goal-driven
+management abstractions. However, for much of its existence,
+IBN remained more of a conceptual ideal than a deployable
+reality, held back by persistent challenges in translating
+natural language intent into actionable configurations and
+behaviors [1], [2]. While early efforts explored declarative
+approaches and query-driven summaries of network state,
+they often lacked the generalizability, context-awareness, and
+autonomy required in large-scale, dynamic systems [3], [4].
+As such, despite its potential, IBN’s practical adoption stalled
+V . Avgerinos is with the Industrial Systems Institute, Patras, Greece (e-mail:
+avgerinos@isi.gr).
+K. Ramantas is with Iquadrat Informatica, Barcelona, Spain (e-mail:
+kramantas@iquadrat.com).
+L. Alonso is with Universitat Polit `ecnica de Catalunya, Barcelona, Spain (e-
+mail:luis.alonso@upc.edu).
+C. Verikoukis is with the Industrial Systems Institute, Patras, Greece and the
+University of Patras, Greece (e-mail:chverik@gmail.com).
+until recent years, where progress in AI-native orchestration,
+multi-agent systems, and network softwarization began to
+make its core vision operationally viable [5].
+Autonomous Agentic Systems—powered by recent ad-
+vancements in Large Language Models (LLMs) and Small
+Language Models (SLMs), along with a rapidly expanding
+ecosystem of tools and techniques [6], [7]—have moved
+to the forefront of research and industry. A growing body
+of experiments demonstrates the increasing capabilities of
+LLM-driven agents across diverse domains: from solving
+novel mathematical problems and recommending bug fixes in
+production-grade codebases, to assisting in clinical diagnostics
+through API-level interactions [8]–[10]. These developments
+suggest we are approaching a level of agentic autonomy
+capable of transforming the long-standing vision of true zero-
+touch infrastructure management into practical reality.
+IoT infrastructures have long been a compelling testing
+ground for such systems. Their inherently heterogeneous,
+latency-sensitive, and dynamic nature makes them particularly
+well-positioned to benefit from these advances. As the number
+of connected devices continues to grow, so too does the
+demand for intelligent mechanisms capable of aligning low-
+level infrastructure behavior with high-level operational intents
+[11]–[13]. This alignment becomes especially critical when
+faults or performance anomalies risk violating Service Level
+Agreements (SLAs). In such cases, Agentic Systems can
+not only detect intent violations but also recommend or au-
+tonomously execute corrective actions—such as reconfiguring
+resources or rescheduling workloads—to restore compliance.
+Traditional approaches to fault diagnosis in these environ-
+ments have focused heavily on Root Cause Analysis (RCA),
+typically using machine learning models trained on historical
+fault data. While effective in some scenarios, these models
+struggle to adapt to novel conditions and often lack explain-
+ability—two factors that undermine operator trust. Recent
+advances in Agentic AI suggest that LLM-based agents—such
+as ReAct [14]—can help address these shortcomings by co-
+ordinating external tools via natural language and producing
+transparent, traceable reasoning chains [15]. This is particu-
+larly relevant in IoT contexts, where the scale and volatil-
+ity of services demand both rapid remediation and human-
+understandable diagnostics.
+Based on the challenges and emerging opportunities out-
+lined above, this paper introduces ARM an Autonomous
+Remediation & Managment agent, leveraging the reasoning
+capabilities of LLM-based autonomous systems. Our approach
+seeks to bridge the gap between high-level operational in-
+tents and low-level reconfiguration actions by continuously
+monitoring for SLA violations and dynamically responding
+© 2025 IEEE. Personal use of this material is permitted. Permission from IEEE must be obtained for all other
+ uses, in any current or future media, including reprinting/republishing this material for advertising or promotional
+ purposes,creating new collective works, for resale or redistribution to servers or lists, or reuse of any copyrighted
+ component of this work in other works.
+
+[[page 2]]
+2
+to deviations in system behavior. Users define custom intents
+with deployment- or application-level scope, which spawn
+dedicated monitoring loops that detect potential violations
+using Prometheus-based metrics pipelines. When an anomaly
+is detected—such as a performance degradation or fault condi-
+tion—an LLM agent is triggered to investigate the underlying
+cause and execute an appropriate mitigation strategy. These
+strategies are implemented through an interface to a Model
+Context Protocol(MCP) server [16], offering controlled access
+to tools like kubectl, observability modules, or autoscaling
+primitives. The agent operates in a closed-loop fashion, ca-
+pable of interleaving planning, execution, and optional replan-
+ning phases until compliance is restored.
+To validate our methodology, we simulate a range of rep-
+resentative fault scenarios under constrained resource condi-
+tions and assess the agent’s ability to recover, stabilize, and
+explain its interventions. The proposed architecture lays the
+groundwork for future research in integrating LLM agents
+into real-world AIOps pipelines, especially within latency-
+sensitive, decentralized IoT infrastructures. To the best of
+our knowledge, this is the first LLM-driven Agentic System
+that not only identifies root causes of SLA violations but
+also autonomously mitigates them through infrastructure-level
+actions in cloud-edge and IoT environments.
+Our key contributions are summarized as follows:
+•A novel closed-loop framework that integrates high-level
+intent specification with autonomous workload reconfig-
+uration driven by LLM agents.
+•An LLM-powered control agent capable of investigating
+anomalies and executing infrastructure-level reconfigura-
+tion using tool calling and dynamic planning.
+•A reproducible evaluation cloud-edge environment based
+on a K3s Kubernetes cluster running synthetic IoT appli-
+cations under emulated stressors.
+•A systematic evaluation of mitigation performance across
+multiple fault scenarios, demonstrating the feasibility and
+robustness of the proposed approach.
+II. RELATEDWORK
+Achieving fully autonomous IoT-edge infrastructures de-
+pends on combining advancements from several key research
+domains. Our work is positioned at the intersection of Intent-
+Based Networking (IBN), Natural Language Interfaces (NLIs),
+and runtime adaptation. This review outlines the current state-
+of-the-art in these fields to describe the scientific landscape
+and identify the specific research gaps our work aims to
+address. We observe that while each area has seen considerable
+progress, their holistic integration into a cohesive, closed-loop
+architecture remains an open challenge.
+A. Intent-Based Networking for Autonomous Control
+Intent-Based Networking (IBN) has emerged as a founda-
+tional approach for automating network and service manage-
+ment, particularly within structured telco and cloud domains.
+Contributions from Martini et al. [17] and Braghin et al.
+[18], for instance, showcase mature frameworks that translate
+abstract service requirements into concrete resource configura-
+tions for 5G network slicing and multi-cloud orchestration. A
+primary limitation of these systems, however, is that they are
+predominantly declarative and engineered for homogeneous
+environments, with an emphasis on initial deployment rather
+than continuous runtime adaptation.
+Efforts to extend IBN to the heterogeneous edge and IoT
+continuum have been made, addressing domain-specific chal-
+lenges such as RAN scheduling [19], vehicular mobility [20],
+and serverless computing [21]. Nonetheless, these approaches
+frequently lack a holistic, closed-loop architecture that inte-
+grates predictive foresight and natural language understanding.
+Consequently, they often remain reactive or episodic, falling
+short of the continuous, proactive self-management required
+by dynamic edge environments.
+B. Natural Language Interfaces for System Configuration
+A key challenge in making complex infrastructures more
+accessible is simplifying the human-to-system interface. To
+this end, research into Natural Language Interfaces (NLIs)
+has yielded promising results in automating configuration
+tasks. Systems such as LACE [22] translate free-form text
+into structured access control policies, while other works
+have demonstrated the use of NLIs to facilitate 5G service
+provisioning [23], generate infrastructure-as-code for chaos
+engineering experiments [24], or perform automated repair of
+security misconfigurations [25].
+A notable limitation of these systems, however, is the static
+nature of their outputs. They typically execute a one-time
+translation from a natural language directive to an executable
+artifact without incorporating mechanisms for runtime feed-
+back or autonomous correction. This ”fire-and-forget” char-
+acteristic underscores a critical disconnect between the initial
+ease of configuration and the need for dynamic, self-managing
+operational control in response to changing conditions.
+C. LLM Agents for Root Cause Analysis
+Conceptual frameworks like ETSI ZSM have established the
+principle of the closed management loop for intent assurance,
+providing a foundational model for end-to-end automation
+[26]. The goal of such frameworks is to create self-healing
+systems where the entire incident lifecycle, from detection to
+mitigation, is handled autonomously. The general architecture
+and challenges of building such autonomous agents are well-
+documented in recent surveys, which outline core components
+like planning, memory, and action modules [27].
+To incorporate high-level reasoning into runtime control,
+recent advances have explored the use of LLM-driven agents.
+These agents combine the language understanding and rea-
+soning capabilities of Large Language Models (LLMs) with
+a structured interface to interact with external tools, environ-
+ments, or APIs. By interpreting natural language prompts and
+generating action plans or decisions, they can autonomously
+perform tasks traditionally requiring human intervention.
+Highly specialized systems like Flow-of-Action, for example,
+have demonstrated robust performance in complex diagnostic
+tasks by using Standard Operating Procedures (SOPs) to
+
+[[page 3]]
+3
+guide the agentic workflow [28]. This approach enhances the
+reliability of Root Cause Analysis (RCA) by imposing expert-
+defined constraints on the Large Language Model (LLM), thus
+reducing hallucinations and steering the diagnostic process
+toward a correct trajectory.
+However, a significant limitation of the current state-of-
+the-art is the overwhelming focus on problem identification
+rather than autonomous mitigation. The majority of recent
+work on AI agents for IT operations centers almost exclusively
+on anomaly detection and RCA. Numerous recently pro-
+posed frameworks follow this pattern, developing sophisticated
+agents that can decompose tasks, query knowledge bases, and
+iteratively explore system data to pinpoint the source of a fault
+[27], [28]. Even advanced multi-agent frameworks engineered
+for ”Autonomous CloudOps” concentrate on orchestrating
+agents to produce “accurate, reliable, and relevant insights”
+for human operators, rather than executing the mitigation itself
+[29]. Systems like FLASH are also designed primarily to im-
+prove the accuracy and efficiency of the diagnostic phase [30].
+While these represent a major step forward in autonomous
+problem analysis, they do not execute active mitigation. Their
+final output is typically a root cause diagnosis intended for
+a human operator, not an automated remedial action. This
+leaves a critical gap in the closed-loop automation vision, as
+the crucial step of recovery still requires manual intervention,
+highlighting the need for future research to shift focus from
+just diagnosis to fully autonomous problem resolution.
+III. FRAMEWORK
+A. Cloud-Edge Infrastructure
+We consider a distributed and heterogeneous computing
+environment that spans both centralized cloud nodes and
+geographically distributed edge resources. The infrastructure
+is formally defined as the unionN=N cloud∪N edge, where
+each noden i is associated with a capacity vectorr i = (c i,m i)
+describing its computational and memory capabilities. While
+cloud nodes typically offer high-performance compute and
+abundant memory, edge nodes are inherently constrained, often
+deployed in proximity to data sources to reduce latency and
+bandwidth demands.
+B. Application and Service Model
+Application workloads are structured as directed microser-
+vice graphsA= (S,D), where verticesSdenote the set
+of services and edgesDcapture inter-service dependencies
+and communication flows. Services are deployed as replicated
+components across the infrastructure, subject to both platform-
+specific constraints and locality-awareness to satisfy latency-
+sensitive use cases. This enables the flexible placement of
+computation closer to where data is generated, without sac-
+rificing centralized orchestration.
+C. Performance Monitoring Framework
+To support intelligent decision-making, the system incor-
+porates continuous monitoring of runtime behavior. For each
+services i, a time-indexed vector of key performance indicators
+is maintained:
+Mi(t) ={l i,95(t),q i,success(t)}(1)
+Here,l i,95(t)reflects the 95th percentile response latency,
+while the metricq i,success(t)captures the ratio of success-
+ful requests. These signals are benchmarked against service-
+specific baseline profilesB i, established during periods of
+stable operation. Such baselines act as a reference for runtime
+anomaly detection.
+D. Intent-Based Autonomous Intervention Model
+To enable self-adaptive behavior, the system includes a
+lightweight autonomous agent capable of reactive intervention.
+Rather than relying on static threshold rules, the agent is acti-
+vated by high-level performance violation intents—structured,
+context-rich alerts that encapsulate both metric deviations
+and system state. These intents allow the agent to engage
+in intelligent diagnosis and response actions tailored to the
+scenario at hand.
+1) Trigger and Intent Generation:Intervention is initiated
+when the system detects deviations between live metrics and
+baseline profiles. In such events, a structured intent object
+I(t)is generated, designed to encode the operational snapshot
+needed for agent reasoning:
+I(t) =⟨namespace,timestamp,B i,M i(t),C(t)⟩(2)
+The fieldC(t)refers to the current contextual snapshot of
+the system, including topology, deployments, and constraints.
+This representation decouples intent processing from low-level
+monitoring, and equips the agent with a holistic view of the
+anomaly landscape.
+2) Agent Intervention and Recovery Evaluation:Once trig-
+gered, the autonomous agent executes a bounded diagnostic
+and mitigation sequenceA(t)guided by its reasoning model.
+Recovery efficacy is evaluated by re-measuring the monitored
+indicators post-intervention and comparing them to the origi-
+nal baselineB i. This process enables a closed feedback loop
+for assessing intervention quality and building long-term trust
+in autonomous decisions.
+The complete high-level architecture of the framework can
+be seen in Figure 1(a).
+IV. LLM AGENTMETHODOLOGY ANDDESIGN
+A. Core Loop Architecture
+Our autonomous agent, depicted in Figure 1(b), is designed
+around a closed-loop, round-based control paradigm that seam-
+lessly integrates monitoring, reasoning, and corrective actions.
+Influenced by the React framework [14], which extends Chain-
+of-Thought (CoT) prompting techniques [31] by interleaving
+reasoning and acting in a more interactive manner, the agent
+incrementally assembles a cumulative context at each iter-
+ation. This context includes the intent specification, system
+snapshots, outputs from previously invoked tools, and records
+of prior decisions. Importantly, this evolving context serves
+only as transient in-context information for the underlying
+
+[[page 4]]
+4
+Cloud-Edge & IoT
+Infrastructure
+Microservice
+Applications
+Performance
+Monitoring
+Intent GenerationWarning
+ Agentic Loop
+ARM: Autonomous Remediation &
+Management
+ Agentic Loop
+Planning &
+Coordination
+create action plan
+generate operational
+summary
+Kubernetes
+Management
+ kubectl apply
+(others...)
+kubectl scale
+Monitoring
+& Analysis
+ prometheus get
+timeseries
+prometheus get
+service topology
+Utility
+ sleep seconds
+Tools &
+Operations
+Assemble Context
+Create Action Plan
+Query LLM, 
+Select Tool
+Invoke Tool, Collect Result,
+Reasoning
+Terminate?
+Output Operational
+Summary
+False
+True
+(a) (b) (c)
+Fig. 1. Overview of the ARM system components. (a) End-to-end remediation flow from infrastructure monitoring to agent activation. (b) Internal agent loop
+for planning, tool invocation, and reasoning. (c) Structured tool layer categorized by functionality.
+model, and no parameter updates or external learning pro-
+cesses occur. The agent then queries the large language model
+(LLM), which selects the next tool to execute along with its
+parameters. To prevent redundant operations, only novel calls
+proceed to execution through temporal caching and recent-
+call filtering. The iterative process terminates when the LLM
+issues thegenerate_operational_summarycall, or
+the maximum number of rounds is reached.
+This architecture allows the agent to reason incremen-
+tally and adjust its behavior dynamically, while maintaining
+transparency. In contrast to multi-agent or planner–executor
+frameworks, our single-agent loop is easier to audit and
+explain: each decision is informed by prior evidence, executed
+in a structured manner, and followed by immediate contextual
+integration of the result.
+B. Tool Abstraction Layer
+The agent’s operational capabilities are encapsulated in a
+structured tool layer that provides safe, validated access to
+Kubernetes actions, metric collection, coordination primitives,
+and planning operations. Tools are grouped into four categories
+shown in Table I, each exposing typed inputs and producing
+structured outputs that are parsed and integrated into the
+agent’s evolving context.
+TABLE I
+TOOLCATEGORIES ANDREPRESENTATIVEOPERATIONS
+Category Representative Tools / Operations
+Planning & Coordinationcreate_action_plan,
+generate_operational_summary
+Kubernetes Managementkubectl_apply,
+kubectl_scale,
+kubectl_delete
+kubectl_drain
+Monitoring & Analysisprometheus_get_timeseries,
+prometheus_get_service_topology
+Utilitysleep_seconds
+Planning tools are central to the agent’s reasoning.
+Thecreate_action_plantool encodes structured in-
+tent through fields such as a natural-languageobjective,
+a list of explicitsteps, and a set of risk–mitigation
+considerations. These fields provide a concrete plan trace
+that guides future decisions and helps external observers
+interpret the agent’s rationale. At the end of execution,
+generate_operational_summaryproduces a detailed
+record of completed actions, observed results, and final status.
+Kubernetes tools expose core resource management oper-
+ations to the LLM, including scaling deployments, deleting
+pods, or inspecting system state. These tools operate through
+an intermediary MCP interface to ensure policy compliance
+and encapsulate error handling. By presenting these actions
+through abstracted calls (e.g.,kubectl_scalewith target
+namespace and desired replica count), the LLM can issue safe
+changes without low-level access. Additionally, safeguards and
+human approval workflows can be configured per tool to
+ensure that critical changes are carefully controlled and the
+system remains protected.
+Monitoring tools retrieve time-series data from Prometheus
+using domain-specific filters. The most frequently used,
+prometheus_get_timeseries, allows queries over
+CPU, latency, error rate, and other key metrics. Important
+parameters include theduration(e.g., “2m”) and the
+namespaceorservice_nameto scope the analysis.
+These allow the agent to build temporal baselines, detect
+anomalies, and validate remediations. Other tools, such as
+prometheus_get_service_topology, expose depen-
+dency graphs that support causal reasoning during fault diag-
+nosis.
+Finally, utility tools such assleep_secondsallow the
+agent to enforce stabilization delays after disruptive actions
+(e.g., pod deletions), ensuring that system metrics reflect
+steady-state behavior before proceeding.
+Each tool call is followed by an immediate reasoning step
+in the loop. The agent records what was learned from the tool,
+how it affected the plan, and what should be done next. This
+inline reflection mechanism is central to maintaining decision
+quality and justifiability.
+C. System Prompt Philosophy
+The behavior of the LLM agent is governed by a carefully
+engineered system prompt that blends structural constraints
+
+[[page 5]]
+5
+with heuristic guidance. This prompt defines the agent’s
+operational role, enforces a disciplined planning-first lifecy-
+cle, embeds completion criteria, and encourages resolution-
+oriented behavior. Together, these mechanisms shape the
+agent’s decision-making while preserving adaptability in dy-
+namic infrastructure contexts.
+1) Role Definition and Behavioral Constraints:At its core,
+the prompt frames the LLM as anautonomous operator
+with the authority to execute corrective actions. This role
+assignment is critical: it moves beyond passive diagnostics to
+an active, accountable execution model. The prompt encodes
+hard constraints that define legal agent behavior over the
+course of each loop. Three structural rules are enforced:
+•The first function call must always be
+create_action_plan.
+•If the agent’s observations contradict its current assump-
+tions, it must re-invokecreate_action_planto
+revise the strategy.
+•Termination is allowed only after a
+generate_operational_summaryhas been
+issued.
+These rules ensure that every agent execution is bounded by
+an explicit plan and ends with a structured report. The planning
+call encodes an operational objective, a list of steps, and
+associated risks—enabling explainable reasoning and traceable
+execution. The final summary captures what actions were
+taken and why, offering post-hoc transparency and account-
+ability. Appendix A presents an example planning-summary
+pair, demonstrating the structured reporting and traceability of
+agent actions.
+2) Evidence-Guided Reasoning and Completion Criteria:
+To promote disciplined reasoning, the system prompt mandates
+anevidence-first methodology. The agent is not allowed to
+intervene until it has gathered sufficient data to justify the pro-
+posed action. This prevents speculative behavior and ensures
+that every step in the plan is grounded in observable system
+state.
+The prompt also embeds anaction bias, which discourages
+over-analysis. The agent is instructed to prioritize resolution
+over exhaustive diagnosis and to keep progressing toward
+remediation. In practice, this means the agent continually
+collects evidence and reflects on its progress, but with the
+clear expectation that a fix—or a justified decision to not
+intervene—must eventually be produced.
+To avoid premature termination, the system defines multi-
+part completion criteria: execution can only end when (i)
+system metrics trend toward baseline, or (ii) the agent provides
+a convincing rationale for inaction. These constraints ensure
+that the agent never halts in an ambiguous or unresolved state.
+3) Heuristic Guidance and Pattern-to-Action Mappings:
+While structural rules enforce discipline, the prompt also
+provides soft heuristics to guide decision-making. Among
+these arepattern-to-action mappings—lookup tables embed-
+ded directly in the prompt that associate known symptom
+signatures with recommended interventions. For example, the
+pairing of high CPU usage and elevated latency suggests either
+scaling the workload or modifying resource limits. Table II
+offers a simplified extract of these mappings for illustrative
+purposes, noting that the full actionable logic embedded within
+the prompt is too extensive to be presented in its entirety.
+TABLE II
+EXAMPLEEVIDENCE-TO-ACTIONMAPPINGS
+Evidence
+Pattern
+Recommended Action Suggested Tool
+High CPU +
+High Latency
+Scale out or increase
+CPU limit
+kubectl_scale,
+kubectl_patch
+Low CPU +
+High Latency
+Analyze service call
+graph
+prometheus_get
+_service_topology
+Single Pod
+Anomaly
+Restart the podkubectl_delete
+Memory Growth
++ Restarts
+Increase memory limitkubectl_patch
+These heuristics are not binding but serve as priors for
+tool selection. They accelerate convergence by steering the
+LLM toward common fixes while preserving flexibility for less
+canonical cases. This dual strategy—firm structural scaffolding
+and soft procedural suggestions—allows the agent to remain
+both predictable and adaptive, a critical balance in high-stakes
+infrastructure automation.
+V. EXPERIMENTALFRAMEWORK
+A. Infrastructure and Cluster Setup
+Our experimental framework is deployed on a virtualized
+cloud–edge cluster that emulates geographically distributed
+IoT environments. The infrastructure consists of seven nodes
+organized across three zones: two cloud nodes, four edge
+nodes (two per edge site), and one management node respon-
+sible for orchestration and observability. Each node runs as an
+independent virtual machine connected via a shared overlay
+network.
+The cluster reflects realistic compute asymmetry between
+cloud and edge environments: cloud nodes are provisioned
+with 4 vCPUs and 4 GB of memory, while edge nodes operate
+with 2 vCPUs and 2 GB of memory. All nodes are pinned
+to dedicated host cores to ensure performance isolation and
+repeatability. Cluster management and workload scheduling
+are handled by ak3sKubernetes distribution deployed on
+top of QEMU-virtualized servers. Prometheus and Grafana are
+integrated for metrics collection and visualization, while the
+control node coordinates chaos experiments, recovery actions,
+and data logging.
+B. IoT Application Emulator and Scenarios
+1) Emulator:To emulate realistic IoT workloads, we em-
+ploy an extended version of the MuBench [32] microser-
+vice benchmarking framework. MuBench is used to generate
+synthetic but semantically coherent microservice applications
+that mimic typical IoT service chains. The framework defines
+service dependencies, computational loads, and placement
+affinities that determine the deployment of microservices
+across the cloud–edge hierarchy.
+
+[[page 6]]
+6
+Fig. 2. Topologies of the three representative IoT applications, showcasing their microservice interconnections and deployment across edge and cloud
+environments.
+Each application is specified via aworkmodel.jsoncon-
+figuration, which encodes the set of microservices, their inter-
+service calls, and associated resource stressors (CPU, memory,
+disk, and network). This representation allows reproducible de-
+ployments of varying complexity—from lightweight gateway
+systems to multi-tier analytics pipelines—while maintaining
+consistent observability and fault-injection capabilities across
+all experiments.
+2) Application Scenarios:Three representative IoT applica-
+tions are deployed using the emulator; the microservice graphs
+and deployment layouts appear in Fig. 2 (see the dedicated
+subsection/figure for full diagrams).
+•IoT Gateway System(3 microservices): Hybrid
+edge–cloud setup with most traffic processed at the
+edge for real-time device interaction and cloud handling
+complex analytics.
+•Smart Manufacturing System(8 microservices): High-
+throughput, low-latency data processing focused on
+safety-critical operations and predictive maintenance.
+•Smart City Traffic Management(12 microser-
+vices): Multi-tier microservices with diverse latency and
+throughput needs, integrating real-time monitoring, emer-
+gency coordination, and analytics.
+C. Chaos Engineering and Anomaly Injection
+The fault-injection campaign follows chaos engineering
+principles to systematically evaluate system resilience. Faults
+are injected at two primary scopes: (i)service-level(pod-
+level) anomalies, including CPU and memory stress and pod
+disruptions, which target one or all instances of a given
+microservice; and (ii)node-levelanomalies that simulate host-
+wide CPU or memory contention using thechaosdlibrary. The
+complete taxonomy of fault modes and experiment counts is
+presented in Table III.
+As shown in the table, each experiment group covers both
+localized (pod-level) and system-wide (node-level) stressors,
+in addition to baseline control executions. The separation by
+scope emphasizes how different classes of anomalies affect
+both microservice behavior and overall application latency. In
+total, each application undergoes 20 experiments, yielding 60
+fault scenarios across all deployments.
+D. Four-Phase Experimental Evaluation Protocol
+Our evaluation framework employs a systematic four-phase
+protocol to assess autonomous agent performance under fault
+conditions:
+Phase 1: System Reset and Warmup– We reset the system
+by removing any existing node constraints and deploy a fresh
+application instance in the cluster. The system then initiates
+traffic generation and performs service warmup with latency
+stabilization detection. This ensures all microservices reach
+steady-state operation before baseline measurement.
+Phase 2: Baseline Collection– During stable operation,
+the framework captures comprehensive baseline vectorsB i
+for each services i, recording key indicators such as 95th
+percentile latencyl i,95(t)and request success rateq i,success(t).
+These profiles are later used to determine whether recovery
+actions have restored normal conditions.
+Phase 3: Chaos Injection– Fault injection occurs while
+the system continues serving traffic, allowing real-time obser-
+vation of performance degradation patterns. The deviation of
+runtime metricsM i(t)fromB i also triggers the generation
+of structured alert intentsI(t), initiating agent activation.
+Phase 4: Agent Recovery– Upon receiving the intent
+objectI(t), the autonomous agent executes its diagnosis and
+remediation loop, continuously observing updatedM i(t)vec-
+tors to guide its tool selection. After execution concludes, we
+evaluate whether post-intervention metrics satisfy the success
+condition described in Equation (3).
+This four-phase design enables controlled evaluation of re-
+covery latency, stability, and correctness under diverse anoma-
+lies, ensuring repeatability and comparability across all appli-
+cations.
+E. Experiment Success Criterion
+We define a successful recovery as one where the agent
+brings each monitored performance indicator back close
+to its original baseline. Formally, for any metricx i ∈
+{li,95, qi,success}of services i, the recovery at timet ′ is
+considered successful if:
+xi(t′)−x baseline
+i
+
+xbaseline
+i
+≤ϵ x (3)
+wherex baseline
+i is drawn from the baseline vectorB i, and
+xi(t′)is the corresponding post-recovery value. In our exper-
+iments, we instantiate the tolerances as:
+
+[[page 7]]
+7
+TABLE III
+CHAOSFAULTTAXONOMY ANDEXPERIMENTDISTRIBUTION
+Scope Mode CPU Stress Memory Stress Pod Disruption # Experiments Notes
+Pod-level anomalies
+Pod one pod✓ ✓ ✓6 Affects one pod per app
+Pod all pods in app✓ ✓ ✓6 Affects all pods in app
+Node-level anomalies
+Node node cpu stress✓– – 3 Host-wide CPU contention
+Node node memory stress –✓– 3 Host-wide memory pressure
+Control experiments
+Ctrl baseline (no failure) – – – 2 Reference baseline runs
+Total per application: 20
+ϵli,95 = 0.15(95th percentile latency)
+ϵqi,success = 0.01(request success rate) (4)
+These metric-specific thresholds provide a unified bench-
+mark across all applications and anomaly types, facilitating
+comparative evaluation of both recovery efficiency and cor-
+rectness.
+VI. RESULTS& DISCUSSION
+This section presents a comprehensive evaluation of two
+autonomous agents built on GPT-5 and GPT-5-mini, respec-
+tively, in identifying and mitigating system anomalies within
+the simulated cloud-edge environment. We analyze diagnostic
+accuracy, remediation success rates, decision rounds, wall-
+clock time, and tool utilization patterns, highlighting both the
+advantages of the larger model and the limitations that emerge
+for the smaller baseline in more complex scenarios.
+All experiments utilize GPT-5 as the primary autonomous
+remediation agent and GPT-5-mini as a lighter-weight base-
+line, both operating over the same cloud-edge topologies,
+failure injections, and observability and actuation tools.
+A. Agent Performance by Fault Type
+Table IV summarizes performance across the fault taxon-
+omy. Across control and node-level anomalies, GPT-5 achieves
+near-perfect fault identification, correctly recognizing the no-
+failure baseline and all node CPU stress cases (100.0% identi-
+fication accuracy). GPT-5-mini fails to recognize the baseline
+as healthy (0.0%) and is slightly less reliable under node CPU
+stress (88.9% accuracy).
+Remediation success for node CPU stress appears moderate
+for both agents (55.6% for GPT-5 and 44.4% for GPT-5-mini)
+when viewed through a binary success metric. However, this
+binary classification obscures the extent of the recovery. Under
+our emulation regime, heavily constrained virtual machines
+often leave few viable scheduling or scaling options, meaning
+a return to exact baseline levels is not always physically possi-
+ble. To quantify the partial mitigation achieved, we introduce
+the Latency Recovery metric:
+Rlat = lchaos
+i,95 −l i,95(t′)
+lchaos
+i,95 −l base
+i,95
+×100(5)
+wherel chaos
+i,95 represents the peak 95th percentile latency ob-
+served during the fault injection,l i,95(t′)is the post-recovery
+latency, andl base
+i,95 is the original baseline value.
+Applying this metric reveals that despite the lower binary
+success rates, GPT-5 successfully reclaimed 80.4% of the
+performance degradation induced by CPU stress, while GPT-
+5-mini reclaimed 79.4%. This indicates that even when an
+optimal solution was infeasible due to resource exhaustion,
+the agents effectively identified the root cause and applied
+mitigations that substantially alleviated the system bottleneck.
+At the pod level, GPT-5 sustains strong diagnostic per-
+formance, with identification accuracies between 50.0% and
+100.0% across CPU, memory, and failure scenarios. GPT-5-
+mini, in contrast, struggles particularly with single-pod failures
+and memory anomalies, where identification can drop to 0.0%
+while still achieving moderate to high remediation success.
+GPT-5 also completes pod-level incidents in substantially
+fewer reasoning rounds (10.2–23.0 vs. 27.7–34.2 rounds for
+GPT-5-mini) and typically in less wall-clock time.
+An apparent discrepancy where remediation success ex-
+ceeds identification accuracy is particularly pronounced for the
+smaller model. For example, in Pod Memory (All Pods) sce-
+narios (Table IV), GPT-5-mini records 100.0% success despite
+0.0% identification accuracy. This arises from how success is
+measured in our framework: it is defined purely in terms of
+the recovery of latency and success-rate metrics relative to the
+pre-fault baseline. In cases where the injected fault is subtle
+and fails to produce drastic observable degradation, the smaller
+model often fails to classify the specific root cause (resulting in
+0% identification) but does not trigger erroneous actions that
+worsen the state. Consequently, because the metrics remain
+within acceptable bounds, the run is algorithmically scored as
+a success. This highlights a limitation in the baseline model’s
+sensitivity to latent faults compared to GPT-5, which maintains
+higher identification alignment.
+B. Agent Performance by Application
+Table V details performance by application complexity. In
+the simpler IoT Gateway (3 services), GPT-5 significantly
+outperforms the baseline (85.7% vs. 40.0% identification
+accuracy) while requiring fewer decision rounds. As
+complexity increases to Smart Manufacturing (7 services)
+and Smart City (12 services), GPT-5 maintains robust
+
+[[page 8]]
+8
+TABLE IV
+AGENTPERFORMANCECOMPARISON BYFAULTTAXONOMY
+ID Acc. (%) Success (%) Lat. Rec. (%) Rounds (avg|min–max) Time (min)
+Fault Mode GPT-5 Mini GPT-5 Mini GPT-5 Mini GPT-5 Mini GPT-5 Mini
+Control experiments
+Baseline (No Failure)100.00.0 – – – – 8.8|7–14 33.3|12–50 2.8 9.1
+Node-level anomalies
+Node CPU Stress100.088.955.644.4 80.4 79.4 18.8|11–36 19.7|0–35 9.1 6.0
+Node Memory Stress88.9 88.9 77.866.7 74 66 19.6|9–36 29.8|15–50 11.1 9.4
+Pod-level anomalies
+Pod CPU (One Pod)100.066.783.3 83.394.2 41.2 10.2|8–12 32.7|13–50 4.0 9.8
+Pod CPU (All Pods)83.3 83.3 83.333.3 82.4 97.9 23.0|8–36 31.7|17–50 13.6 9.5
+Pod Failure (One Pod)75.00.0100.066.7 83.3 51.0 11.3|7–16 34.2|18–50 4.1 12.7
+Pod Failure (All Pods)66.7 66.7 83.3 83.3100.0 83.3 14.5|7–22 27.7|19–39 6.1 9.0
+Pod Memory (One Pod)75.00.0100.066.7 91.6 83.3 15.0|7–33 34.0|16–50 6.7 11.8
+Pod Memory (All Pods)50.00.0 83.3100.065.2 57.1 14.3|8–36 30.7|10–50 10.2 10.5
+TABLE V
+AGENTPERFORMANCE BYAPPLICATION
+ID Acc. (%) Success (%) Rounds (avg|min–max) Time (min)
+Application GPT-5 Mini GPT-5 Mini GPT-5 Mini GPT-5 Mini
+IoT Gateway (3)85.740.080.040.0 13.0|8–31 38.2|0–50 5.2 12.8
+Smart Manufacturing (7)87.566.790.080.0 14.8|7–33 25.8|10–48 6.2 8.5
+Smart City (12)80.064.780.075.0 18.6|7–36 25.5|12–50 11.8 7.4
+reliability (identification accuracy>80%, success≥80%).
+In contrast, GPT-5-mini struggles to scale, dropping to 64.7%
+identification accuracy in the largest topology and generally
+requiring more rounds to converge.
+In terms of efficiency, GPT-5 typically completes remedi-
+ations faster than GPT-5-mini (e.g., 5.2 vs. 12.8 minutes for
+IoT Gateway), utilizing its capacity to plan more effectively.
+The exception is the Smart City topology, where GPT-5-mini
+exhibits lower resolution time (7.4 vs. 11.8 minutes), likely
+reflecting shorter, less thorough reasoning trajectories. Overall,
+the larger model leverages its reasoning capabilities to achieve
+higher-quality outcomes with comparable or better end-to-end
+latency.
+The consistent stability of GPT-5 across varying topolo-
+gies indicates that the model already possesses the requisite
+reasoning capacity to manage complex distributed systems.
+Consequently, effective scaling to broader enterprise-grade
+microservice architectures relies less on increasing model size
+and more on optimizing the information interface. Future
+developments should therefore prioritize intelligent context
+compression and highly configurable tooling, enabling the
+agent to dynamically filter and prioritize vast telemetry data.
+This ensures that the model’s reasoning potential is not bottle-
+necked by context limits, but rather empowered by a refined
+and efficient information architecture.
+C. Tool Utilization Analysis
+Tool usage statistics (Fig. 4) reveal distinct behavioral pat-
+terns despite a shared focus on observability.GPT-5exhibits
+a streamlined execution profile, utilizingkubectl_apply
+(3.77%) for decisive configuration updates while requir-
+ing fewer planning iterations (generate_action_plan:
+11.75%). In contrast,GPT-5-minidisplays a more fragmented
+workflow, relying heavily on granular debugging tools like
+kubectl_describeandlogs(combined 7.6%) and in-
+vokinggenerate_action_plansignificantly more often
+(14.97%). This increased reliance on replanning and local-
+ized patching (kubectl_patch: 6.48%) suggests that the
+smaller model often resorts to iterative trial-and-error, whereas
+the larger model acts with greater conviction and system-level
+awareness.
+The relatively low frequency of actuation calls (e.g., scaling,
+restarting pods) compared to diagnostic calls indicates that the
+agent is cautious, preferring to gather sufficient evidence to
+rule out false positives. This ratio is critical for production
+environments, where the cost of a wrong action (such as
+restarting a healthy critical service) is high.
+D. Agent Mitigation Dynamics
+To illustrate the agent’s behavior across different
+infrastructure layers, Figure 3 depicts the remediation
+trajectories for two distinct services within the
+Smart Manufacturing application: the edge-resident
+
+[[page 9]]
+9
+Fig. 3. Service metrics under CPU stress.Left:Edge-basedsensor-data-ingestionshowing recovery after a disruptive intervention att≈750s.
+Right:Cloud-basedpredictive-maintenance-analyticsshowing sustained analysis followed by effective mitigation att≈1100s.
+0.0 2.5 5.0 7.5 10.0 12.5 15.0 17.5 20.0
+Usage Percentage (%)
+kubectl_get
+prometheus_get_timeseries (latency)
+generate_action_plan
+sleep_seconds
+prometheus_get_timeseries (cpu)
+prometheus_get_node_timeseries (cpu)
+kubectl_patch
+kubectl_describe
+Model
+gpt-5
+gpt-5-mini
+Fig. 4. Distribution of tool calls made by the agent during experiments.
+Observability tools (logs, metrics) dominate the interaction volume, reflecting
+the high cost of context gathering versus actuation.
+sensor-data-ingestionservice and the cloud-hosted
+predictive-maintenance-analyticsservice.
+Both traces exhibit a characteristic ”diagnostic plateau”
+following the agent’s activation (indicated by the start of
+the yellow region). During this phase, the agent is actively
+querying observability tools to isolate the root cause from
+potential noise.
+In the edge scenario (left), the persistence of high latency
+untilt≈750s suggests the agent first exhausted non-
+disruptive scaling options—which are naturally limited on
+edge nodes—before resorting to a pod restart. This decisive
+action is evidenced by the transient dip in success rate,
+which immediately precedes the return to baseline latency.
+Conversely, in the cloud scenario (right), the agent restores
+performance att≈1100s without incurring request failures,
+leveraging the greater resource elasticity available in the cloud
+tier to scale out the workload. These traces demonstrate the
+agent’s ability to adapt its remediation strategy to the specific
+constraints of the deployment environment, prioritizing stabil-
+ity while ultimately ensuring a return to optimal performance.
+VII. CONCLUSION ANDFUTUREWORK
+In this work, we introduced a closed-loop framework for
+intent-driven infrastructure management that leverages LLM
+agents to autonomously detect and remediate SLA violations
+in Kubernetes-based IoT and edge environments. Across three
+representative IoT applications, the GPT-5-based agent re-
+stores SLA metrics in roughly 80% of fault-injection runs
+while correctly identifying the underlying condition in about
+78% of cases, indicating that LLM agents can effectively
+close the loop in complex cloud–edge topologies. At the same
+time, the results reveal some important limitations, including
+non-negligible wall-clock remediation times for the largest
+topology, and a distinct performance gap between model sizes,
+suggesting that the intricate causal reasoning required for
+truly autonomous, zero-touch control currently necessitates the
+advanced capabilities of frontier-class models.
+Looking ahead, addressing scalability, safety, and integra-
+tion with production IoT deployments will be particularly valu-
+able. On the scalability front, we plan to investigate improved
+context-compression paradigms and deeper agent architectures
+equipped with a more diverse tool set spanning low-level
+metric queries to ML-based anomaly detection algorithms,
+as well as fine-tuning smaller models to better trade off
+accuracy versus model size in this domain. In parallel, we
+aim to formalize and evaluate safety safeguards around high-
+impact actions and to deploy the framework in larger, more
+heterogeneous IoT testbeds that more closely reflect real-world
+operational constraints.
+VIII. ACKNOWLEDGMENT
+This work was supported by the European Commis-
+sion research projects AC3 (101093129), and 6G-INTENSE
+(101139266).
+REFERENCES
+[1] B. T. Loo, T. Condie, M. Garofalakis, D. E. Gay, J. M. Hellerstein,
+P. Maniatis, R. Ramakrishnan, T. Roscoe, and I. Stoica, “Declarative
+networking,”Commun. ACM, vol. 52, no. 11, pp. 87–95, Nov. 2009.
+
+[[page 10]]
+10
+[2] R. Birkner, D. Drachsler-Cohen, L. Vanbever, and M. Vechev,
+“Net2Text: Query-Guided summarization of network forwarding
+behaviors,” in15th USENIX Symposium on Networked Systems
+Design and Implementation (NSDI 18). Renton, W A: USENIX
+Association, Apr. 2018, pp. 609–623. [Online]. Available: https:
+//www.usenix.org/conference/nsdi18/presentation/birkner
+[3] A. Adewa, V . Anyah, D. Olufemi, A. Oladejo, and T. Olaifa, “The impact
+of intent-based networking on network configuration management and
+security,”Global Journal of Engineering and Technology Advances,
+vol. 11, pp. 63–68, 01 2025.
+[4] J. Kim, H. Okhravi, D. J. Tian, and B. E. Ujcich, “Security challenges
+of intent-based networking,”Commun. ACM, vol. 67, no. 7, pp. 56–65,
+Jul. 2024.
+[5] S. T. Arzo, C. Naiga, F. Granelli, R. Bassoli, M. Devetsikiotis, and
+F. H. P. Fitzek, “A theoretical discussion and survey of network
+automation for iot: Challenges and opportunity,”IEEE Internet of Things
+Journal, vol. 8, no. 15, pp. 12 021–12 045, 2021.
+[6] P. Lewis, E. Perez, A. Piktus, F. Petroni, V . Karpukhin, N. Goyal,
+H. K ¨uttler, M. Lewis, W. tau Yih, T. Rockt ¨aschel, S. Riedel, and
+D. Kiela, “Retrieval-augmented generation for knowledge-intensive nlp
+tasks,” 2021. [Online]. Available: https://arxiv.org/abs/2005.11401
+[7] T. Schick, J. Dwivedi-Yu, R. Dessi, R. Raileanu, M. Lomeli, E. Hambro,
+L. Zettlemoyer, N. Cancedda, and T. Scialom, “Toolformer: Language
+models can teach themselves to use tools,” inThirty-seventh Conference
+on Neural Information Processing Systems, 2023. [Online]. Available:
+https://openreview.net/forum?id=Yacmpz84TH
+[8] A. Novikov, N. V ˜u, M. Eisenberger, E. Dupont, P.-S. Huang, A. Z.
+Wagner, S. Shirobokov, B. Kozlovskii, F. J. Ruiz, A. Mehrabianet al.,
+“Alphaevolve: A coding agent for scientific and algorithmic discovery,”
+arXiv preprint arXiv:2506.13131, 2025.
+[9] D. Huang, J. M. Zhang, M. Luck, Q. Bu, Y . Qing, and H. Cui,
+“Agentcoder: Multi-agent-based code generation with iterative testing
+and optimisation,” 2024. [Online]. Available: https://arxiv.org/abs/2312.
+13010
+[10] H. Zhang, J. Chen, F. Jiang, F. Yu, Z. Chen, J. Li, G. Chen, X. Wu,
+Z. Zhang, Q. Xiao, X. Wan, B. Wang, and H. Li, “Huatuogpt, towards
+taming language model to be a doctor,” 2023. [Online]. Available:
+https://arxiv.org/abs/2305.15075
+[11] L. Bao, S. Yun, J. Lee, and T. Q. S. Quek, “Llm-hric: Llm-empowered
+hierarchical ran intelligent control for o-ran,” 2025. [Online]. Available:
+https://arxiv.org/abs/2504.18062
+[12] S. Kou, C. Yang, and M. Wu, “SAFLA: Semantic-aware full lifecycle
+assurance designed for intent-driven networks,” 2024. [Online].
+Available: https://arxiv.org/abs/2404.12305
+[13] B. Adnan, S. Miryala, A. Sambu, K. Vaidhyanathan, M. De Sanctis,
+and R. Spalazzese, “Leveraging llms for dynamic iot systems generation
+through mixed-initiative interaction,” 2025.
+[14] S. Yao, J. Zhao, D. Yu, N. Du, I. Shafran, K. Narasimhan, and Y . Cao,
+“React: Synergizing reasoning and acting in language models,” 2023.
+[Online]. Available: https://arxiv.org/abs/2210.03629
+[15] A. Vitui and T.-H. Chen, “Empowering aiops: Leveraging large
+language models for it operations management,” 2025. [Online].
+Available: https://arxiv.org/abs/2501.12461
+[16] X. Hou, Y . Zhao, S. Wang, and H. Wang, “Model context protocol
+(mcp): Landscape, security threats, and future research directions,”
+2025. [Online]. Available: https://arxiv.org/abs/2503.23278
+[17] B. Martini, M. Gharbaoui, and P. Castoldi, “Intent-based network slicing
+for sdn vertical services with assurance: Context, design and preliminary
+experiments,”Future Generation Computer Systems, vol. 142, pp. 101–
+116, 2023.
+[18] S. Braghin and L. Nedoshivina, “Mimo: a framework for extensible
+and flexible intent-based workload meta-orchestration,” inProceedings
+of the 2nd International Workshop on MetaOS for the Cloud-Edge-IoT
+Continuum, 2025, pp. 1–6.
+[19] S. Mostafa, M. P. Mota, A. Valcarce, and M. Bennis, “Intent-aware drl-
+based noma uplink dynamic scheduler for iiot,”IEEE Transactions on
+Cognitive Communications and Networking, pp. 1–1, 2025.
+[20] T. He, A. N. Toosi, N. Akbari, M. T. Islam, and M. A. Cheema, “An
+intent-based framework for vehicular edge computing,” in2023 IEEE
+International Conference on Pervasive Computing and Communications
+(PerCom). IEEE, 2023, pp. 121–130.
+[21] N. Filinis, I. Tzanettis, D. Spatharakis, E. Fotopoulou, I. Dimolitsas,
+A. Zafeiropoulos, C. Vassilakis, and S. Papavassiliou, “Intent-driven
+orchestration of serverless applications in the computing continuum,”
+Future Generation Computer Systems, vol. 154, pp. 72–86, 2024.
+[22] Y . Cheng, M. Xu, Y . Zhang, K. Li, H. Wu, Y . Zhang, S. Guo, W. Qiu,
+D. Yu, and X. Cheng, “Say what you mean: Natural language access
+control with large language models for internet of things,”arXiv preprint
+arXiv:2505.23835, 2025.
+[23] J. Mcnamara, D. Camps-Mur, M. Goodarzi, H. Frank, L. Chinchilla-
+Romero, F. Ca ˜nellas, A. Fern ´andez-Fern´andez, and S. Yan, “NLP
+powered intent based network management for private 5G networks,”
+IEEE Access, vol. 11, pp. 36 642–36 657, 2023.
+[24] D. Kikuta, H. Ikeuchi, and K. Tajiri, “Chaoseater: Fully automat-
+ing chaos engineering with large language models,”arXiv preprint
+arXiv:2501.11107, 2025.
+[25] Z. Ye, T. H. M. Le, and M. A. Babar, “Llmsecconfig: An llm-based
+approach for fixing software container misconfigurations,”arXiv preprint
+arXiv:2502.02009, 2025.
+[26] K. Mehmood, K. Kralevska, and D. Palma, “Intent-driven autonomous
+network and service management in future cellular networks: A struc-
+tured literature review,”Computer Networks, vol. 220, p. 109477, 2023.
+[27] D. Z. Zhou and M. Fokaefs, “Ai assistants for incident lifecycle in
+a microservice environment: A systematic literature review,” 2024.
+[Online]. Available: https://arxiv.org/abs/2410.04334
+[28] C. Pei, Z. Wang, F. Liu, Z. Li, Y . Liu, X. He, R. Kang, T. Zhang, J. Chen,
+J. Li, G. Xie, and D. Pei, “Flow-of-action: Sop enhanced llm-based
+multi-agent system for root cause analysis,” inCompanion Proceedings
+of the ACM on Web Conference 2025, ser. WWW ’25. New York, NY ,
+USA: Association for Computing Machinery, 2025, pp. 422–431.
+[29] K. Parthasarathy, K. Vaidhyanathan, R. Dhar, V . Krishnamachari,
+B. Muhammed, A. Kakran, S. Akshathala, S. Arun, S. Dubey,
+M. Veerubhotla, and A. Karan, “Engineering llm powered multi-agent
+framework for autonomous cloudops,” 2025. [Online]. Available:
+https://arxiv.org/abs/2501.08243
+[30] X. Zhang, T. Mittal, C. Bansal, R. Wang, M. Ma, Z. Ren, H. Huang,
+and S. Rajmohan, “Flash: A workflow automation agent for diagnosing
+recurring incidents,” 2024.
+[31] J. Wei, X. Wang, D. Schuurmans, M. Bosma, B. Ichter, F. Xia,
+E. Chi, Q. Le, and D. Zhou, “Chain-of-thought prompting elicits
+reasoning in large language models,” 2023. [Online]. Available:
+https://arxiv.org/abs/2201.11903
+[32] A. Detti, L. Funari, and L. Petrucci, “mbench: An open-source factory
+of benchmark microservice applications,”IEEE Transactions on Parallel
+and Distributed Systems, vol. 34, no. 3, pp. 968–980, 2023.
+
+[[page 11]]
+11
+APPENDIX
+Initial Action Plan
+Objective:Investigate and remediate performance degradation
+in namespaceapp-smart-manufacturingto restore la-
+tency and success rate to baseline.
+Situation:Alert indicates p95 latency increased from 0.207s
+to 0.451s (+118%) with success rate dropping from 100% to
+99.25% as of 2025-11-13T09:29:21Z. Root cause unknown;
+need to confirm scope/severity and correlate with pod/node
+resource signals.
+Steps:
+•Phase 1 – Scope & Severity:Query 2-minute
+timeseries for latency, CPU, and memory in names-
+paceapp-smart-manufacturing; query node CPU
+timeseries; get node readiness/health viakubectl get
+nodes -o wide.
+•Phase 2 – Pattern Analysis:Correlate workload
+metrics with node metrics; list pods with placement
+viakubectl get pods -o wide; inspect service
+topology for upstream/downstream hotspots.
+•Decision Branch:
+–Ifnode_cpu≫pod_cpuon a node with colo-
+cated pods showing high latency, cordon+drain that
+node.
+–If specific pod shows runaway CPU/memory or
+restarts, delete/restart the pod.
+–If CPU saturation across replicas, patch HPA to raise
+min/max replicas appropriately.
+–If memory pressure causing OOM/restarts, raise lim-
+its or scale out via HPA.
+•Phase 3 – Response & Validation:Execute selected fix,
+wait 60s, re-check latency/CPU; iterate if needed.
+•Completion:When p95 latency trends back toward
+baseline and success rate≥99.9%, produce operational
+summary with problem locations identified.
+Expected Outcomes:
+•Quantified severity window and implicated resources
+identified (pods/nodes).
+•If node-level contention: affected node drained and work-
+loads rescheduled.
+•If pod-level issue: problematic pod restarted and stabi-
+lized.
+•If capacity issue: HPA scaled to add replicas, reducing
+per-pod CPU and latency.
+•Validated improvement with metrics trending toward
+baseline.
+Operational Summary (Post-Execution)
+Objective:Resolve performance degradation in namespace
+app-smart-manufacturingby mitigating CPU satura-
+tion and restoring latency toward baseline.
+Status:COMPLETED – CPU saturation mitigated via HPA
+scale-out and affinity relaxation; latency trending toward base-
+line and node CPU normalized.
+Actions Completed:
+•Collected 2m namespace latency and CPU metrics; iden-
+tifiedpredictive-maintenance-analytics-
+cloudpods consuming∼3.3 cores each with
+cloud-worker-1/2node CPU∼3.9 cores
+(saturation).
+•Verified HPA constraints causing ScalingLimited;
+patchedpredictive-maintenance-analytics-
+cloud-autoscalerto minReplicas=3,
+maxReplicas=6.
+•Validated limited improvement; inspected deployment
+affinity (restricted to zone=cloud).
+•Patched deploymentpredictive-maintenance-
+analytics-cloudnodeAffinity to allow zones
+[cloud, edge-site-1, edge-site-2] and restarted rollout to
+redistribute workload.
+•Revalidated metrics: pods rescheduled across edge and
+cloud nodes; node CPU normalized; service latencies
+dropped.
+Results Achieved:
+•predictive-maintenance-analytics-cloud
+replicas increased to 6 and distributed across cloud and
+edge nodes (observed new pods on edge-site-1/2 and
+cloud workers).
+•Cloud worker CPU pressure reduced (node
+pod_cpu/host CPU from∼3.4/3.9 cores down to
+≤0.5 cores).
+•Latency improved across services:
+centralized-data-lake-cloud∼450–480ms
+→48–86ms; ingestion services reduced to∼97–287ms,
+trending toward baseline 207ms.
+Problem Location:
+•predictive-maintenance-analytics-cloud
+(deployment)
+•predictive-maintenance-analytics-
+cloud-autoscaler(hpa)
+•cloud-worker-1(node)
+•cloud-worker-2(node)

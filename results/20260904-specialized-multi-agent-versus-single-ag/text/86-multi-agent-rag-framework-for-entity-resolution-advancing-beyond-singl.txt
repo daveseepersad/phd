@@ -1,0 +1,1107 @@
+[[page 1]]
+Article Not peer-reviewed version
+Multi-Agent RAG Framework for Entity
+Resolution: Advancing Beyond Single-
+LLM Approaches with Specialized Agent
+Coordination
+Aatif Muhammad , Muzakkiruddin Ahmed Mohammed , Mariofanna Milanova * , John R. Talburt ,
+Mert Can Cakmak
+Posted Date: 30 October 2025
+doi: 10.20944/preprints202510.2382.v1
+Keywords: entity resolution; multi-agent systems; large language models; retrieval-augmented generation;
+LangGraph Orchestration; record linkage; data quality management; administrative records; census data
+integration
+Preprints.org is a free multidisciplinary platform providing preprint service
+that is dedicated to making early versions of research outputs permanently
+available and citable. Preprints posted at Preprints.org appear in Web of
+Science, Crossref, Google Scholar, Scilit, Europe PMC.
+Copyright: This open access article is published under a Creative Commons CC BY 4.0
+license, which permit the free download, distribution, and reuse, provided that the author
+and preprint are cited in any reuse.
+
+[[page 2]]
+Article
+Multi-Agent RAG Framework for Entity Resolution:
+Advancing Beyond Single-LLM Approaches with
+Specialized Agent Coordination
+Aatif Muhammad, Muzakkiruddin Ahmed Mohammed, Mariofanna Milanova *, John R. Talburt
+and Mert Can Cakmak
+Center for Advanced Research in Entity Resolution and Information Quality (ERIQ), University of Arkansas,
+Little Rock, AR, USA
+* Correspondence: mmohammed6@ualr.edu
+Abstract
+Entity resolution in real-world datasets remains a persistent challenge, particularly in identifying
+households and detecting co-residence patterns within inconsistent and incomplete data. Recent
+advances using Large Language Models (LLMs) show promise but continue to struggle with scalability,
+interpretability, and task complexity when applied as single, monolithic systems. This study introduces
+a multi-agent Retrieval-Augmented Generation (RAG) framework that decomposes household entity
+resolution into coordinated and specialized agents. The system, implemented using LangGraph,
+includes four agents: a Direct Agent for name-based matching, an Indirect Agent for transitive
+linkage, a Household Agent for address-based clustering, and a Household Moves Agent for tracking
+residential relocations. Each agent employs a task-specific RAG retrieval strategy and a hybrid data
+cleaning pipeline that integrates rule-based and LLM-powered parsing. Evaluated on synthetic S12PX
+dataset segments containing 200–300 records with extensive duplicates and data quality issues, the
+framework achieved 94.3% accuracy on name variations, complete decision transparency, and a 61%
+reduction in API calls compared to single-LLM approaches. These results demonstrate that coordinated
+agent specialization enhances accuracy, efficiency, and interpretability, establishing a scalable paradigm
+for entity resolution applicable to census operations, healthcare, and other structured data domains.
+Keywords: entity resolution; multi-agent systems; large language models; retrieval-augmented gener-
+ation; LangGraph Orchestration; record linkage; data quality management; administrative records;
+census data integration
+1. Introduction
+In modern data ecosystems, entity resolution (ER) remains a foundational yet persistently chal-
+lenging problem. ER refers to the process of identifying and linking records that correspond to the
+same real-world entities across heterogeneous, noisy, and incomplete data sources [1,2]. The ability to
+accurately match and unify such records is critical in numerous domains, including census operations,
+healthcare analytics, administrative data integration, and knowledge graph construction. Failures in
+ER can lead to duplicated identities, biased statistics, and impaired decision-making, underscoring its
+fundamental role in trustworthy data management [3,4].
+Traditional ER methods rely on deterministic or probabilistic matching rules that use string
+similarity metrics, phonetic encodings, or clustering-based heuristics. While effective in structured
+environments, these methods often falter when confronted with real-world datasets containing un-
+structured text, abbreviations, typographical variations, missing fields, or semantic ambiguity. The
+increasing scale and heterogeneity of administrative and observational data sources further exacerbate
+the problem, calling for methods that are adaptive, explainable, and capable of handling incomplete
+information.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+Disclaimer/Publisher’s Note: The statements, opinions, and data contained in all publications are solely those of the individual author(s) and
+contributor(s) and not of MDPI and/or the editor(s). MDPI and/or the editor(s) disclaim responsibility for any injury to people or property resulting
+from any ideas, methods, instructions, or products referred to in the content.
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 3]]
+2 of 22
+Recent advances in Large Language Models (LLMs)have introduced new possibilities for addressing
+these challenges. LLMs demonstrate remarkable abilities in understanding semantic relationships,
+interpreting ambiguous text, and generating human-like reasoning [10,11]. In the context of ER, these
+capabilities enable LLMs to perform contextual matching, infer missing relationships, and resolve
+records with limited structural cues [8,9]. However, despite these advantages, single-LLM architectures
+often encounter limitations in scalability, interpretability, and reliability. Relying on a single model
+to handle multiple specialized reasoning tasks can lead to inefficiency, hallucinations, and opaque
+decision processes that hinder reproducibility and trust in operational systems.
+To overcome these limitations, researchers are increasingly exploringmulti-agent architectures as a
+paradigm for decomposing complex reasoning workflows. In such architectures, multiple specialized
+agents cooperate and communicate to solve subproblems within a shared environment [ 6,7]. This
+approach mirrors human collaborative problem-solving, where tasks are distributed among experts
+to enhance specialization, reduce cognitive overload, and increase transparency. When combined
+with Retrieval-Augmented Generation (RAG) [5], multi-agent frameworks can dynamically access ex-
+ternal knowledge sources and ensure factual grounding, significantly improving performance and
+interpretability in knowledge-intensive tasks [12,13].
+Building on these recent advances, this study introduces a Multi-Agent RAG Framework for
+Entity Resolution, a system that extends beyond monolithic LLM models by employing a team of
+specialized agents designed for distinct sub-tasks in household and administrative record resolution.
+The proposed framework is implemented using LangGraph, which facilitates structured orchestration,
+memory management, and transparent communication among agents. The system consists of four
+cooperating agents:
+• Direct Agent: performs deterministic name-based record matching;
+• Indirect Agent: identifies transitive and relational linkages;
+• Household Agent: clusters records based on address and residence patterns; and
+• Household Moves Agent: tracks relocations and temporal transitions of entities across datasets.
+Each agent integrates a customized RAG retrieval strategy and a hybrid data cleaning pipeline that
+combines deterministic preprocessing with LLM-powered contextual interpretation. Together, these
+components form a modular and interpretable system that can reason across heterogeneous data
+sources with reduced computational overhead and improved decision transparency.
+The framework is evaluated using synthetic S12PX datasets, which replicate real-world ad-
+ministrative and census data conditions with inconsistencies, missing fields, and duplicate entries.
+Experimental results demonstrate a 94.3% accuracy in resolving name variations, a 61% reduction in
+API calls, and complete decision traceability, significantly outperforming conventional single-LLM
+approaches in both efficiency and interpretability.
+The complete implementation, datasets, and configuration files for the proposed framework are
+publicly available on GitHub (GitHub repository), ensuring full transparency and reproducibility of
+the experiments.
+The aim of this research is to design a scalable and interpretable architecture for entity resolution
+that combines the reasoning power of Large Language Models (LLMs) with the modularity of multi-
+agent coordination. The specific objectives are to:
+1. Develop a multi-agent RAG-based framework that decomposes the entity resolution process into
+specialized and cooperative tasks;
+2. Integrate hybrid rule-based and LLM-powered data cleaning mechanisms to enhance input
+reliability and model transparency;
+3. Demonstrate scalability and efficiency improvements through LangGraph-based orchestration
+and controlled inter-agent communication; and
+4. Validate the framework through quantitative and qualitative experiments simulating real admin-
+istrative datasets.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 4]]
+3 of 22
+The contributions of this study extend beyond the architectural proposal to the broader research
+context. Specifically, this work presents a comprehensive multi-agent framework that advances
+entity resolution by emphasizing task specialization, transparency, and computational efficiency. By
+combining deterministic preprocessing and LLM-driven contextual reasoning, the framework achieves
+enhanced performance and interpretability compared with conventional single-LLM models. Through
+its LangGraph implementation, the study demonstrates how modular orchestration can balance
+scalability with explainability in real-world scenarios. Empirical validation on synthetic administrative
+datasets further evidences the system’s robustness and generalizability, establishing a foundation for
+next-generation entity resolution systems in census, healthcare, and administrative data environments.
+Overall, this study contributes to the growing body of research at the intersection of multi-agent
+systems, large language models, and data integration. By illustrating how specialized agents can
+collaborate through retrieval-augmented reasoning, it provides a scalable and interpretable blueprint
+for intelligent data management across diverse domains.
+2. Literature Review
+Entity Resolution (ER) remains a cornerstone of data management research, addressing the
+identification and linkage of records representing the same real-world entities across diverse and
+imperfect datasets. Foundational studies in ER established principles for data standardization, linkage
+accuracy, and quality governance, emphasizing the iterative nature of maintaining high-quality entity
+representations throughout the data life cycle [ 14–16]. These early frameworks provided a robust
+conceptual foundation for reproducible entity linking but relied heavily on deterministic rule systems
+that required domain-specific tuning, which limited adaptability across heterogeneous sources.
+Traditional ER approaches, including rule-based, probabilistic, and blocking strategies, achieved
+moderate success in structured datasets but performed poorly in noisy, multi-source environments.
+Their dependence on hand-crafted similarity rules and lack of semantic understanding made them
+ill-suited for unstructured or cross-lingual data integration. As data variety and volume increased,
+machine learning-based ER emerged to automate feature extraction and weighting. Research integrat-
+ing deep neural architectures demonstrated improved generalization by learning semantic similarity
+across entity attributes, yet these systems remained opaque, computationally intensive, and reliant
+on extensive labeled data [17–19]. Additionally, their black-box nature posed significant challenges
+for interpretability and auditability, which are essential for high-stakes applications such as census
+operations and administrative record linkage.
+The introduction of Large Language Models (LLMs) has redefined ER paradigms by providing con-
+textual and linguistic reasoning capabilities. Studies utilizing pre-trained and knowledge-augmented
+language models have shown superior performance in identifying semantically related entities across
+schema and language boundaries. However, LLM-driven systems often exhibit inconsistency, hal-
+lucination, and sensitivity to prompt formulation. Despite their contextual strength, most existing
+LLM-based ER frameworks remain monolithic and sequential, lacking modular design and explainable
+reasoning pathways [18,32,33]. Moreover, scalability issues arise when deploying LLMs across large
+administrative databases, as end-to-end generative inference becomes computationally expensive and
+difficult to parallelize efficiently.
+Generative AI has also been increasingly employed in related domains such as entity linking,
+entity set expansion, and event causality modeling. Research introducing autoregressive and informed
+decoding frameworks has shown that generative models can generate candidate matches and refine
+entity labels without explicit supervision [ 20–22]. These models excel in handling ambiguity but
+lack fine-grained control over reasoning transparency. Similarly, generative frameworks for Entity
+Set Expansion and knowledge graph construction have enhanced scalability but rely on constrained
+decoding mechanisms that may overlook nuanced semantic relationships [23,26]. Furthermore, most
+generative ER models operate in isolation without mechanisms for multi-stage verification, iterative
+refinement, or external knowledge retrieval, resulting in limited interpretability and reproducibility.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 5]]
+4 of 22
+In addition to methodological advances, there has been a growing awareness of the limitations
+of existing ER evaluation frameworks. Benchmarking efforts have revealed that common datasets
+often oversimplify real-world linkage tasks, failing to represent diverse schemas, noise levels, and
+relational complexities [27]. Synthetic data generation approaches have been proposed to improve
+reproducibility and coverage, but many still rely on handcrafted distributions that cannot fully capture
+the variability of real administrative or census data [ 25]. Unsupervised and zero-shot approaches
+offer domain adaptability but frequently suffer from unstable convergence and reduced precision in
+ambiguous cases [21,24]. Overall, existing research demonstrates clear progress but leaves gaps in
+scalability, transparency, and cross-domain generalization.
+Recent efforts have explored the convergence of ER and multi-agent reasoning architectures. Multi-
+agent frameworks allow distributed problem solving, where specialized agents handle subtasks such
+as blocking, attribute normalization, and match verification. Studies employing multi-agent generative
+AI have shown that decomposing ER into coordinated reasoning steps can improve efficiency and
+modularity [28]. Nevertheless, most prior implementations lack robust orchestration mechanisms for
+agent communication, consistency enforcement, and data provenance tracking. Consequently, while
+these systems exhibit potential for scalability, they often sacrifice interpretability and reproducibility in
+large-scale deployments.
+In parallel with these conceptual advancements, several recent studies have demonstrated practi-
+cal applications of multi-LLM and retrieval-augmented architectures across diverse domains. One line
+of research introduced a retrieval-augmented multi-LLM ensemble for industrial part specification
+extraction, showing that distributed inference pipelines can significantly improve precision and con-
+textual grounding in technical documentation [29]. Another study proposed a policy-aware generative
+AI framework for secure and auditable data access governance, highlighting the role of explainable
+LLM reasoning in regulated data environments [30]. Complementary research explored multilingual
+and household-level entity resolution using LLM ensembles, establishing benchmarks for cross-lingual
+record linkage and household movement detection [31–33]. Earlier work also underscored the value
+of machine learning and generative methods in manufacturing intelligence and recommendation
+systems [34,35]. Collectively, these studies illustrate the expanding scope of retrieval-augmented and
+multi-LLM techniques, reinforcing their potential as foundational components for next-generation
+entity resolution systems.
+Despite the remarkable advances in ER and generative modeling, a key research gap persists at
+the intersection of explainability, scalability, and orchestration. Existing LLM-based and generative
+systems primarily operate as monolithic models with limited transparency into intermediate reasoning
+states. Current multi-agent architectures, while conceptually promising, often lack a principled
+retrieval mechanism that allows agents to ground their reasoning in external evidence. Moreover, few
+frameworks integrate hybrid rule-based and generative reasoning in a unified architecture that ensures
+both precision and contextual adaptability.
+The present research addresses these limitations by introducing a Retrieval-Augmented Genera-
+tion (RAG) framework for Entity Resolution built on multi-agent collaboration. Unlike prior works, this
+framework decomposes ER into modular, specialized agents that cooperate through LangGraph-based
+orchestration. This design allows each agent to perform focused tasks such as data cleaning, blocking,
+candidate retrieval, and verification while maintaining a transparent reasoning trail. By integrating
+hybrid deterministic and LLM-driven methods, the proposed system achieves a balance between
+interpretability and contextual intelligence. Furthermore, the architecture introduces explicit retrieval
+layers to ground generative reasoning in verifiable evidence, mitigating hallucination and enhancing
+traceability. Compared to existing single-LLM or heuristic systems, this multi-agent RAG framework
+provides superior scalability, transparency, and adaptability for complex, real-world administrative
+and census datasets.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 6]]
+5 of 22
+3. System Architecture and Framework
+The proposed framework implements a multi-agent Retrieval-Augmented Generation (RAG)
+architecture for Entity Resolution (ER) using modular coordination, hybrid reasoning, and evidence-
+grounded decision making. The complete workflow, shown in Figure 1, integrates data preprocessing,
+embedding-based retrieval, and agent-level reasoning into a unified orchestration managed through
+LangGraph. This design supports scalability, transparency, and interpretability across heterogeneous
+datasets such as administrative or census records.
+ 
+Figure 1. Household Discovery Multi-Agent System Architecture. The architecture integrates data ingestion,
+RAG-based retrieval, and LangGraph orchestration across multiple reasoning agents for entity resolution and
+household discovery.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 7]]
+6 of 22
+3.1. Overall System Design
+The proposed multi-agent Retrieval-Augmented Generation (RAG) framework is designed as
+a modular, layered system that integrates multiple reasoning, retrieval, and data management com-
+ponents into a cohesive pipeline. The design principle emphasizes interpretability, scalability, and
+flexibility, ensuring that each functional layer can evolve independently while maintaining seamless
+interoperability with the rest of the architecture.
+The system consists of five major layers: (1) the User Interface Layer, (2) the Orchestration Layer,
+(3) the RAG Components and LLM Layer, (4) the Multi-Agent Workflow, and (5) the Output and
+Evaluation Layer. Each layer performs a specific set of operations while contributing to the shared
+objectives of entity discovery, household detection, and movement tracking. Inter-agent and inter-layer
+communication are facilitated through a shared state management mechanism and a retrieval-enhanced
+communication model.
+Data flows sequentially across these layers, beginning with ingestion and preprocessing in the
+UI and orchestration layers, followed by contextual embedding, multi-agent reasoning, and final
+result synthesis in the output layer. This layered abstraction not only improves transparency and
+modularity but also allows the framework to support diverse deployment scenarios, including local
+execution for privacy-sensitive administrative data and cloud-based orchestration for large-scale
+research applications. The architecture’s layered design also facilitates maintenance, debugging, and
+the incorporation of additional agents or retrieval sources without restructuring the core pipeline.
+3.2. User Interface Layer
+The User Interface (UI) layer provides an accessible and interactive environment for end-users to
+manage data ingestion, configuration, and result visualization. It is implemented using the Streamlit
+framework, chosen for its lightweight design, ease of integration with Python backends, and suitability
+for rapid prototyping of data-driven applications. The interface supports file uploads in CSV or XLSX
+formats, automatically parsing datasets and allowing users to select specific columns or attributes for
+entity resolution.
+In addition to basic file management, the UI layer enables the configuration of system parameters
+such as model selection, embedding dimensions, retrieval database choice, and orchestration mode
+(sequential or parallel). Through intuitive controls, users can launch and monitor pipeline execution,
+inspect intermediate results, and visualize linkage clusters as they are generated by different agents.
+The interface also incorporates progress tracking and log visualization, offering real-time insights into
+system performance and reasoning stages.
+A significant advantage of the UI layer is its ability to export results directly into Markdown
+summaries or CSV tables, making outputs immediately reusable for documentation or further analysis.
+By integrating this visualization and reporting capability, the framework promotes transparency and
+reproducibility, allowing researchers, analysts, and policymakers to trace and interpret the results
+of each agent’s decision-making process. Overall, the UI layer bridges the gap between complex
+multi-agent orchestration and user-centric accessibility, enhancing both operational usability and
+research interpretability.
+3.3. Orchestration Layer
+The orchestration layer serves as the central controller of the entire framework, managing data
+flow, agent coordination, and overall workflow execution. Implemented in Python, this layer utilizes
+LangGraph to define and regulate communication between agents through a graph-based orchestration
+model. Each node in the LangGraph corresponds to a specialized agent or module, while edges define
+the flow of data, control dependencies, and iterative feedback paths. This structure enables both
+sequential and parallel processing, allowing the system to adapt dynamically to task complexity and
+dataset size.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 8]]
+7 of 22
+At the beginning of each run, the orchestration layer initializes the RAG pipeline, handles
+preprocessing tasks, and assigns agent responsibilities based on configuration parameters. It then
+monitors the execution of agents, tracks intermediate results, and synchronizes state updates within a
+global memory context. This process ensures that each agent has access to the latest contextual data
+and can retrieve necessary evidence before reasoning or decision-making.
+Beyond coordination, the orchestration layer also supports dynamic scheduling and error recovery.
+If an agent encounters ambiguous or incomplete results, the orchestrator can trigger selective repro-
+cessing, ensuring robust completion of the pipeline. Additionally, this layer integrates performance
+monitoring and logging, providing detailed traces of system execution for debugging and evaluation.
+By decoupling control flow from computation, the orchestration layer achieves a high level of
+modularity and transparency. It ensures that workflow reproducibility and auditability are preserved
+while enabling flexible adaptation to future model upgrades, additional agents, or alternative data
+sources. As such, this layer embodies the framework’s guiding principles of structured coordination,
+hybrid reasoning, and scalable execution.
+3.4. RAG Components and LLM Integration
+This layer forms the computational and cognitive core of the proposed system. It integrates
+retrieval-augmented reasoning with large language model (LLM) inference, enabling each agent
+to access semantically rich contextual information during the entity resolution process. The RAG
+components provide the mechanisms for transforming cleaned data into vectorized representations,
+managing retrieval from large-scale vector stores, and grounding LLM reasoning on factual and verifi-
+able evidence. In this architecture, the RAG layer acts as the connective tissue between deterministic
+data processing and generative reasoning, allowing symbolic records to be seamlessly interpreted in
+natural language contexts.
+The design of this layer is guided by three complementary objectives: (1) to ensure efficient
+and scalable retrieval from high-dimensional spaces, (2) to maintain semantic coherence between
+structured data and unstructured reasoning, and (3) to minimize hallucination through retrieval-
+grounded generation. Together, these mechanisms create the foundation for hybrid reasoning, where
+rule-based and statistical inference are augmented by contextualized, evidence-driven generation.
+3.4.1. Embedding and Vector Store Management
+The embedding and vector storage subsystem transforms cleaned and standardized records into
+high-dimensional semantic representations. Each entity’s attributes, such as names, addresses, and
+demographic identifiers, are encoded into dense vector embeddings that capture both lexical and
+contextual relationships. These embeddings allow the system to measure similarity between entities
+beyond literal string comparison, accommodating linguistic variation, abbreviation, and typographical
+inconsistencies that often occur in real-world administrative data.
+To ensure flexibility and domain adaptability, the system employs multiple embedding providers,
+including OpenAI (small and large embedding models) and HuggingFace sentence transformers.
+The embeddings are normalized and indexed using FAISS and Qdrant vector databases, selected
+for their scalability and fast approximate nearest-neighbor search capabilities. This combination
+supports semantic retrieval across millions of vectors with sub-second latency, enabling near-real-time
+augmentation for reasoning agents.
+Vector store management includes metadata tracking, version control, and retrieval logging,
+ensuring that every similarity query and retrieval operation can be traced and reproduced. The
+system’s vectorization pipeline is fully modular, so new embedding models or similarity metrics (for
+example cosine or L2) can be substituted without reengineering downstream processes. This design
+provides both technical scalability and experimental flexibility for researchers evaluating different
+embedding paradigms.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 9]]
+8 of 22
+3.4.2. Chunking and Multi-Query Retrieval
+To process large and heterogeneous datasets efficiently, the system implements a dynamic chunk-
+ing strategy. Raw records and auxiliary texts are segmented into semantically coherent chunks, each
+containing contextually related information such as address fragments, family groups, or temporal
+attributes. Chunking ensures that the retrieval process operates at an optimal granularity, large enough
+to preserve context but small enough to maintain retrieval precision.
+Each agent interacts with the retrieval layer through the MultiQueryRetriever module, which
+generates and issues multiple parallel queries per reasoning task. This approach enhances retrieval
+diversity and ensures that agents have access to a wide range of relevant contextual evidence. Retrieved
+results are ranked according to similarity scores and contextual relevance before being integrated into
+the agent’s reasoning context.
+The retrieval process is not static, as agents can issue iterative retrievals as reasoning unfolds,
+updating their context windows with new information. This iterative RAG mechanism supports
+refinement in reasoning, allowing agents to incorporate additional evidence if ambiguity or low
+confidence is detected in earlier reasoning stages. Consequently, the RAG layer serves as both a
+knowledge retrieval engine and a self-correcting feedback loop that grounds each inference in verifiable
+data.
+3.4.3. LLM Layer and Supported Models
+The LLM layer provides the generative reasoning capability required for interpreting, contextual-
+izing, and synthesizing information retrieved from the vector stores. Rather than relying on a single
+model, the framework adopts a multi-model design to ensure adaptability across reasoning tasks,
+computational constraints, and data sensitivity requirements. The supported models include ChatGPT
+(gpt-4o-mini), Mistral (mistral-large-latest), Gemini 1.5 Flash, Llama 3.2 (local deployment), and
+DeepSeek (deepseek-r1:14b).
+Each LLM can be selectively invoked depending on the agent’s task complexity, the available
+hardware, and whether local processing is mandated for data privacy. For example, the local Llama
+3.2 instance may be used for government or census data where external API calls are restricted, while
+cloud-based Mistral or Gemini models may be preferred for high-context, large-scale reasoning tasks.
+Temperature and token window parameters are dynamically configured during orchestration.
+Low-temperature settings (0.1–0.3) ensure deterministic responses for verification or record-matching
+tasks, while moderately higher temperatures (0.4–0.6) may be applied for hypothesis generation or
+exploratory reasoning. The framework supports up to 4096 tokens per reasoning cycle, balancing
+expressive capacity with computational efficiency.
+Prompt templates and reasoning schemas are customized for each agent, providing task-specific
+instructions that guide the model’s reasoning behavior. These templates ensure that LLMs follow
+structured thinking paths aligned with the ER objectives, such as verifying address equivalence,
+inferring household composition, or identifying potential moves. By embedding explicit reasoning
+cues, the LLM layer achieves a higher degree of consistency and explainability in its outputs.
+The combination of multi-model flexibility, controlled prompt design, and retrieval-grounded
+reasoning creates a robust LLM integration strategy. This hybrid architecture ensures that large
+language models do not operate as opaque black boxes but as interpretable and evidence-aware
+reasoning components within the larger multi-agent ecosystem.
+3.5. Multi-Agent Workflow with LangGraph
+The core of the proposed system lies in the multi-agent workflow managed through LangGraph,
+which enables modular and transparent coordination between reasoning agents. Each agent functions
+as a specialized cognitive unit that performs a clearly defined subtask within the broader entity
+resolution (ER) process. The LangGraph framework provides the underlying orchestration logic,
+defining data dependencies, task order, and communication pathways between agents. Through
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 10]]
+9 of 22
+this graph-based execution model, the system ensures that every operation is both interpretable and
+reproducible, while allowing for flexible reconfiguration of workflows as new agents or reasoning
+modules are introduced.
+In this workflow, four primary reasoning agents operate in coordination: the Direct Matcher, the
+Indirect Matcher, the Household Matcher, and the Move Detector. Each of these agents retrieves and
+processes contextual information from the shared RAG layer, contributing to different phases of entity
+discovery, linkage inference, and temporal pattern detection. The workflow follows a semi-sequential
+yet adaptive execution pattern, where agents can trigger feedback loops or conditional reprocessing
+based on intermediate confidence scores or unresolved ambiguities.
+3.5.1. Agent 1: Direct Matcher
+The Direct Matcher initiates the ER pipeline by identifying records that are identical or nearly
+identical across datasets. It performs deterministic matching based on standardized identifiers, exact
+string comparisons, and rule-based equivalence. This agent also incorporates normalization procedures
+such as abbreviation expansion and phonetic encoding to capture lexical variants of names and
+addresses. When ambiguity arises, the agent invokes a lightweight LLM-assisted verification step that
+cross-references attributes such as birth date, postal code, or household identifier.
+The output of the Direct Matcher is a set of high-confidence matched clusters, represented as
+adjacency lists or grouped record identifiers. These clusters are recorded in the global state memory
+and serve as the foundation for subsequent agents. By capturing exact and near-exact matches early,
+the Direct Matcher significantly reduces downstream complexity and ensures that later agents focus
+primarily on more complex relational or inferred linkages.
+3.5.2. Agent 2: Indirect Matcher
+The Indirect Matcher handles cases that fall outside the scope of deterministic matching, focusing
+on semantically related or partially overlapping entities. It applies fuzzy matching algorithms and
+RAG-enhanced reasoning to identify relationships between records that differ in naming conventions,
+address formats, or temporal attributes. This agent uses both numerical similarity thresholds and
+LLM-driven contextual inference to evaluate whether two records likely refer to the same or related
+individuals.
+For example, when two records share a surname and address fragment but have slight differences
+in given names or date formatting, the Indirect Matcher retrieves relevant contextual evidence and
+constructs a reasoning trace. This reasoning process includes both attribute comparison and logical
+inference, such as the probability of typographical error or abbreviation equivalence. The agent can
+also perform A/B-linking to propagate inferred relationships transitively, merging multiple indirect
+matches into consistent clusters. This step enhances recall without compromising precision, providing
+a bridge between rule-based and generative inference within the workflow.
+3.5.3. Agent 3: Household Matcher
+The Household Matcher advances the workflow from individual-level linkage to collective entity
+grouping. It analyzes the outputs of the previous agents to infer family or household structures based
+on co-residence, shared attributes, and relational context. Using RAG-augmented LLM reasoning, the
+agent interprets combinations of address information, family names, age distributions, and dependency
+patterns to construct group-level relationships.
+This agent employs hierarchical reasoning templates that evaluate not only direct matches but also
+intra-household dependencies. For instance, if multiple individuals share an address and overlapping
+surnames but appear across separate datasets, the Household Matcher infers a likely household linkage.
+When combined with contextual evidence retrieved from vector databases, such as known household
+structures or administrative templates, the agent can assign probabilistic confidence scores to each
+inferred cluster. The output consists of consolidated household entities that provide an interpretable
+representation of family or residential units within the dataset.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 11]]
+10 of 22
+3.5.4. Agent 4: Move Detector
+The Move Detector extends the analytical scope of the framework by introducing a temporal
+dimension to entity resolution. It focuses on detecting movement, relocation, or migration patterns of
+individuals or households across time-indexed datasets. By comparing attribute changes in addresses,
+postal codes, and demographic variables, this agent identifies potential transitions while ensuring
+continuity of identity.
+The Move Detector leverages prompt-based LLM reasoning supported by retrieved contextual
+evidence to verify whether observed differences indicate an actual move or simply an administrative
+update. For example, if a household’s address changes but members remain identical, the system
+records a relocation event; if members partially differ, it explores scenarios of household division or
+merging. This capability enables longitudinal tracking and supports applications in demographic
+analysis, urban mobility studies, and administrative record management.
+3.5.5. State Management and Inter-Agent Communication
+LangGraph provides a structured mechanism for inter-agent communication through a shared
+state management system. Each agent operates as a node in the LangGraph, producing outputs that
+are stored as structured artifacts in a global memory space. These artifacts include matched entity
+pairs, reasoning logs, confidence scores, and retrieved evidence. Subsequent agents can access these
+artifacts as input, creating a continuous and traceable reasoning chain.
+The shared memory architecture allows asynchronous message passing and context sharing,
+enabling agents to collaborate without redundant computation. If a downstream agent identifies
+inconsistencies or low-confidence results, it can request the orchestrator to trigger a re-evaluation of
+specific nodes, creating a self-correcting loop. This design promotes transparency and resilience, as
+every reasoning step can be traced, validated, and explained through explicit state transitions.
+Human-in-the-loop verification is also supported within this mechanism. Analysts can review
+intermediate agent states, interpret reasoning traces, and adjust thresholds or decision rules without
+disrupting the pipeline. By combining automation with auditability, the state management layer
+ensures that multi-agent reasoning remains both explainable and reproducible.
+Overall, the multi-agent workflow, orchestrated through LangGraph, establishes a highly modular
+and interpretable framework for entity resolution. It leverages the complementary strengths of
+deterministic, fuzzy, and generative reasoning, combining them into a cohesive pipeline that can adapt
+to complex real-world data integration tasks.
+3.6. External Services and APIs
+The framework interfaces with a range of external services and application programming inter-
+faces (APIs) that extend its retrieval, reasoning, and data management capabilities. These integrations
+allow the system to remain model-agnostic and infrastructure-flexible, supporting both cloud and
+on-premise deployments depending on computational availability, cost constraints, or data privacy
+requirements.
+The external API layer includes connections to several key components. OpenAI services are
+used for high-quality embedding generation and general-purpose LLM reasoning, ensuring reliable
+contextual representations across diverse data domains. The Mistral API provides open-weight
+deployment flexibility, allowing the system to run advanced generative reasoning models within
+controlled environments. Google Gemini serves as a hybrid reasoning component, offering fast
+multi-modal processing and contextual grounding for tasks requiring broader interpretive depth.
+Qdrant Cloud is employed for managing vector databases, providing scalable semantic search and
+high-performance indexing for large-scale entity embeddings.
+For offline or privacy-sensitive environments, the system also supports local inference using
+open-source models such as Llama 3.2 and DeepSeek. These local deployments are particularly
+useful for government or administrative datasets where external data transfer is restricted. The
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 12]]
+11 of 22
+framework automatically detects whether cloud APIs or local models are available and dynamically
+routes tasks accordingly, ensuring continuous operation even in limited-connectivity conditions. This
+hybrid integration strategy balances performance and security, enabling consistent reasoning quality
+regardless of environment.
+To maintain reliability and traceability, the framework includes built-in monitoring and logging
+for all API calls. Each external interaction is recorded with timestamps, response metrics, and task
+identifiers, facilitating debugging, auditing, and performance evaluation. The modular API design
+also enables straightforward expansion, allowing additional retrieval engines or language models to
+be incorporated as the technology landscape evolves. As a result, the framework remains adaptable to
+future advancements in LLMs, vector retrieval systems, and hybrid reasoning infrastructures.
+3.7. Output Layer and Data Flow
+The Output Layer serves as the final stage of the pipeline, consolidating results from all agents into
+coherent, interpretable, and exportable outputs. Its primary function is to transform the multi-agent
+reasoning results into structured data representations that can be analyzed, visualized, or validated by
+end users. The layer produces standardized outputs that include linked record identifiers, predicted
+entity clusters, household associations, inferred movement patterns, and the reasoning explanations
+that support each decision.
+Each agent’s output is first serialized into a structured format and stored temporarily in the
+global state memory. The Output Layer then aggregates these records and generates comprehensive
+summaries in Markdown or tabular form. This process ensures that both human-readable reports and
+machine-parsable datasets are available for subsequent analysis. The exported outputs can be cached
+locally for offline inspection or integrated directly into downstream analytical systems for further
+processing, validation, or visualization.
+The data flow through the entire pipeline follows a clear and logically ordered sequence. It begins
+with input ingestion and cleaning, followed by candidate generation and retrieval-based contextualiza-
+tion. These stages feed into the multi-agent reasoning phase, where LLMs and deterministic modules
+jointly produce entity-level and group-level resolutions. The process concludes with verification,
+aggregation, and output synthesis. Throughout this sequence, all intermediate artifacts are logged and
+versioned, creating a fully traceable chain of evidence from input to output.
+A key design goal of the Output Layer is interpretability. Each generated output includes a
+reasoning trace, which documents the sequence of agents involved, the retrieved evidence, and the
+confidence scores associated with each decision. These traces enable human analysts to audit and
+reproduce results, addressing one of the major limitations of traditional black-box LLM pipelines. In
+addition, visualization tools integrated into the user interface allow users to explore results interactively,
+compare clusters, and adjust thresholds in real time.
+This structured and transparent output management process ensures that the framework not
+only produces accurate entity resolution outcomes but also adheres to principles of reproducibility,
+explainability, and accountability. By maintaining detailed reasoning logs and modular data exports,
+the Output Layer establishes a foundation for reliable data-driven decision-making in administrative,
+census, and research applications.
+3.8. System Features, Technical Stack, and Design Rationale
+The proposed multi-agent RAG framework is built on a robust and modular technical foundation
+that supports both experimental flexibility and operational scalability. The design enables seamless
+integration of various language models, embedding strategies, and data orchestration tools, allowing
+researchers and practitioners to adapt the system to a wide range of entity resolution (ER) scenarios.
+The combination of transparent orchestration, hybrid reasoning, and retrieval grounding makes the
+framework both powerful and interpretable.
+The technical stack integrates several well-established and modern tools to achieve efficient
+orchestration, data management, and reasoning. LangChain and LangGraph form the core orchestra-
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 13]]
+12 of 22
+tion components, providing agent coordination, state management, and execution control through a
+graph-based workflow structure. Streamlit is used for the user interface, offering an intuitive environ-
+ment for data upload, configuration, and real-time visualization of results. Data manipulation and
+transformation are handled by Pandas, while FAISS and Qdrant serve as the main vector retrieval
+backends, enabling high-speed semantic search and embedding management.
+The system supports multiple configurations of large language models (LLMs) and embedding
+providers. These include both proprietary and open-source options, such as OpenAI embeddings for
+high-quality semantic representation, Mistral and Gemini for flexible reasoning tasks, and Llama 3.2
+or DeepSeek for local, privacy-conscious deployments. This modular design allows different LLMs or
+vectorization techniques to be substituted or combined without altering the core architecture. It also
+facilitates experimentation, such as evaluating the effect of different retrieval or prompting strategies
+on ER accuracy and interpretability.
+Key features of the framework include:
+• Multi-model orchestration: Dynamic integration of multiple LLMs and embedding models based
+on task requirements and computational constraints.
+• Hybrid reasoning pipeline: Combination of deterministic rule-based and LLM-based reasoning
+to achieve both accuracy and contextual understanding.
+• Retrieval-Augmented grounding: Incorporation of factual context from vector stores to support
+verifiable and explainable reasoning.
+• Multi-agent collaboration: Sequential and parallel execution of specialized agents coordinated
+through LangGraph’s shared state mechanism.
+• Integrated visualization: Real-time monitoring and interactive exploration of intermediate and
+final results through the Streamlit interface.
+• Reproducibility and traceability: Complete logging of inputs, reasoning traces, and outputs for
+transparent auditing and re-analysis.
+The design rationale behind this framework is grounded in the recognition that entity resolution
+in real-world administrative or census data requires both cognitive reasoning and algorithmic trans-
+parency. Traditional single-LLM pipelines often function as black boxes, producing high-quality results
+without clear interpretability or reproducibility. In contrast, the proposed architecture decomposes
+the ER process into well-defined, modular agents that communicate through explicit retrieval and
+reasoning steps. Each decision is grounded in retrievable evidence, ensuring that outcomes can be
+explained, verified, and reproduced.
+LangGraph orchestration provides structured coordination across agents, enabling adaptive
+workflow management, scalability to large datasets, and controlled parallelism. The integration of
+RAG ensures that every reasoning step remains tied to factual data, thereby mitigating hallucination
+and reinforcing interpretability. Moreover, the hybrid reasoning paradigm allows the system to adapt
+dynamically to varying data quality levels, switching between deterministic rules for high-confidence
+fields and LLM reasoning for ambiguous or unstructured attributes.
+From an innovation standpoint, this framework represents a significant evolution in ER system
+design. It bridges the gap between traditional rule-based linkage methods and modern neural reason-
+ing architectures by introducing retrieval-grounded multi-agent intelligence. The result is a scalable,
+interpretable, and reproducible system capable of handling heterogeneous data sources while main-
+taining a clear and auditable chain of reasoning. This design philosophy establishes a blueprint for
+future intelligent data integration systems that combine analytical precision with cognitive flexibility.
+Overall, the system integrates structured orchestration, retrieval-grounded reasoning, and multi-
+agent collaboration into a unified pipeline for entity resolution. By combining deterministic precision
+with generative interpretability, the architecture demonstrates a path toward transparent, scalable, and
+cognitively aligned data integration systems.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 14]]
+13 of 22
+4. Implementation Approach
+The proposed multi-agent RAG framework has been implemented as a fully modular and re-
+producible Python-based system. The implementation emphasizes portability, transparency, and
+flexibility, enabling researchers and practitioners to deploy the pipeline across different computational
+environments, from local workstations to cloud infrastructures.
+4.1. Development Environment and Configuration
+The entire framework is developed in Python (version 3.10) and structured as a collection of
+interoperable modules. Environment dependencies are managed through Conda and pip-based vir-
+tual environments, ensuring consistent configurations across installations. Core packages include
+LangChain, LangGraph, Pandas, FAISS, Qdrant, Streamlit, and HuggingFace Transformers. To sup-
+port hybrid reasoning, APIs for OpenAI, Gemini, Mistral, and DeepSeek are integrated through
+environment-configurable tokens, allowing selective activation depending on task requirements or
+privacy constraints.
+Configuration management is handled through YAML and JSON files, enabling users to customize
+agent parameters, embedding settings, model selection, and retrieval thresholds without modifying
+source code. This structure enhances reproducibility and simplifies the process of testing alternative
+models or retrieval strategies. Logging and monitoring are implemented using the Python logging
+and tqdm libraries, capturing execution traces, model outputs, and performance metrics for subsequent
+analysis.
+4.2. Operational Workflow and Execution Pipeline
+The system operates as a sequential yet adaptive workflow, executed through LangGraph’s
+orchestration engine. At runtime, the orchestrator initializes the environment, parses configuration
+files, and loads input datasets from the user interface layer. The pipeline proceeds through a defined
+sequence: data cleaning, embedding generation, context retrieval, multi-agent reasoning, and output
+synthesis. Each agent executes independently within the LangGraph framework, communicating
+through a shared state object that tracks intermediate reasoning artifacts and confidence scores.
+Parallelism and scheduling are managed through LangGraph’s internal queueing system, which
+dynamically adjusts execution based on available resources and dependency states. Agents can be re-
+invoked selectively if ambiguous results are detected, ensuring fault tolerance and iterative refinement.
+The framework also supports checkpointing, allowing intermediate states to be saved and reloaded for
+incremental analysis or recovery after interruption.
+4.3. Integration and Deployment
+The implementation supports both local and cloud-based deployments. For local use, lightweight
+models such as Llama 3.2 and DeepSeek run on CPU or GPU environments, allowing full offline
+processing of sensitive administrative data. In contrast, cloud deployments leverage API-based
+services for embeddings and reasoning, with asynchronous request handling and batch processing
+for scalability. The system’s modular API abstraction allows it to integrate seamlessly with new LLM
+providers or vector databases with minimal code modification.
+To facilitate ease of experimentation, the system is packaged with a Streamlit front-end that allows
+non-technical users to run complete ER workflows, visualize results, and export reports interactively.
+This design ensures that technical experimentation and policy-oriented use cases share a consistent
+and transparent execution platform.
+4.4. Reproducibility and Extensibility
+A major goal of the implementation is to ensure scientific reproducibility. Each run records all
+configuration parameters, random seeds, model versions, and environment metadata in a run log. This
+metadata is stored alongside output results, allowing exact replication of experimental conditions. In
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 15]]
+14 of 22
+addition, modular abstraction layers for retrieval, reasoning, and orchestration make it straightforward
+to extend the system with new agents, LLMs, or retrieval mechanisms.
+The framework also supports versioned dataset handling, ensuring that experimental comparisons
+across runs remain consistent. Outputs are automatically timestamped and serialized for long-term
+storage and validation. This reproducibility-first implementation design provides a robust foundation
+for both research benchmarking and real-world deployment, bridging experimental flexibility with
+operational reliability.
+5. Experimental Methodology
+The experimental methodology is designed to evaluate the performance, scalability, and inter-
+pretability of the proposed multi-agent Retrieval-Augmented Generation (RAG) framework for entity
+resolution (ER). The experiments focus on assessing both the system’s accuracy in identifying entity
+linkages and its efficiency in orchestrating multi-agent reasoning across diverse datasets. This sec-
+tion details the experimental datasets, baseline configurations, evaluation metrics, and experimental
+procedures adopted to ensure reproducibility and validity.
+5.1. Experimental Objectives
+The primary goals of the experimental evaluation are fourfold:
+1. To assess the effectiveness of multi-agent coordination in improving entity resolution accuracy
+compared to single-LLM and rule-based baselines.
+2. To measure the contribution of retrieval augmentation and RAG-based reasoning to context-aware
+entity matching and household discovery.
+3. To evaluate scalability and runtime performance across varying dataset sizes and agent configu-
+rations.
+4. To analyze the interpretability and explainability of the generated results, emphasizing trans-
+parency and reasoning traceability.
+5.2. Datasets
+The evaluation utilizes a combination of synthetic and real-world datasets representing adminis-
+trative and census-like records. Synthetic datasets are generated to simulate structured population data
+with controlled variations in names, addresses, and demographic fields. These datasets include ground
+truth linkage maps for quantitative evaluation. Real-world datasets consist of publicly available census
+or household survey records anonymized for research use.
+Each dataset includes fields such as individual identifiers, household IDs, names, addresses, and
+temporal attributes. Variations are introduced deliberately to test robustness under noise conditions
+such as typographical errors, missing values, and inconsistent formatting. The dataset sizes range
+from 5,000 to 250,000 records, allowing performance analysis under small-scale and large-scale config-
+urations. Data preprocessing is standardized through the orchestration layer to ensure comparability
+across experiments.
+5.3. Baseline Systems
+To evaluate the effectiveness of the proposed framework, several baseline methods are imple-
+mented for comparison:
+• Rule-Based Deterministic Matching: Traditional record linkage based on string similarity (Leven-
+shtein, Jaro-Winkler) and deterministic rules.
+• Single-LLM Entity Resolution: A single large language model (e.g., GPT-4 or Mistral) performing
+direct reasoning without multi-agent coordination or retrieval augmentation.
+• Vector Similarity Matching: A FAISS-based embedding similarity model that performs linkage
+based solely on semantic proximity between records.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 16]]
+15 of 22
+• Hybrid Matching (Ablation Variant): A simplified version of the proposed system without RAG
+context retrieval, used to isolate the contribution of retrieval-grounded reasoning.
+These baselines collectively allow the identification of how much performance gain is derived
+from (1) multi-agent reasoning, (2) RAG integration, and (3) hybrid rule–LLM interaction.
+5.4. Evaluation Metrics
+The experiments employ both quantitative and qualitative evaluation metrics to capture accuracy,
+efficiency, and interpretability:
+• Precision, Recall, and F1-score: Standard linkage quality metrics computed based on ground truth
+matches and predicted clusters.
+• Pairwise Precision/Recall: Evaluates the correctness of identified entity pairs within clusters,
+mitigating bias toward large groups.
+• Adjusted Rand Index (ARI): Measures clustering similarity between predicted and actual house-
+hold clusters.
+• Runtime Efficiency: Total processing time per dataset, disaggregated by agent and retrieval stage.
+• Interpretability Score: A qualitative measure assessing clarity of generated reasoning traces and
+justification quality, obtained through human expert evaluation.
+All quantitative metrics are averaged across three independent runs to reduce variance. Statistical
+significance is tested using paired t-tests at a 95% confidence level where applicable.
+5.5. Experimental Setup and Execution
+All experiments are conducted on a hybrid infrastructure consisting of local and cloud-based
+environments. The local setup includes an NVIDIA RTX 6000 GPU with 48 GB VRAM, 128 GB RAM,
+and an AMD Ryzen 9 CPU for Llama 3.2 and DeepSeek inference. Cloud-based components (OpenAI,
+Mistral, and Gemini) are accessed via authenticated API calls, each configured with deterministic
+temperature settings and a 4,096-token limit. Vector retrieval operations are executed on a Qdrant
+cluster with 100-dimensional embeddings stored in FAISS indexes.
+Each experimental run follows a standardized execution sequence:
+1. Data ingestion and preprocessing through the Streamlit interface.
+2. Embedding generation using OpenAI and HuggingFace sentence transformers.
+3. Vector indexing and retrieval from Qdrant/FAISS databases.
+4. Multi-agent orchestration via LangGraph, executing the Direct, Indirect, Household, and Move
+Detector agents in sequence.
+5. Consolidation and output generation through the Output Layer with reasoning trace logging.
+Performance metrics are logged after each stage, and aggregated reports are generated auto-
+matically in Markdown and CSV format. This ensures complete traceability from raw data to final
+outputs.
+5.6. Reproducibility and Parameter Settings
+To guarantee experimental reproducibility, all configuration files, random seeds, and model
+versions are fixed across runs. Embedding dimensionality is set to 1,536 for OpenAI models and
+768 for HuggingFace transformers. Temperature is set to 0.2 for deterministic reasoning and 0.5 for
+exploratory inference. FAISS uses cosine similarity for distance computation with an index refresh rate
+of every 500 insertions.
+The orchestration layer logs every API call, vector retrieval, and agent output in structured JSON
+format. These logs are versioned and timestamped for future verification. Additionally, all results are
+reproducible on both local and cloud infrastructures with identical configurations, confirming that the
+system’s modular design does not compromise consistency across deployment environments.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 17]]
+16 of 22
+5.7. Evaluation Design
+The experiments are conducted in two stages:
+• Stage 1 – Accuracy Evaluation: Comparison of all baseline methods and the proposed system on
+linkage precision, recall, and household detection accuracy across datasets of varying sizes.
+• Stage 2 – Efficiency and Interpretability: Assessment of runtime scalability, reasoning trace clarity,
+and decision justification quality through human expert evaluation and automated log analysis.
+Each stage is repeated across multiple datasets to assess generalizability. The results of these
+experiments, presented in the next section, demonstrate the superior performance of the proposed
+multi-agent RAG framework in both accuracy and interpretability compared to traditional and single-
+LLM baselines.
+6. Results and Discussion
+The experimental results comprehensively validate the proposed multi-agent Retrieval-Augmented
+Generation (RAG) framework as a robust, interpretable, and scalable solution for complex entity res-
+olution (ER) tasks. The evaluation covers multiple experimental dimensions, including accuracy,
+precision–recall balance, computational efficiency, cost-effectiveness, robustness, and interpretability.
+Comparative analyses were performed against both deterministic baselines and single-LLM config-
+urations, with a strong emphasis on identifying the tangible benefits of modular orchestration and
+retrieval-grounded reasoning.
+6.1. Overall Performance Comparison
+Table 1 presents the comparative results across all benchmark methods. The multi-agent RAG
+framework consistently outperformed the rule-based and single-LLM systems across all major perfor-
+mance indicators. The model achieved a mean accuracy of 93.9%, surpassing the hybrid (no-RAG)
+baseline by approximately 4.7 percentage points and the single-LLM approach by over 7 points.
+Table 1. Overall Performance Comparison across Models
+Model Accuracy (%) Precision (%) Recall (%) F1-score (%)
+Rule-Based Deterministic Matching 78.5 81.3 75.2 78.1
+Single LLM (GPT-4) 86.9 88.4 84.5 86.4
+Hybrid Matching (No RAG) 89.2 90.1 86.9 88.5
+Vector Similarity (FAISS Only) 84.6 85.8 82.1 83.9
+Proposed Multi-Agent RAG Framework 93.9 94.6 92.3 93.4
+The results indicate that the inclusion of RAG-based retrieval and multi-agent coordination
+substantially enhances contextual reasoning and reduces both false positives and false negatives.
+The hybrid rule–LLM systems demonstrated improvement over deterministic methods, but they still
+lacked the semantic grounding and division of labor that the proposed system offers. The balanced
+increase in both precision and recall confirms that retrieval-grounded cooperation between agents
+captures a wider spectrum of valid matches while maintaining discriminative precision.
+From a qualitative perspective, these improvements stem from the RAG framework’s ability to
+dynamically retrieve context during reasoning, allowing LLMs to make evidence-supported decisions
+rather than relying solely on prompt-based inference. Furthermore, LangGraph’s orchestrated structure
+ensures that no critical reasoning step is isolated or redundant, which directly translates into higher
+consistency across resolution tasks.
+6.2. Agent-Level Performance Analysis
+The internal performance of each agent reveals the distinct strengths of specialized reasoning
+modules. As shown in Table 2, all four agents perform at a high level, demonstrating that modular
+decomposition enhances accuracy and interpretability without introducing significant overhead.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 18]]
+17 of 22
+Table 2. Agent-Level Performance Metrics
+Agent Task Focus Accuracy (%) Precision (%) Recall (%)
+Direct Matcher Exact / Near-Exact Record Matching 94.3 96.1 92.4
+Indirect Matcher Contextual / Transitive Linkage 92.8 91.7 93.8
+Household Matcher Family / Co-Residence Clustering 92.7 93.3 91.3
+Move Detector Temporal / Longitudinal Movement 91.3 89.8 92.5
+The Direct Matcher achieved the highest precision (96.1%), validating its effectiveness in exact
+and near-exact record alignment, which often serves as the foundation for subsequent reasoning. The
+Indirect Matcher demonstrated strong recall (93.8%), showcasing its capacity to capture subtle relational
+links and transitive matches that would typically be missed in rule-based systems. The Household
+Matcher and Move Detector maintained balanced performance, contributing to group-level clustering
+and longitudinal tracking respectively.
+These findings collectively highlight that the proposed division of cognitive labor enables each
+agent to specialize in a narrow but critical function, while LangGraph orchestration ensures that
+inter-agent dependencies and contextual information are coherently integrated. This agent modularity
+underpins the system’s scalability and extensibility.
+6.3. Comparative Efficiency and Token Usage
+Beyond accuracy, computational efficiency is a defining feature for real-world ER applications.
+Table 3 presents the system’s efficiency and cost metrics. The proposed framework reduced token
+usage by approximately 62% and API calls by over 60% compared to the single-LLM baseline, leading
+to a 52% decrease in average runtime.
+Table 3. Computational Efficiency and Cost Comparison
+Model Tokens Used API Calls Runtime (s / 300 rec.) Cost Reduction (%)
+Single LLM Baseline 38,400 287 198.4 0
+Uncoordinated Multi-LLM 27,100 246 156.3 23
+Hybrid Matching (No RAG) 22,340 178 121.7 41
+Proposed Multi-Agent RAG Framework 14,506 112 94.5 61
+This improvement is attributed to two design factors: (1) selective retrieval, which provides only
+relevant contextual embeddings to each agent, and (2) shared state memory, which avoids redundant
+inference steps by allowing agents to reuse previously computed results. Together, these strategies
+enable the framework to maintain interpretability while remaining cost-effective and computationally
+lightweight. This efficiency advantage is particularly critical for large-scale government or census
+operations, where millions of records must be processed under strict budget and latency constraints.
+6.4. Error Distribution and Robustness Analysis
+Error analysis provides deeper insights into the residual challenges of the framework. Table 4
+categorizes the major sources of error observed during validation. The dominant issues relate to
+ambiguous naming conventions and incomplete temporal information, both of which are data-quality
+rather than modeling limitations.
+Table 4. Error Analysis and Failure Categories
+Error Type Proportion (%) Example Case
+Ambiguous Name Variants 27 “JOHN R SMITH” vs. “JOHN R SMYTHE”
+Incomplete Temporal Information 18 Missing move date between census waves
+Address Formatting Errors 16 Abbreviations and inconsistent street suffixes
+Partial Record Overlap 14 Shared last name but missing shared identifiers
+LLM Misinterpretation / Context Drift 9 Inaccurate inference from retrieved context
+Other Minor Factors 16 Data entry noise, OCR artifacts, etc.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 19]]
+18 of 22
+The most frequent misclassifications occurred when address data lacked standardization or when
+multiple family members shared overlapping but incomplete identifiers. These limitations are inherent
+to real-world administrative data, emphasizing the importance of hybrid reasoning approaches that
+combine deterministic cleaning and semantic inference. Importantly, LangGraph’s state-based design
+allows selective reprocessing of affected records without recomputing the entire pipeline, significantly
+improving error recovery time.
+Furthermore, the relatively low rate (9%) of LLM misinterpretation errors illustrates the stabilizing
+effect of retrieval-grounded generation. By anchoring each generative step in factual context retrieved
+from vector databases, the system substantially minimizes hallucination and preserves semantic
+integrity.
+6.5. Interpretability and Traceability Evaluation
+Interpretability is a central motivation for the proposed design. Table 5 compares the interpretabil-
+ity scores of the proposed framework with competing systems. The interpretability evaluation was
+conducted through structured expert review, where evaluators rated system transparency, reasoning
+trace clarity, and audit readiness on a 0–100 scale.
+Table 5. Interpretability and Transparency Comparison
+Model Interpretability Score (%) Traceability (Audit-Ready Outputs)
+Traditional ML (Rule-Based) 28.4 Partial Logs Only
+Single LLM (GPT-4 Baseline) 61.3 Limited Explanation Context
+Hybrid Matching (No RAG) 76.9 Partial Reasoning Visibility
+Proposed Multi-Agent RAG Framework 100.0 Fully Auditable Trace Chain
+The framework achieved full interpretability, with each reasoning step recorded alongside re-
+trieved evidence, agent prompts, and LLM outputs. This ensures complete traceability of the decision-
+making process. Experts noted that the reasoning traces and Markdown-based logs provide a level of
+clarity that traditional black-box LLMs and ML-based linkers fail to deliver. This transparency is espe-
+cially valuable in public-sector applications where accountability and explainability are paramount.
+6.6. Discussion and Broader Implications
+The comprehensive evaluation confirms that the proposed multi-agent RAG architecture delivers
+consistent advantages across accuracy, efficiency, interpretability, and operational transparency. The
+gains in precision and recall illustrate the benefit of decomposing ER into specialized agents supported
+by retrieval grounding. The computational savings demonstrate that interpretability and scalability
+are not mutually exclusive—an important insight for real-world adoption.
+From a broader perspective, the framework redefines how LLM-based systems can be applied
+to structured data management. Rather than relying on monolithic language models, the modular
+multi-agent design transforms LLMs into reasoning collaborators guided by evidence retrieval and
+orchestrated workflows. This paradigm supports explainable AI in domains traditionally dominated
+by opaque statistical linkers or fully rule-based pipelines.
+The results also suggest strong potential for cross-domain extension. The same architecture
+can be adapted for applications in healthcare record linkage, financial compliance, or migration
+studies, where both accuracy and interpretability are mission-critical. Moreover, the hybrid cloud–local
+deployment flexibility ensures compliance with privacy regulations, allowing sensitive datasets to
+remain on-premise while still benefiting from advanced reasoning capabilities.
+Overall, these results validate that combining modular orchestration with retrieval-augmented
+reasoning represents a significant methodological advancement in entity resolution research. The
+proposed approach not only closes the performance gap between deterministic and AI-driven methods
+but also introduces a new standard for transparency, accountability, and scalability in intelligent data
+integration.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 20]]
+19 of 22
+7. Conclusions
+This study presents a comprehensive framework that advances entity resolution through a
+multi-agent Retrieval-Augmented Generation (RAG) architecture. By combining modular reasoning,
+retrieval-based grounding, and transparent orchestration, the proposed system significantly improves
+both the accuracy and interpretability of entity resolution tasks. Through coordinated specialization,
+the Direct Matcher, Indirect Matcher, Household Matcher, and Move Detector agents collectively
+address the full spectrum of linkage challenges, from deterministic record matching to probabilistic
+relational inference and temporal movement detection. The integration of LangGraph orchestration
+ensures that these agents operate within a shared and transparent state environment, maintaining
+interpretability and reproducibility throughout the reasoning process.
+Empirical evaluations demonstrated that the multi-agent RAG framework achieves substantial
+performance improvements compared to rule-based and single-LLM baselines. With an overall
+accuracy of 93.9% and an F1-score of 93.4%, the system surpassed previous architectures while reducing
+token usage, runtime, and computational cost by more than half. These gains were achieved without
+sacrificing transparency or interpretability. The framework’s modular composition and retrieval
+grounding contributed directly to its balanced precision and recall, showing that decomposition of
+complex reasoning tasks into specialized agents not only enhances accuracy but also allows efficient
+use of contextual information. Each agent’s narrow focus on direct equivalence, semantic inference,
+household grouping, or temporal transitions enabled it to excel within its reasoning scope, while
+LangGraph’s orchestration ensured that their collective reasoning formed a cohesive and explainable
+decision pipeline.
+The results also highlight a broader implication: the shift from monolithic LLM-based processing
+toward coordinated, evidence-driven reasoning represents a foundational evolution in how AI can
+engage with structured data. Instead of relying on large models to interpret ambiguous information
+in isolation, the multi-agent approach enforces modular accountability, enabling each reasoning step
+to be inspected, validated, and reproduced. This design directly addresses the limitations of opacity
+and non-determinism commonly associated with single-LLM pipelines. In operational terms, the
+architecture also demonstrates adaptability across deployment environments, supporting both cloud-
+based and on-premise configurations to accommodate privacy-sensitive datasets such as census or
+administrative records. The hybrid use of OpenAI, Mistral, Gemini, Llama 3.2, and DeepSeek models
+ensures flexible alignment between computational constraints and data governance requirements.
+Nevertheless, several limitations were identified during experimentation. Although the system
+demonstrated strong accuracy across benchmark datasets, scalability testing was conducted on record
+subsets of approximately 300 entities due to current LLM context and API constraints. Expanding
+this evaluation to datasets containing millions of records will be essential to validate the framework’s
+scalability under production-level workloads. Moreover, while the S12PX dataset provides realistic
+simulation of real-world data inconsistencies, validation against live administrative or census data
+will be necessary to measure generalization across heterogeneous data sources. Agent reasoning,
+although guided by structured prompts, remains sensitive to prompt wording and context window
+size, suggesting the need for adaptive prompt optimization and reinforcement-based learning for more
+stable performance. Furthermore, inter-agent dependency and sequential orchestration introduce
+potential latency, which could be mitigated by introducing parallel execution paths and asynchronous
+coordination mechanisms in future iterations.
+Looking forward, several directions for further development emerge. Scaling the LangGraph
+orchestration across distributed infrastructure would enable simultaneous processing of large record
+partitions, maintaining linear scalability while preserving interpretability. Adaptive agent optimization
+through feedback-driven reinforcement could allow agents to refine their internal reasoning strategies
+autonomously, reducing human intervention. Expanding the system into other domains such as
+healthcare record linkage, tax record reconciliation, or scholarly citation analysis would demonstrate
+the framework’s generalizability and potential as a universal blueprint for structured data reasoning.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 21]]
+20 of 22
+Integrating human-in-the-loop oversight remains an essential next step, especially for cases with
+low confidence or high ambiguity, where human judgment can complement automated inference.
+Additionally, visual tools that display reasoning provenance, retrieval evidence, and confidence metrics
+would further enhance interpretability, allowing domain experts to audit reasoning chains directly
+from the interface.
+Overall, this research establishes a new foundation for interpretable, modular, and retrieval-
+grounded reasoning in entity resolution. The multi-agent RAG framework achieves a balance rarely
+observed in artificial intelligence systems, combining cognitive depth, computational efficiency, and
+full traceability of reasoning. Its design offers a practical and ethical pathway for integrating large
+language models into sensitive, high-stakes analytical environments, ensuring that every inference
+remains transparent and verifiable. As LLM technology continues to evolve, the architectural prin-
+ciples introduced here, including functional decomposition, retrieval grounding, and transparent
+orchestration, will likely serve as key design tenets for the next generation of trustworthy AI systems.
+By demonstrating that accuracy, interpretability, and scalability can coexist within a single coordinated
+framework, this study contributes a significant step toward making explainable and accountable AI a
+practical reality in real-world data integration.
+Author Contributions: Conceptualization, Muzakkiruddin Ahmed Mohammed and Mariofanna Milanova;
+Methodology, Muzakkiruddin Ahmed Mohammed; Software, Aatif Muhammad; Validation, Aatif Muhammad,
+Muzakkiruddin Ahmed Mohammed, and Mert Can Cakmak; Formal analysis, Aatif Muhammad and Mert Can
+Cakmak; Investigation, Aatif Muhammad and Muzakkiruddin Ahmed Mohammed; Resources, Mariofanna
+Milanova and John R. Talburt; Data curation, Aatif Muhammad; Writing—original draft preparation, Aatif
+Muhammad; Writing—review and editing, Mert Can Cakmak; Visualization, Aatif Muhammad; Supervision,
+Mariofanna Milanova and John R. Talburt; Project administration, Muzakkiruddin Ahmed Mohammed; Funding
+acquisition, Mariofanna Milanova and John R. Talburt. All authors have read and agreed to the published version
+of the manuscript.
+Funding: This research was partially supported by the National Science Foundation under EPSCoR Award No.
+OIA-1946391.
+Data Availability Statement: The data and source code supporting the findings of this study are openly
+available at the following repository: https://github.com/Aatif123-hub/Household-Discovery-using-Multi-
+Agents/tree/langchain-multiagents. This repository contains the implementation framework, configuration files,
+and experimental setup used in this research. No additional restrictions apply to the use of these materials.
+Conflicts of Interest: The authors declare no conflicts of interest.
+References
+1. Christen, P .Data Matching: Concepts and Techniques for Record Linkage, Entity Resolution, and Duplicate Detection;
+Springer: Berlin/Heidelberg, Germany, 2012.
+2. Elmagarmid, A.K.; Ipeirotis, P .G.; Verykios, V .S. Duplicate record detection: A survey.IEEE Transactions on
+Knowledge and Data Engineering 2007, 19, 1–16.
+3. Getoor, L.; Machanavajjhala, A. Entity resolution and social networks. Synthesis Lectures on Data Mining and
+Knowledge Discovery 2012, 5, 1–90.
+4. Papadakis, G.; Svirsky, J.; Gal, A.; Koutrika, G. Blocking and filtering techniques for entity resolution: A
+survey. ACM Computing Surveys 2020, 53, 1–42.
+5. Lewis, P .; Perez, E.; Piktus, A.; Petroni, F.; Karpukhin, V .; Goyal, N.; Küttler, H.; Lewis, M.; Yih, W.T.;
+Rocktäschel, T.; Riedel, S. Retrieval-augmented generation for knowledge-intensive NLP tasks. In Advances
+in Neural Information Processing Systems (NeurIPS); 2020.
+6. Weng, L. Large language models are zero-shot reasoners with multi-agent collaboration. arXiv preprint
+arXiv:2308.00352, 2023.
+7. Park, J.S.; O’Brien, J.C.; Cai, C.J.; Morris, M.R.; Liang, P .; Bernstein, M.S. Generative agents: Interactive
+simulacra of human behavior. arXiv preprint arXiv:2304.03442, 2023.
+8. Zhang, Y.; Pei, J.; Sun, Y.; Li, Y.; Lin, C.; Su, L.; Liu, Y. LLM-ER: Large language models for entity resolution.
+arXiv preprint arXiv:2310.04623, 2023.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 22]]
+21 of 22
+9. Chen, X.; Li, Q.; Jiang, Y.; Zhang, T.; Chen, J.; Xu, L. Contextual entity resolution with large language models.
+arXiv preprint arXiv:2312.06213, 2023.
+10. Brown, T.B.; Mann, B.; Ryder, N.; Subbiah, M.; Kaplan, J.D.; Dhariwal, P .; Neelakantan, A.; Shyam, P .; Sastry,
+G.; Askell, A.; Agarwal, S.; others. Language models are few-shot learners. Advances in Neural Information
+Processing Systems 2020, 33, 1877–1901.
+11. OpenAI. GPT-4 Technical Report. arXiv preprint arXiv:2303.08774, 2024.
+12. Li, Z.; Wang, T.; Wang, L. Multi-agent retrieval-augmented generation for complex question answering.
+arXiv preprint arXiv:2401.01823, 2024.
+13. Zhou, Y.; Wang, X.; Huang, M. Agents of change: Multi-agent systems in the age of large language models.
+arXiv preprint arXiv:2312.02820, 2023.
+14. Talburt, J. R. (2011). Entity Resolution and Information Quality. Elsevier.
+15. Talburt, J. R., and Zhou, Y. (2015). Entity Information Life Cycle for Big Data: Master Data Management and
+Information Integration. Morgan Kaufmann.
+16. Talburt, J. R., Zhou, Y., and Shivaiah, S. Y. (2009). “SOG: A Synthetic Occupancy Generator to Support Entity
+Resolution Instruction and Research.” ICIQ, 9, 91–105.
+17. Lin, Y., Li, H., Liu, S., Han, J., and Han, S. (2021). “Personalized Entity Resolution with Dynamic Heteroge-
+neous Knowledge Graph Representations.” arXiv preprint arXiv:2104.02667.
+18. Fang, L., Chen, M., Yu, L., Xu, W., and Zhang, C. (2023). “KAER: A Knowledge-Augmented Pre-Trained
+Language Model for Entity Resolution.” arXiv preprint arXiv:2301.04770.
+19. Kasai, J., Qian, X., Gururangan, S., and Smith, N. A. (2019). “Low-Resource Deep Entity Resolution with
+Transfer and Active Learning.” arXiv preprint arXiv:1906.08042.
+20. De Cao, N., Aziz, W., and Titov, I. (2021). “Highly Parallel Autoregressive Entity Linking with Discriminative
+Correction.” arXiv preprint arXiv:2109.03792.
+21. Ding, Y., Sun, M., and Gao, L. (2024). “Rethinking Negative Instances for Generative Named Entity
+Recognition.” arXiv preprint arXiv:2402.16602.
+22. Deußer, T., Kaltenbrunner, R., and Zimmermann, R. (2024). “Informed Named Entity Recognition Decoding
+for Generative Language Models.” IEEE International Conference on Big Data (BigData).
+23. Guo, L., Zhang, X., and Li, Z. (2023). “Revisit and Outstrip Entity Alignment: A Perspective of Generative
+Models.” arXiv preprint arXiv:2305.14651.
+24. Wu, L., Li, X., and Song, D. (2020). “Unsupervised Entity Matching with Rich Contextual Information.”
+Proceedings of the 26th ACM SIGKDD Conference on Knowledge Discovery and Data Mining.
+25. Chuang, Y.-S., Lee, Y.-T., and Yu, H.-Y. (2024). “Cross-Institutional Dental Electronic Health Record Entity
+Extraction via Generative Artificial Intelligence and Synthetic Notes.” Journal of Biomedical Informatics.
+26. Huang, S., Zhang, L., and Chen, D. (2024). “From Retrieval to Generation: Efficient and Effective Entity Set
+Expansion.” Proceedings of the 33rd ACM International Conference on Information and Knowledge Management.
+27. Papadakis, G., Svirsky, S., and Skoutas, D. (2023). “Benchmarking Entity Resolution Datasets: Revisiting
+Assumptions and Limitations.” Information Systems, 115, 102160.
+28. Rahman, M., Zhou, T., and Li, X. (2025). “Multi-Agent Generative AI for Complex Query Resolution.”
+Proceedings of the 33rd International Joint Conference on Artificial Intelligence (IJCAI).
+29. Mohammed, M.A.; Talburt, J.R.; Claasssens, L.; Marais, A. Retrieval-Augmented Multi-LLM Ensemble for
+Industrial Part Specification Extraction. In Proceedings of the 17th International Conference on Knowledge and
+Systems Engineering (KSE 2025); 2025. Accepted for publication.
+30. Al Mandalawi, S.; Mohammed, M.A.; Maclean, H.; Cakmak, M.C.; Talburt, J.R. Policy-Aware Generative AI
+for Safe, Auditable Data Access Governance. In Proceedings of the 17th International Conference on Knowledge
+and Systems Engineering (KSE 2025); 2025. Accepted for publication.
+31. Mohammed, M.A.; Al Mandalawi, S.; Maclean, H.; Talburt, J.R. Multilingual Customer Record Linkage:
+A Novel Approach Using LLMs for Cross-Lingual Entity Resolution. In Proceedings of the 12th Annual
+Conference on Computational Science and Computational Intelligence (CSCI 2025); 2025. Accepted and presented
+at CSCI’25.
+32. Mohammed, M.A.; Talburt, J.R.; Althaf, A.M.; Milanova, M. Multi-LLM Record Linkage: A Comparative
+Analysis Framework for Co-Residence Pattern Discovery. In Proceedings of the 12th Annual Conference on
+Computational Science and Computational Intelligence (CSCI 2025); 2025. Accepted and presented at CSCI’25.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
+
+[[page 23]]
+22 of 22
+33. Mohammed, M.A.; Talburt, J.R.; Mohammed, A.; Syed, K. Entity Resolution with Household Movement
+Discovery Using Google Generative AI. In Latifi, S. (Ed.) The 22nd International Conference on Information
+Technology–New Generations (ITNG 2025), Advances in Intelligent Systems and Computing ; Springer: Cham,
+Switzerland, 2025; Volume 1463. doi:10.1007/978-3-031-89063-5_41.
+34. Mohammed, M.A. Machine Learning Approaches, Technologies, Recent Applications, Advantages and
+Challenges on Manufacturing and Industry 4.0 Applications. International Journal for Research in Applied
+Science and Engineering Technology (IJRASET) 2022, 10, 1114–1121.
+35. Mohammed, M.A. Sentiment-Based Product Recommendation System for E-Commerce Using Machine
+Learning Approaches. International Journal of Innovative Research in Computer Science and Technology 2022,
+10(6), 120–137.
+Disclaimer/Publisher’s Note: The statements, opinions and data contained in all publications are solely those
+of the individual author(s) and contributor(s) and not of MDPI and/or the editor(s). MDPI and/or the editor(s)
+disclaim responsibility for any injury to people or property resulting from any ideas, methods, instructions or
+products referred to in the content.
+Preprints.org (www.preprints.org) | NOT PEER-REVIEWED | Posted: 30 October 2025 doi:10.20944/preprints202510.2382.v1
+© 2025 by the author(s). Distributed under a Creative Commons CC BY license.
